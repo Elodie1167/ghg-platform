@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GHG 碳盤查平台 — 聚陽實業</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-size:14px;font-family:'Segoe UI',system-ui,sans-serif;background:#F3F4F6}
+
+/* ── 左側導覽 ── */
+.sidebar{width:200px;background:#0C3D2E;height:100vh;display:flex;flex-direction:column;flex-shrink:0;position:fixed;top:0;left:0}
+.sidebar .logo{padding:16px;border-bottom:1px solid rgba(255,255,255,.1)}
+.sidebar .logo-title{color:#fff;font-weight:600;font-size:14px}
+.sidebar .logo-sub{color:rgba(255,255,255,.5);font-size:11px;margin-top:2px}
+.sidebar .year-box{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.1)}
+.sidebar .year-box label{color:rgba(255,255,255,.5);font-size:11px;display:block;margin-bottom:4px}
+.sidebar .year-box select{width:100%;background:#1a5c3a;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:5px 8px;font-size:12px}
+.nav-section{padding:8px 10px 4px;color:rgba(255,255,255,.35);font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.nav-link{display:flex;align-items:center;gap:8px;padding:8px 12px;color:rgba(255,255,255,.75);font-size:12px;font-weight:500;cursor:pointer;border-radius:6px;margin:1px 6px;transition:.15s}
+.nav-link:hover{background:rgba(255,255,255,.08);color:#fff}
+.nav-link.active{background:#1a6b42;color:#fff}
+.nav-link .icon{font-size:15px;width:18px;text-align:center}
+.nav-link .badge-cnt{margin-left:auto;background:#EF4444;color:#fff;border-radius:10px;font-size:10px;padding:1px 6px;font-weight:700}
+.sidebar .user{padding:12px;border-top:1px solid rgba(255,255,255,.1);margin-top:auto;display:flex;align-items:center;gap:8px}
+.user-av{width:28px;height:28px;border-radius:50%;background:#2d8c56;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+.user-name{color:#fff;font-size:12px;font-weight:500}
+.user-dept{color:rgba(255,255,255,.4);font-size:10px}
+
+/* ── 主內容 ── */
+.main{margin-left:200px;min-height:100vh;display:flex;flex-direction:column}
+.topbar{background:#fff;border-bottom:1px solid #E5E7EB;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar h1{font-size:15px;font-weight:600;color:#111827}
+.topbar p{font-size:12px;color:#6B7280;margin-top:1px}
+.content{flex:1;padding:16px 20px;overflow:auto}
+
+/* ── 頁面顯隱 ── */
+.page{display:none}.page.active{display:block}
+
+/* ── 工廠選擇器 ── */
+.factory-selector{background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px}
+.factory-selector label{font-size:12px;font-weight:600;color:#374151;white-space:nowrap}
+.factory-selector select{flex:1;max-width:320px;border:1px solid #D1D5DB;border-radius:7px;padding:6px 10px;font-size:13px;color:#111827}
+.factory-selector .f-info{font-size:11px;color:#6B7280;margin-left:4px}
+
+/* ── 填報平台：分頁列 ── */
+.fill-wrapper{background:#fff;border:1px solid #E5E7EB;border-radius:10px;overflow:hidden}
+.fill-topbar{background:#0C3D2E;color:#E6F4EE;padding:10px 16px;display:flex;align-items:center;justify-content:space-between}
+.fill-topbar .ftitle{font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px}
+.fill-topbar .fmeta{font-size:11px;opacity:.7}
+.tabbar{display:flex;background:#F9FAFB;border-bottom:1px solid #E5E7EB;overflow-x:auto;gap:0;flex-shrink:0}
+.tab{padding:0 14px;height:40px;border:none;border-bottom:2.5px solid transparent;background:transparent;font-size:12px;color:#6B7280;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:5px;flex-shrink:0;font-weight:500;transition:.12s}
+.tab:hover{color:#111827}
+.tab.active{color:#0C3D2E;border-bottom-color:#0C3D2E;background:#fff}
+.badge{font-size:10px;padding:1px 6px;border-radius:10px;font-weight:600}
+.bs1{background:#FEF3C7;color:#92400E}.bs2{background:#DBEAFE;color:#1E40AF}.bs3{background:#D1FAE5;color:#065F46}
+.badge-adm{background:#FEE2E2;color:#991B1B}
+.tab-content{display:none;padding:16px}.tab-content.active{display:block}
+
+/* ── 基本資訊 tab ── */
+.section-title{font-size:12px;font-weight:600;color:#374151;padding:8px 0 6px;border-bottom:1px solid #F3F4F6;margin:14px 0 8px;display:flex;align-items:center;justify-content:space-between}
+.section-title:first-child{margin-top:0}
+.check-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px;margin-bottom:6px}
+.check-item{display:flex;align-items:center;gap:6px;font-size:12px;padding:6px 10px;border:1px solid #E5E7EB;border-radius:7px;cursor:pointer;color:#374151;transition:.12s;user-select:none}
+.check-item input{cursor:pointer;accent-color:#0C3D2E;flex-shrink:0}
+.check-item.on{background:#F0FDF4;border-color:#86EFAC;color:#166534}
+.check-item.haz{border-color:#FECACA}.check-item.haz.on{background:#FFF1F2;border-color:#FCA5A5;color:#9F1239}
+.notice{border-radius:7px;padding:8px 12px;font-size:12px;margin-bottom:12px;display:flex;align-items:flex-start;gap:7px}
+.n-blue{background:#EFF6FF;border:1px solid #BFDBFE;color:#1D4ED8}
+.n-green{background:#F0FDF4;border:1px solid #BBF7D0;color:#166534}
+.n-amber{background:#FFFBEB;border:1px solid #FDE68A;color:#92400E}
+
+/* ── 12 個月資料表 ── */
+.monthly-table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
+.monthly-table th{text-align:left;padding:7px 8px;font-weight:600;font-size:11px;color:#6B7280;background:#F9FAFB;border-bottom:1px solid #E5E7EB;white-space:nowrap}
+.monthly-table td{padding:6px 8px;border-bottom:1px solid #F3F4F6;vertical-align:middle}
+.monthly-table tr:last-child td{border-bottom:none}
+.monthly-table .month-label{font-weight:600;color:#374151;white-space:nowrap}
+.monthly-table input[type=number],.monthly-table input[type=text],.monthly-table select{width:100%;border:1px solid #E5E7EB;border-radius:5px;padding:4px 7px;font-size:12px;color:#111827;background:#fff}
+.monthly-table input:focus,.monthly-table select:focus{outline:none;border-color:#0C3D2E;box-shadow:0 0 0 2px rgba(12,61,46,.1)}
+.co2e-cell{font-weight:600;color:#065F46;background:#F0FDF4;border-radius:4px;padding:3px 7px;text-align:right;font-size:12px}
+.co2e-empty{color:#D1D5DB;font-size:11px;text-align:right}
+.rev-btn{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:10px;cursor:pointer;border:none;transition:.12s}
+.rev-yes{background:#D1FAE5;color:#065F46}.rev-no{background:#FEF9C3;color:#854D0E}
+.rev-yes:hover{background:#A7F3D0}.rev-no:hover{background:#FEF08A}
+.upload-cell{display:flex;align-items:center;gap:4px;font-size:11px}
+.up-done{background:#D1FAE5;color:#065F46;border:1px solid #86EFAC;border-radius:5px;padding:3px 8px;cursor:pointer;white-space:nowrap}
+.up-empty{background:#F9FAFB;color:#9CA3AF;border:1px dashed #D1D5DB;border-radius:5px;padding:3px 8px;cursor:pointer;white-space:nowrap}
+.up-empty:hover{border-color:#0C3D2E;color:#0C3D2E}
+.annual-row td{background:#F0FDF4;font-weight:700;color:#065F46}
+.btn{padding:6px 14px;border-radius:7px;border:1px solid #D1D5DB;background:#fff;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;color:#374151;font-weight:500;transition:.12s}
+.btn:hover{background:#F9FAFB}
+.btn.pri{background:#0C3D2E;color:#fff;border-color:#0C3D2E}
+.btn.pri:hover{background:#0a3326}
+.btn.sm{padding:3px 9px;font-size:11px}
+.bar-actions{padding:12px 16px;border-top:1px solid #F3F4F6;display:flex;justify-content:flex-end;gap:8px}
+
+/* ── 集團彙整 ── */
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+.kpi{background:#fff;border:1px solid #E5E7EB;border-radius:9px;padding:12px 14px}
+.kpi .kl{font-size:11px;color:#6B7280;margin-bottom:3px}
+.kpi .kv{font-size:20px;font-weight:700;color:#111827}
+.kpi .ku{font-size:11px;color:#9CA3AF}
+.matrix-wrap{background:#fff;border:1px solid #E5E7EB;border-radius:10px;overflow:hidden}
+.matrix-header{padding:12px 16px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between}
+.matrix-scroll{overflow-x:auto}
+.matrix-table{border-collapse:collapse;font-size:12px;min-width:max-content;width:100%}
+.matrix-table th{padding:8px 12px;font-size:11px;font-weight:600;color:#6B7280;background:#F9FAFB;border-bottom:1px solid #E5E7EB;white-space:nowrap;text-align:center}
+.matrix-table th.sticky-l{position:sticky;left:0;background:#1F2937;color:#fff;text-align:left;min-width:200px;z-index:2}
+.matrix-table th.factory-h{background:#374151;color:#E5E7EB}
+.matrix-table th.total-h{background:#0C3D2E;color:#fff;position:sticky;right:0;z-index:2}
+.matrix-table td{padding:6px 12px;border-bottom:1px solid #F3F4F6;text-align:right;white-space:nowrap}
+.matrix-table td.sticky-l{position:sticky;left:0;background:#fff;border-right:1px solid #E5E7EB;text-align:left;z-index:1}
+.matrix-table td.section-hdr{background:#1F2937;color:#E5E7EB;font-weight:700;font-size:11px;padding:5px 12px;text-align:left;position:sticky;left:0;z-index:3}
+.matrix-table td.subtotal{background:#F3F4F6;font-weight:700;color:#374151}
+.matrix-table td.subtotal.sticky-l{background:#F3F4F6}
+.matrix-table td.grand{background:#ECFDF5;font-weight:800;color:#065F46}
+.matrix-table td.grand.sticky-l{background:#ECFDF5}
+.matrix-table td.total-col{position:sticky;right:0;background:#ECFDF5;font-weight:700;color:#065F46;z-index:1}
+.matrix-table td.subtotal.total-col{background:#D1FAE5}
+.matrix-table td.grand.total-col{background:#A7F3D0;font-weight:900}
+.biomass-note{color:#16A34A;font-size:10px}
+</style>
+</head>
+<body>
+
+<!-- ═══ 左側導覽 ═══ -->
+<nav class="sidebar">
+  <div class="logo">
+    <div class="logo-title">🌿 GHG 碳盤查平台</div>
+    <div class="logo-sub">聚陽實業 / 永續發展部</div>
+  </div>
+  <div class="year-box">
+    <label>盤查年度</label>
+    <select><option>2025</option><option>2024</option></select>
+  </div>
+  <div class="nav-section">主要功能</div>
+  <div class="nav-link" onclick="showPage('pg-summary',this)"><span class="icon">📊</span>集團碳排彙整</div>
+  <div class="nav-link active" onclick="showPage('pg-fill',this)"><span class="icon">📝</span>填報作業</div>
+  <div class="nav-link" onclick="showPage('pg-factors',this)"><span class="icon">🔢</span>排放係數管理</div>
+  <div class="nav-link" onclick="showPage('pg-rec',this)"><span class="icon">🌱</span>REC 憑證管理</div>
+  <div class="nav-link" onclick="showPage('pg-flags',this)"><span class="icon">⚠️</span>異常標記審核<span class="badge-cnt">3</span></div>
+  <div class="nav-section">報告書</div>
+  <div class="nav-link" onclick="showPage('pg-report',this)"><span class="icon">📄</span>產出報告書</div>
+  <div class="user">
+    <div class="user-av">E</div>
+    <div><div class="user-name">Elodie Chen</div><div class="user-dept">永續發展部</div></div>
+  </div>
+</nav>
+
+<!-- ═══ 主內容 ═══ -->
+<div class="main">
+
+<!-- ───── PAGE：填報作業 ───── -->
+<div id="pg-fill" class="page active">
+  <div class="topbar">
+    <div><h1>填報作業</h1><p>選擇工廠 → 設定排放源 → 逐月填報活動數據</p></div>
+  </div>
+  <div class="content">
+
+    <!-- 工廠選擇器 -->
+    <div class="factory-selector">
+      <label>選擇工廠</label>
+      <select id="factorySel" onchange="onFactoryChange(this)">
+        <option value="">── 請選擇工廠 ──</option>
+        <option value="TWN_TPE">TWN_TPE ─ 台北總部</option>
+        <option value="TWN_CHY" selected>TWN_CHY ─ 嘉義廠</option>
+        <option value="CAB_MK1">CAB_MK1 ─ MK1 柬埔寨</option>
+        <option value="CAB_MK2">CAB_MK2 ─ MK2 柬埔寨 Branch 1</option>
+        <option value="CHN_JY">CHN_JY ─ 佳陽廠</option>
+        <option value="IND_GLR1">IND_GLR1 ─ Glory Semarang</option>
+        <option value="NVN_MK1">NVN_MK1 ─ MK1 北越</option>
+        <option value="SVN_LDR">SVN_LDR ─ Leader 南越</option>
+      </select>
+      <span class="f-info" id="fInfo">國家：TWN ／ 產區：台灣 ／ 盤查年度：2025</span>
+    </div>
+
+    <!-- 填報平台主體 -->
+    <div class="fill-wrapper">
+      <div class="fill-topbar">
+        <div class="ftitle">📋 嘉義廠（TWN_CHY）— 2025 年度填報</div>
+        <div class="fmeta">填報狀態：進行中 ／ 已審查 47 筆 ／ 未審查 31 筆</div>
+      </div>
+
+      <!-- 分頁列（依基本資訊勾選動態產生） -->
+      <div class="tabbar" id="fillTabbar">
+        <button class="tab active" onclick="switchTab('t-basic',this)">⚙️ 基本資訊</button>
+        <button class="tab" onclick="switchTab('t-elec',this)">⚡ 電力 <span class="badge bs2">S2</span></button>
+        <button class="tab" onclick="switchTab('t-fuel',this)">⛽ 燃料 <span class="badge bs1">S1</span></button>
+        <button class="tab" onclick="switchTab('t-misc',this)">🔥 其他燃燒 <span class="badge bs1">S1</span></button>
+        <button class="tab" onclick="switchTab('t-evap',this)">❄️ 逸散 <span class="badge bs1">S1</span></button>
+        <button class="tab" onclick="switchTab('t-purchased',this)">🛒 採購商品 <span class="badge bs3">3.1</span></button>
+        <button class="tab" onclick="switchTab('t-energy-rel',this)">⚡ 能源相關 <span class="badge bs3">3.3</span></button>
+        <button class="tab" onclick="switchTab('t-waste',this)">♻️ 廢棄物 <span class="badge bs3">3.5</span></button>
+        <button class="tab" onclick="switchTab('t-upstream',this)">📦 上游運輸 <span class="badge bs3">3.4</span></button>
+        <button class="tab" onclick="switchTab('t-downstream',this)">🚛 下游運輸 <span class="badge bs3">3.9</span></button>
+        <button class="tab" onclick="switchTab('t-biztravel',this)">✈️ 商務旅行 <span class="badge bs3">3.6</span></button>
+        <button class="tab" onclick="switchTab('t-commute',this)">🚌 員工通勤 <span class="badge bs3">3.7</span></button>
+        <button class="tab" onclick="switchTab('t-summary',this)">📊 碳排彙總</button>
+      </div>
+
+      <!-- ══ TAB：基本資訊 ══ -->
+      <div class="tab-content active" id="t-basic">
+        <div class="notice n-blue">💡 勾選這個工廠實際擁有的設備與使用的資源類別，儲存後對應分頁才會開啟。只有有勾的排放源才會出現在後面各分頁。</div>
+
+        <div class="section-title"><span>⚡ 電力來源 <span class="badge bs2">範疇 2</span></span></div>
+        <div class="check-grid">
+          <label class="check-item on"><input type="checkbox" checked> 外購電力（台電）</label>
+          <label class="check-item"><input type="checkbox"> 太陽能自發自用</label>
+          <label class="check-item"><input type="checkbox"> 購買再生能源（REC）</label>
+        </div>
+
+        <div class="section-title"><span>⛽ 燃料 — 移動燃燒 <span class="badge bs1">範疇 1</span></span></div>
+        <div class="check-grid">
+          <label class="check-item on"><input type="checkbox" checked> 公務車 — 汽油</label>
+          <label class="check-item on"><input type="checkbox" checked> 公務車 — 柴油</label>
+          <label class="check-item"><input type="checkbox"> 堆高機 — 柴油</label>
+          <label class="check-item"><input type="checkbox"> 堆高機 — 生質柴油</label>
+          <label class="check-item"><input type="checkbox"> 發電機 — B35 生質柴油</label>
+        </div>
+
+        <div class="section-title"><span>🔥 其他燃燒 — 固定燃燒 <span class="badge bs1">範疇 1</span></span></div>
+        <div class="check-grid">
+          <label class="check-item on"><input type="checkbox" checked> 鍋爐 — 柴油</label>
+          <label class="check-item"><input type="checkbox"> 鍋爐 — 天然氣</label>
+          <label class="check-item"><input type="checkbox"> 廚房 LPG</label>
+          <label class="check-item on"><input type="checkbox" checked> 鍋爐 — 木材生質 🌿</label>
+          <label class="check-item"><input type="checkbox"> 鍋爐 — 椰殼生質 🌿</label>
+          <label class="check-item on"><input type="checkbox" checked> 鍋爐 — 汽油</label>
+        </div>
+
+        <div class="section-title"><span>❄️ 逸散排放 <span class="badge bs1">範疇 1</span></span></div>
+        <div class="check-grid">
+          <label class="check-item on"><input type="checkbox" checked> 冷媒逸散 — R134a</label>
+          <label class="check-item on"><input type="checkbox" checked> 冷媒逸散 — R410A</label>
+          <label class="check-item"><input type="checkbox"> 冷媒逸散 — R32</label>
+          <label class="check-item"><input type="checkbox"> 冷媒逸散 — R22</label>
+          <label class="check-item"><input type="checkbox"> 冷媒逸散 — R407C</label>
+          <label class="check-item on"><input type="checkbox" checked> 滅火器 — CO₂</label>
+          <label class="check-item"><input type="checkbox"> 滅火器 — FM200</label>
+          <label class="check-item"><input type="checkbox"> 滅火器 — ABC 乾粉</label>
+          <label class="check-item on"><input type="checkbox" checked> 斷路器 — SF₆</label>
+          <label class="check-item"><input type="checkbox"> 焊接製程</label>
+          <label class="check-item"><input type="checkbox"> 化糞池</label>
+        </div>
+
+        <div class="section-title"><span>♻️ 廢棄物處理 <span class="badge bs3">範疇 3</span></span></div>
+        <div class="check-grid">
+          <label class="check-item on"><input type="checkbox" checked> 廢布/紡織廢棄物</label>
+          <label class="check-item"><input type="checkbox"> 金屬廢料（針具等）</label>
+          <label class="check-item on"><input type="checkbox" checked> 塑膠廢棄物</label>
+          <label class="check-item on"><input type="checkbox" checked> 廢紙</label>
+          <label class="check-item haz"><input type="checkbox"> 印刷框（有害）</label>
+          <label class="check-item haz on"><input type="checkbox" checked> 廢化學品（有害）</label>
+          <label class="check-item haz on"><input type="checkbox" checked> 廢油（生產/維修，有害）</label>
+        </div>
+
+        <div class="section-title"><span>🛒 採購商品與服務 <span class="badge bs3">Category 3.1</span></span></div>
+        <div class="check-grid">
+          <label class="check-item on"><input type="checkbox" checked> 採購布料（Higg MSI，3-1-A）</label>
+          <label class="check-item"><input type="checkbox"> 採購線料（3-1-B）</label>
+          <label class="check-item"><input type="checkbox"> 採購紙箱（3-1-C）</label>
+          <label class="check-item"><input type="checkbox"> 採購塑料袋 Polybag（3-1-D）</label>
+          <label class="check-item on"><input type="checkbox" checked> 採購水資源（3-1-E）</label>
+        </div>
+
+        <div class="section-title"><span>⚡ 燃料及能源相關 <span class="badge bs3">Category 3.3</span></span><span style="font-size:11px;color:#059669;font-weight:400">依電力用量自動推算</span></div>
+        <div class="check-grid">
+          <label class="check-item on"><input type="checkbox" checked> T&amp;D 輸配電損失（3-3-A）</label>
+        </div>
+
+        <div class="section-title"><span>♻️ 廢棄物處理 <span class="badge bs3">Category 3.5</span></span></div>
+        <div class="check-grid">
+          <label class="check-item on"><input type="checkbox" checked> 成衣廢棄物—焚化（3-5-A）</label>
+          <label class="check-item"><input type="checkbox"> 工業廢棄物—焚化（3-5-B）</label>
+          <label class="check-item"><input type="checkbox"> 有機廢棄物—厭氧消化（3-5-C）</label>
+          <label class="check-item on"><input type="checkbox" checked> 塑膠廢棄物—回收（3-5-D）</label>
+          <label class="check-item"><input type="checkbox"> 工業廢棄物—掩埋（3-5-E）</label>
+          <label class="check-item on"><input type="checkbox" checked> 成衣廢棄物—回收（3-5-F）</label>
+          <label class="check-item on"><input type="checkbox" checked> 廢水處理（3-5-G）</label>
+        </div>
+
+        <div class="section-title"><span>📦 上游運輸與配送 <span class="badge bs3">Category 3.4</span></span></div>
+        <div class="check-grid">
+          <label class="check-item"><input type="checkbox"> 飛機運輸（3-4-C）</label>
+          <label class="check-item"><input type="checkbox"> 陸運（3-4-A）</label>
+          <label class="check-item on"><input type="checkbox" checked> 海運（3-4-B）</label>
+        </div>
+
+        <div class="section-title"><span>🚛 下游運輸與配送 <span class="badge bs3">Category 3.9</span></span></div>
+        <div class="check-grid">
+          <label class="check-item on"><input type="checkbox" checked> 飛機運輸（3-9-B）</label>
+          <label class="check-item"><input type="checkbox"> 陸運（3-9-A）</label>
+          <label class="check-item on"><input type="checkbox" checked> 海運（3-9-C）</label>
+        </div>
+
+        <div class="section-title"><span>✈️ 商務旅行 <span class="badge bs3">Category 3.6</span></span></div>
+        <div class="check-grid">
+          <label class="check-item on"><input type="checkbox" checked> 飛機出差（3-6-A）</label>
+          <label class="check-item on"><input type="checkbox" checked> 飯店住宿（3-6-B）</label>
+        </div>
+
+        <div class="section-title"><span>🚌 員工通勤 <span class="badge bs3">Category 3.7</span></span></div>
+        <div class="check-grid">
+          <label class="check-item on"><input type="checkbox" checked> 汽車（3-7-B）</label>
+          <label class="check-item on"><input type="checkbox" checked> 機車（3-7-C）</label>
+          <label class="check-item"><input type="checkbox"> 公車（3-7-D）</label>
+          <label class="check-item"><input type="checkbox"> 電動腳踏車（3-7-E）</label>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+          <button class="btn">重設</button>
+          <button class="btn pri" onclick="alert('已儲存！對應分頁已開放。')">💾 儲存並開放對應分頁</button>
+        </div>
+      </div>
+
+      <!-- ══ TAB：電力 ══ -->
+      <div class="tab-content" id="t-elec">
+        <div class="notice n-blue">💡 外購電力，範疇 2。每月填入實際用電量（kWh），CO₂e 由系統自動計算（台電係數 0.474 kgCO₂e/kWh）。Market-Based 計算已扣除 REC 憑證，詳見「REC 憑證管理」。</div>
+
+        <table class="monthly-table">
+          <colgroup>
+            <col style="width:60px"><col style="width:140px"><col style="width:80px">
+            <col style="width:110px"><col style="width:110px"><col style="width:90px">
+            <col style="width:90px"><col style="width:90px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>月份</th><th>用電量</th><th>單位</th>
+              <th>CO₂e Location<br><span style="font-weight:400;color:#9CA3AF">(tCO₂e)</span></th>
+              <th>CO₂e Market<br><span style="font-weight:400;color:#9CA3AF">(tCO₂e)</span></th>
+              <th>電費單</th><th>審查</th><th>備註</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="month-label">1月</td>
+              <td><input type="number" value="63000"></td>
+              <td><select><option>kWh</option><option>MWh</option></select></td>
+              <td><div class="co2e-cell">29.92</div></td>
+              <td><div class="co2e-cell">24.15 <span style="font-size:10px;color:#059669">REC</span></div></td>
+              <td><div class="up-done">✅ 已上傳</div></td>
+              <td><button class="rev-btn rev-yes">✅ 已審查</button></td>
+              <td><input type="text" placeholder="備註"></td>
+            </tr>
+            <tr>
+              <td class="month-label">2月</td>
+              <td><input type="number" value="61500"></td>
+              <td><select><option>kWh</option><option>MWh</option></select></td>
+              <td><div class="co2e-cell">29.15</div></td>
+              <td><div class="co2e-cell">29.15</div></td>
+              <td><div class="up-done">✅ 已上傳</div></td>
+              <td><button class="rev-btn rev-yes">✅ 已審查</button></td>
+              <td><input type="text" placeholder="備註"></td>
+            </tr>
+            <tr>
+              <td class="month-label">3月</td>
+              <td><input type="number" value="68200"></td>
+              <td><select><option>kWh</option><option>MWh</option></select></td>
+              <td><div class="co2e-cell">32.33</div></td>
+              <td><div class="co2e-cell">32.33</div></td>
+              <td><div class="up-done">✅ 已上傳</div></td>
+              <td><button class="rev-btn rev-yes">✅ 已審查</button></td>
+              <td><input type="text" placeholder="備註"></td>
+            </tr>
+            <tr>
+              <td class="month-label">4月</td>
+              <td><input type="number" value="71000"></td>
+              <td><select><option>kWh</option><option>MWh</option></select></td>
+              <td><div class="co2e-cell">33.67</div></td>
+              <td><div class="co2e-cell">33.67</div></td>
+              <td><div class="up-empty">📎 上傳</div></td>
+              <td><button class="rev-btn rev-no">⬜ 未審查</button></td>
+              <td><input type="text" placeholder="備註"></td>
+            </tr>
+            <tr>
+              <td class="month-label">5月</td>
+              <td><input type="number" value="75400"></td>
+              <td><select><option>kWh</option><option>MWh</option></select></td>
+              <td><div class="co2e-cell">35.76</div></td>
+              <td><div class="co2e-cell">35.76</div></td>
+              <td><div class="up-empty">📎 上傳</div></td>
+              <td><button class="rev-btn rev-no">⬜ 未審查</button></td>
+              <td><input type="text" placeholder="備註"></td>
+            </tr>
+            <tr>
+              <td class="month-label">6月</td>
+              <td><input type="number" value="80100"></td>
+              <td><select><option>kWh</option><option>MWh</option></select></td>
+              <td><div class="co2e-cell">37.97</div></td>
+              <td><div class="co2e-cell">37.97</div></td>
+              <td><div class="up-empty">📎 上傳</div></td>
+              <td><button class="rev-btn rev-no">⬜ 未審查</button></td>
+              <td><input type="text" placeholder="備註"></td>
+            </tr>
+            <tr><td class="month-label" style="color:#D1D5DB">7月</td><td><input type="number" placeholder="待填"></td><td><select><option>kWh</option></select></td><td><div class="co2e-empty">—</div></td><td><div class="co2e-empty">—</div></td><td><div class="up-empty">📎 上傳</div></td><td><button class="rev-btn rev-no" disabled style="opacity:.4">⬜ 未填</button></td><td><input type="text" placeholder="備註"></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">8月</td><td><input type="number" placeholder="待填"></td><td><select><option>kWh</option></select></td><td><div class="co2e-empty">—</div></td><td><div class="co2e-empty">—</div></td><td><div class="up-empty">📎 上傳</div></td><td><button class="rev-btn rev-no" disabled style="opacity:.4">⬜ 未填</button></td><td><input type="text" placeholder="備註"></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">9月</td><td><input type="number" placeholder="待填"></td><td><select><option>kWh</option></select></td><td><div class="co2e-empty">—</div></td><td><div class="co2e-empty">—</div></td><td><div class="up-empty">📎 上傳</div></td><td><button class="rev-btn rev-no" disabled style="opacity:.4">⬜ 未填</button></td><td><input type="text" placeholder="備註"></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">10月</td><td><input type="number" placeholder="待填"></td><td><select><option>kWh</option></select></td><td><div class="co2e-empty">—</div></td><td><div class="co2e-empty">—</div></td><td><div class="up-empty">📎 上傳</div></td><td><button class="rev-btn rev-no" disabled style="opacity:.4">⬜ 未填</button></td><td><input type="text" placeholder="備註"></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">11月</td><td><input type="number" placeholder="待填"></td><td><select><option>kWh</option></select></td><td><div class="co2e-empty">—</div></td><td><div class="co2e-empty">—</div></td><td><div class="up-empty">📎 上傳</div></td><td><button class="rev-btn rev-no" disabled style="opacity:.4">⬜ 未填</button></td><td><input type="text" placeholder="備註"></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">12月</td><td><input type="number" placeholder="待填"></td><td><select><option>kWh</option></select></td><td><div class="co2e-empty">—</div></td><td><div class="co2e-empty">—</div></td><td><div class="up-empty">📎 上傳</div></td><td><button class="rev-btn rev-no" disabled style="opacity:.4">⬜ 未填</button></td><td><input type="text" placeholder="備註"></td></tr>
+            <tr class="annual-row">
+              <td>全年合計</td><td><b>419,200 kWh</b></td><td>—</td>
+              <td><b>198.80</b></td><td><b>192.03</b></td>
+              <td colspan="3" style="color:#6B7280;font-size:11px">已填 6 個月 ／ 已審查 3 個月</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="bar-actions">
+          <button class="btn">取消</button>
+          <button class="btn pri" onclick="alert('電力資料已儲存！')">💾 儲存本分頁</button>
+        </div>
+      </div>
+
+      <!-- ══ TAB：燃料 ══ -->
+      <div class="tab-content" id="t-fuel">
+        <div class="notice n-amber">⛽ 公務車汽油 / 柴油，範疇 1 移動燃燒。同一個月如有多台車，可在同月份點「+ 新增一列」。</div>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">📌 公務車 — 汽油（1-2A-1）</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:60px"><col style="width:140px"><col style="width:80px"><col style="width:130px"><col style="width:90px"><col style="width:90px"><col style="width:90px"></colgroup>
+          <thead><tr><th>月份</th><th>用量</th><th>單位</th><th>CO₂e (tCO₂e)<br><span style="font-weight:400;color:#9CA3AF">自動計算</span></th><th>收據</th><th>審查</th><th>備註</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="number" value="180"></td><td><select><option>L</option></select></td><td><div class="co2e-cell">0.416</div></td><td><div class="up-done">✅ 已上傳</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td><td><input type="text" value="ABC-1234 / XYZ-5678"></td></tr>
+            <tr><td class="month-label">2月</td><td><input type="number" value="165"></td><td><select><option>L</option></select></td><td><div class="co2e-cell">0.381</div></td><td><div class="up-done">✅ 已上傳</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td><td><input type="text" placeholder="備註"></td></tr>
+            <tr><td class="month-label">3月</td><td><input type="number" value="195"></td><td><select><option>L</option></select></td><td><div class="co2e-cell">0.451</div></td><td><div class="up-done">✅ 已上傳</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td><td><input type="text" placeholder="備註"></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">4月</td><td><input type="number" placeholder="待填"></td><td><select><option>L</option></select></td><td><div class="co2e-empty">—</div></td><td><div class="up-empty">📎 上傳</div></td><td><button class="rev-btn rev-no" disabled style="opacity:.4">⬜ 未填</button></td><td><input type="text" placeholder="備註"></td></tr>
+            <tr style="color:#D1D5DB"><td class="month-label">5月</td><td><input type="number" placeholder="待填"></td><td><select><option>L</option></select></td><td><div class="co2e-empty">—</div></td><td><div class="up-empty">📎 上傳</div></td><td><button class="rev-btn rev-no" disabled style="opacity:.4">⬜ 未填</button></td><td><input type="text" placeholder="備註"></td></tr>
+            <tr style="color:#D1D5DB"><td class="month-label">6月</td><td><input type="number" placeholder="待填"></td><td><select><option>L</option></select></td><td><div class="co2e-empty">—</div></td><td><div class="up-empty">📎 上傳</div></td><td><button class="rev-btn rev-no" disabled style="opacity:.4">⬜ 未填</button></td><td><input type="text" placeholder="備註"></td></tr>
+            <tr style="color:#D1D5DB"><td class="month-label">7~12月</td><td colspan="6" style="color:#D1D5DB;font-size:11px">尚未填報（共 6 個月）</td></tr>
+            <tr class="annual-row"><td>全年合計</td><td><b>540 L</b></td><td>—</td><td><b>1.248</b></td><td colspan="3" style="color:#6B7280;font-size:11px">已填 3 個月</td></tr>
+          </tbody>
+        </table>
+        <div class="bar-actions">
+          <button class="btn">取消</button>
+          <button class="btn pri">💾 儲存本分頁</button>
+        </div>
+      </div>
+
+      <!-- ══ TAB：其他燃燒 ══ -->
+      <div class="tab-content" id="t-misc">
+        <div class="notice n-amber">🔥 固定燃燒設備。木材生質鍋爐的 CO₂ 部分獨立揭露（生質 CO₂），不計入範疇一合計。</div>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">📌 鍋爐 — 柴油（1-1A-1）</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:60px"><col style="width:140px"><col style="width:80px"><col style="width:130px"><col style="width:90px"><col style="width:90px"></colgroup>
+          <thead><tr><th>月份</th><th>用量</th><th>單位</th><th>CO₂e (tCO₂e)</th><th>收據</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="number" value="320"></td><td><select><option>L</option></select></td><td><div class="co2e-cell">0.853</div></td><td><div class="up-done">✅ 已上傳</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label">2月</td><td><input type="number" value="290"></td><td><select><option>L</option></select></td><td><div class="co2e-cell">0.773</div></td><td><div class="up-done">✅ 已上傳</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label">3~12月</td><td colspan="5" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>全年合計</td><td><b>610 L</b></td><td>—</td><td><b>1.626</b></td><td colspan="2" style="color:#6B7280;font-size:11px">已填 2 月</td></tr>
+          </tbody>
+        </table>
+        <div style="height:12px"></div>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;display:flex;align-items:center;gap:8px">📌 鍋爐 — 木材生質（1-1B-1）<span style="font-size:11px;background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:10px;font-weight:500">🌿 生質 CO₂ 獨立揭露</span></div>
+        <table class="monthly-table">
+          <colgroup><col style="width:60px"><col style="width:130px"><col style="width:80px"><col style="width:150px"><col style="width:120px"><col style="width:90px"></colgroup>
+          <thead><tr><th>月份</th><th>燃燒量</th><th>單位</th><th>CO₂e S1 (CH₄+N₂O)<br><span style="font-weight:400;color:#9CA3AF">計入範疇一</span></th><th>生質 CO₂<br><span style="font-weight:400;color:#059669">獨立揭露</span></th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="number" value="1200"></td><td><select><option>kg</option></select></td><td><div class="co2e-cell">0.046</div></td><td><div style="font-weight:600;color:#059669;background:#DCFCE7;border-radius:4px;padding:3px 7px;text-align:right;font-size:12px">2.196</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label">2月</td><td><input type="number" value="950"></td><td><select><option>kg</option></select></td><td><div class="co2e-cell">0.037</div></td><td><div style="font-weight:600;color:#059669;background:#DCFCE7;border-radius:4px;padding:3px 7px;text-align:right;font-size:12px">1.739</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td></tr>
+            <tr><td class="month-label">3~12月</td><td colspan="5" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>全年合計</td><td><b>2,150 kg</b></td><td>—</td><td><b>0.083</b></td><td style="color:#059669"><b>3.935</b></td><td></td></tr>
+          </tbody>
+        </table>
+        <div class="bar-actions">
+          <button class="btn pri">💾 儲存本分頁</button>
+        </div>
+      </div>
+
+      <!-- ══ TAB：逸散 ══ -->
+      <div class="tab-content" id="t-evap">
+        <div class="notice n-blue">❄️ 冷媒逸散、SF₆、滅火器。每次充填/維修記一筆，同月可多筆。GWP 依 IPCC AR6 自動套用。</div>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">📌 冷媒逸散 — R410A（1-4A-6）｜GWP = 2,088</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:60px"><col style="width:130px"><col style="width:80px"><col style="width:130px"><col style="width:90px"><col style="width:90px"><col style="width:90px"></colgroup>
+          <thead><tr><th>月份</th><th>充填量</th><th>單位</th><th>CO₂e (tCO₂e)<br><span style="font-weight:400;color:#9CA3AF">× GWP 2,088</span></th><th>紀錄單</th><th>審查</th><th>備註</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">3月</td><td><input type="number" value="2.5"></td><td><select><option>kg</option></select></td><td><div class="co2e-cell">5.220</div></td><td><div class="up-done">✅ 已上傳</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td><td><input type="text" value="空調設備 AC-03 維修"></td></tr>
+            <tr><td class="month-label">3月 #2</td><td><input type="number" value="1.2"></td><td><select><option>kg</option></select></td><td><div class="co2e-cell">2.506</div></td><td><div class="up-done">✅ 已上傳</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td><td><input type="text" value="空調設備 AC-07 維修"></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">其他月份</td><td colspan="6" style="color:#9CA3AF;font-size:11px">本年度無其他冷媒充填記錄（有記錄時按月份新增）</td></tr>
+            <tr class="annual-row"><td>全年合計</td><td><b>3.7 kg</b></td><td>—</td><td><b>7.726</b></td><td colspan="3" style="color:#6B7280;font-size:11px">共 2 筆充填記錄</td></tr>
+          </tbody>
+        </table>
+        <div class="bar-actions"><button class="btn pri">💾 儲存本分頁</button></div>
+      </div>
+
+      <!-- ══ TAB：採購商品 3.1 ══ -->
+      <div class="tab-content" id="t-purchased">
+        <div class="notice n-green">🛒 採購商品與服務，Category 3.1。布料使用 <b>Higg MSI</b> 係數；線料/紙箱/塑料袋使用 UK Gov 2025；水資源使用 UK Gov Water Supply 係數。</div>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin:8px 0 8px;display:flex;align-items:center;gap:8px">📌 採購布料（3-1-A）<span style="font-size:10px;background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:10px">Higg MSI</span></div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:120px"><col style="width:65px"><col style="width:175px"><col style="width:115px"><col style="width:75px"><col style="width:85px"></colgroup>
+          <thead><tr><th>月份</th><th>採購量</th><th>單位</th><th>布料類型（Higg MSI）</th><th>CO₂e (tCO₂e)</th><th>採購單</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="number" value="12500"></td><td><select><option>kg</option></select></td><td><select style="font-size:11px"><option>平織棉 5.89 kgCO₂e/kg</option><option>針織棉 5.29</option><option>聚酯纖維 7.20</option><option>混紡 6.12</option></select></td><td><div class="co2e-cell">73.63</div></td><td><div class="up-done">✅</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label">2月</td><td><input type="number" value="11800"></td><td><select><option>kg</option></select></td><td><select style="font-size:11px"><option>平織棉 5.89 kgCO₂e/kg</option></select></td><td><div class="co2e-cell">69.50</div></td><td><div class="up-done">✅</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label">3月</td><td><input type="number" value="13200"></td><td><select><option>kg</option></select></td><td><select style="font-size:11px"><option>平織棉 5.89 kgCO₂e/kg</option></select></td><td><div class="co2e-cell">77.75</div></td><td><div class="up-empty">📎</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">4~12月</td><td colspan="6" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>小計</td><td><b>37,500 kg</b></td><td>—</td><td>—</td><td><b>220.88</b></td><td colspan="2" style="color:#6B7280;font-size:11px">已填 3 月</td></tr>
+          </tbody>
+        </table>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin:14px 0 8px">📌 採購線料（3-1-B）</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:130px"><col style="width:65px"><col style="width:115px"><col style="width:75px"><col style="width:85px"></colgroup>
+          <thead><tr><th>月份</th><th>採購量</th><th>單位</th><th>CO₂e (tCO₂e)</th><th>採購單</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="number" value="850"></td><td><select><option>kg</option></select></td><td><div class="co2e-cell">2.98</div></td><td><div class="up-done">✅</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label">2月</td><td><input type="number" value="780"></td><td><select><option>kg</option></select></td><td><div class="co2e-cell">2.73</div></td><td><div class="up-empty">📎</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">3~12月</td><td colspan="5" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>小計</td><td><b>1,630 kg</b></td><td>—</td><td><b>5.71</b></td><td colspan="2"></td></tr>
+          </tbody>
+        </table>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin:14px 0 8px">📌 採購紙箱（3-1-C）</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:130px"><col style="width:65px"><col style="width:115px"><col style="width:75px"><col style="width:85px"></colgroup>
+          <thead><tr><th>月份</th><th>採購量</th><th>單位</th><th>CO₂e (tCO₂e)</th><th>採購單</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="number" value="2200"></td><td><select><option>kg</option></select></td><td><div class="co2e-cell">1.584</div></td><td><div class="up-empty">📎</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">2~12月</td><td colspan="5" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>小計</td><td><b>2,200 kg</b></td><td>—</td><td><b>1.584</b></td><td colspan="2"></td></tr>
+          </tbody>
+        </table>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin:14px 0 8px">📌 採購塑料袋 Polybag（3-1-D）</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:130px"><col style="width:65px"><col style="width:115px"><col style="width:75px"><col style="width:85px"></colgroup>
+          <thead><tr><th>月份</th><th>採購量</th><th>單位</th><th>CO₂e (tCO₂e)</th><th>採購單</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="number" value="480"></td><td><select><option>kg</option></select></td><td><div class="co2e-cell">0.912</div></td><td><div class="up-empty">📎</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">2~12月</td><td colspan="5" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>小計</td><td><b>480 kg</b></td><td>—</td><td><b>0.912</b></td><td colspan="2"></td></tr>
+          </tbody>
+        </table>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin:14px 0 8px">📌 採購水資源（3-1-E）</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:130px"><col style="width:65px"><col style="width:115px"><col style="width:75px"><col style="width:85px"></colgroup>
+          <thead><tr><th>月份</th><th>用水量</th><th>單位</th><th>CO₂e (tCO₂e)</th><th>水費單</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="number" value="1850"></td><td><select><option>m³</option></select></td><td><div class="co2e-cell">0.648</div></td><td><div class="up-done">✅</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label">2月</td><td><input type="number" value="1720"></td><td><select><option>m³</option></select></td><td><div class="co2e-cell">0.602</div></td><td><div class="up-empty">📎</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">3~12月</td><td colspan="5" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>小計</td><td><b>3,570 m³</b></td><td>—</td><td><b>1.250</b></td><td colspan="2"></td></tr>
+          </tbody>
+        </table>
+        <div class="bar-actions"><button class="btn pri">💾 儲存本分頁</button></div>
+      </div>
+
+      <!-- ══ TAB：能源相關 3.3 ══ -->
+      <div class="tab-content" id="t-energy-rel">
+        <div class="notice n-blue">⚡ 燃料及能源相關活動（不含 S1/S2），Category 3.3。T&amp;D 輸配電損失依各月外購電力 × 台電 T&amp;D 係數自動推算，<b>不需手動填報</b>，確認電力分頁已填即自動更新。</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:60px"><col style="width:140px"><col style="width:80px"><col style="width:140px"><col style="width:130px"></colgroup>
+          <thead><tr><th>月份</th><th>外購電力</th><th>單位</th><th>T&amp;D 係數 (kgCO₂e/kWh)<br><span style="font-weight:400;color:#9CA3AF">自動套用</span></th><th>CO₂e (tCO₂e)<br><span style="font-weight:400;color:#9CA3AF">自動計算</span></th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td>63,000</td><td>kWh</td><td>0.0237</td><td><div class="co2e-cell">0.710</div></td></tr>
+            <tr><td class="month-label">2月</td><td>61,500</td><td>kWh</td><td>0.0237</td><td><div class="co2e-cell">0.693</div></td></tr>
+            <tr><td class="month-label">3月</td><td>68,200</td><td>kWh</td><td>0.0237</td><td><div class="co2e-cell">0.768</div></td></tr>
+            <tr><td class="month-label">4月</td><td>71,000</td><td>kWh</td><td>0.0237</td><td><div class="co2e-cell">0.800</div></td></tr>
+            <tr><td class="month-label">5月</td><td>75,400</td><td>kWh</td><td>0.0237</td><td><div class="co2e-cell">0.849</div></td></tr>
+            <tr><td class="month-label">6月</td><td>80,100</td><td>kWh</td><td>0.0237</td><td><div class="co2e-cell">0.902</div></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">7~12月</td><td colspan="4" style="color:#9CA3AF;font-size:11px">電力分頁尚未填報</td></tr>
+            <tr class="annual-row"><td>全年合計</td><td><b>419,200 kWh</b></td><td>—</td><td>0.0237</td><td><b>4.722</b></td></tr>
+          </tbody>
+        </table>
+        <div style="padding:8px 0;font-size:11px;color:#9CA3AF">* 係數來源：台電 2025，T&amp;D 損失率 5%（TWN）／ 各廠自動套用所在國家 T&amp;D 係數</div>
+      </div>
+
+      <!-- ══ TAB：廢棄物 3.5 ══ -->
+      <div class="tab-content" id="t-waste">
+        <div class="notice n-green">♻️ 廢棄物處理，Category 3.5。依廢棄物種類 × 處理方式（焚化/掩埋/回收/厭氧消化）× UK Gov 2025 係數計算。廢水處理獨立子項。同月可多筆不同廢棄物類型。</div>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin:8px 0 8px">📌 工業廢棄物處理（3-5-A ～ F）</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:200px"><col style="width:110px"><col style="width:65px"><col style="width:115px"><col style="width:70px"><col style="width:75px"></colgroup>
+          <thead><tr><th>月份</th><th>廢棄物種類 × 處理方式</th><th>重量</th><th>單位</th><th>CO₂e (tCO₂e)</th><th>清運單</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><select style="font-size:11px;width:100%"><option>成衣廢棄物—焚化（3-5-A）</option><option>工業廢棄物—焚化（3-5-B）</option><option>有機廢棄物—厭氧消化（3-5-C）</option><option>塑膠廢棄物—開環回收（3-5-D）</option><option>工業廢棄物—掩埋（3-5-E）</option><option>成衣廢棄物—回收（3-5-F）</option></select></td><td><input type="number" value="320"></td><td><select><option>kg</option></select></td><td><div class="co2e-cell">0.384</div></td><td><div class="up-done">✅</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label">1月 #2</td><td><select style="font-size:11px;width:100%"><option selected>塑膠廢棄物—開環回收（3-5-D）</option></select></td><td><input type="number" value="45"></td><td><select><option>kg</option></select></td><td><div class="co2e-cell">0.068</div></td><td><div class="up-done">✅</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label">2月</td><td><select style="font-size:11px;width:100%"><option>成衣廢棄物—焚化（3-5-A）</option></select></td><td><input type="number" value="280"></td><td><select><option>kg</option></select></td><td><div class="co2e-cell">0.336</div></td><td><div class="up-empty">📎</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">3~12月</td><td colspan="6" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>小計</td><td>—</td><td><b>645 kg</b></td><td>—</td><td><b>0.788</b></td><td colspan="2" style="color:#6B7280;font-size:11px">2個月，3筆</td></tr>
+          </tbody>
+        </table>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin:14px 0 8px">📌 廢水處理（3-5-G）</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:130px"><col style="width:65px"><col style="width:115px"><col style="width:75px"><col style="width:75px"></colgroup>
+          <thead><tr><th>月份</th><th>廢水量</th><th>單位</th><th>CO₂e (tCO₂e)</th><th>記錄</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="number" value="1200"></td><td><select><option>m³</option></select></td><td><div class="co2e-cell">0.196</div></td><td><div class="up-done">✅</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label">2月</td><td><input type="number" value="1050"></td><td><select><option>m³</option></select></td><td><div class="co2e-cell">0.172</div></td><td><div class="up-empty">📎</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">3~12月</td><td colspan="5" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>小計</td><td><b>2,250 m³</b></td><td>—</td><td><b>0.368</b></td><td colspan="2"></td></tr>
+          </tbody>
+        </table>
+        <div class="bar-actions"><button class="btn pri">💾 儲存本分頁</button></div>
+      </div>
+
+      <!-- ══ TAB：上游運輸 3.4 ══ -->
+      <div class="tab-content" id="t-upstream">
+        <div class="notice n-green">📦 上游運輸與配送，Category 3.4。依噸公里（tonne-km）× 運具係數計算。係數來源：UK Gov 2025；距離參考 ICAO（飛機）、Google Maps（陸運）、Sea Rates（海運）。</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:90px"><col style="width:130px"><col style="width:70px"><col style="width:115px"><col style="width:70px"><col style="width:75px"><col style="width:100px"></colgroup>
+          <thead><tr><th>月份</th><th>運具</th><th>運輸量</th><th>單位</th><th>CO₂e (tCO₂e)</th><th>提單</th><th>審查</th><th>備註</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><select style="font-size:11px"><option>海運</option><option>陸運</option><option>飛機</option></select></td><td><input type="number" value="8500"></td><td><select><option>tonne-km</option></select></td><td><div class="co2e-cell">0.170</div></td><td><div class="up-done">✅</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td><td><input type="text" value="CAB→TWN 布料"></td></tr>
+            <tr><td class="month-label">1月 #2</td><td><select style="font-size:11px"><option selected>陸運</option></select></td><td><input type="number" value="320"></td><td><select><option>tonne-km</option></select></td><td><div class="co2e-cell">0.041</div></td><td><div class="up-done">✅</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td><td><input type="text" value="廠區配送"></td></tr>
+            <tr><td class="month-label">2月</td><td><select style="font-size:11px"><option>海運</option></select></td><td><input type="number" value="7200"></td><td><select><option>tonne-km</option></select></td><td><div class="co2e-cell">0.144</div></td><td><div class="up-empty">📎</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td><td><input type="text" placeholder="備註"></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">3~12月</td><td colspan="7" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>全年合計</td><td>—</td><td><b>16,020 t-km</b></td><td>—</td><td><b>0.355</b></td><td colspan="3" style="color:#6B7280;font-size:11px">2個月，3筆</td></tr>
+          </tbody>
+        </table>
+        <div class="bar-actions"><button class="btn pri">💾 儲存本分頁</button></div>
+      </div>
+
+      <!-- ══ TAB：下游運輸 3.9 ══ -->
+      <div class="tab-content" id="t-downstream">
+        <div class="notice n-green">🚛 下游運輸與配送，Category 3.9。工廠出貨到買家的運輸，係數來源同上游（UK Gov 2025）。成衣出口通常以飛機為主。</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:90px"><col style="width:130px"><col style="width:70px"><col style="width:115px"><col style="width:70px"><col style="width:75px"><col style="width:100px"></colgroup>
+          <thead><tr><th>月份</th><th>運具</th><th>運輸量</th><th>單位</th><th>CO₂e (tCO₂e)</th><th>提單</th><th>審查</th><th>備註</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><select style="font-size:11px"><option>飛機</option><option>海運</option><option>陸運</option></select></td><td><input type="number" value="12400"></td><td><select><option>tonne-km</option></select></td><td><div class="co2e-cell">7.564</div></td><td><div class="up-done">✅</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td><td><input type="text" value="TWN→US 成衣出口"></td></tr>
+            <tr><td class="month-label">2月</td><td><select style="font-size:11px"><option>飛機</option></select></td><td><input type="number" value="9800"></td><td><select><option>tonne-km</option></select></td><td><div class="co2e-cell">5.978</div></td><td><div class="up-empty">📎</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td><td><input type="text" placeholder="備註"></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">3~12月</td><td colspan="7" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>全年合計</td><td>—</td><td><b>22,200 t-km</b></td><td>—</td><td><b>13.542</b></td><td colspan="3" style="color:#6B7280;font-size:11px">2個月</td></tr>
+          </tbody>
+        </table>
+        <div class="bar-actions"><button class="btn pri">💾 儲存本分頁</button></div>
+      </div>
+
+      <!-- ══ TAB：商務旅行 3.6 ══ -->
+      <div class="tab-content" id="t-biztravel">
+        <div class="notice n-green">✈️ 商務旅行，Category 3.6。飛機出差依 ICAO 航點距離 × UK Gov 飛機係數；飯店住宿依住宿地點套用 UK Gov 各城市飯店係數（上海 / 印尼 Semarang 等）。</div>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin:8px 0 8px">📌 飛機出差（3-6-A）</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:155px"><col style="width:110px"><col style="width:65px"><col style="width:115px"><col style="width:70px"><col style="width:75px"></colgroup>
+          <thead><tr><th>月份</th><th>航線（起點→終點）</th><th>飛行距離</th><th>單位</th><th>CO₂e (tCO₂e)</th><th>出差單</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="text" value="TPE→PNH（柬埔寨）" style="font-size:11px"></td><td><input type="number" value="2840"></td><td><select><option>km</option><option>person-km</option></select></td><td><div class="co2e-cell">0.170</div></td><td><div class="up-done">✅</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label">2月</td><td><input type="text" value="TPE→SUB（印尼）" style="font-size:11px"></td><td><input type="number" value="3650"></td><td><select><option>km</option></select></td><td><div class="co2e-cell">0.219</div></td><td><div class="up-empty">📎</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">3~12月</td><td colspan="6" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>小計</td><td>—</td><td><b>6,490 km</b></td><td>—</td><td><b>0.389</b></td><td colspan="2"></td></tr>
+          </tbody>
+        </table>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin:14px 0 8px">📌 飯店住宿（3-6-B）</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:155px"><col style="width:100px"><col style="width:75px"><col style="width:115px"><col style="width:70px"><col style="width:75px"></colgroup>
+          <thead><tr><th>月份</th><th>住宿地點</th><th>住宿房晚</th><th>單位</th><th>CO₂e (tCO₂e)</th><th>收據</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><select style="font-size:11px"><option>上海</option><option>印尼 Semarang</option><option>柬埔寨 Phnom Penh</option><option>越南 Hanoi</option><option>越南 Ho Chi Minh</option></select></td><td><input type="number" value="3"></td><td><select><option>room-night</option></select></td><td><div class="co2e-cell">0.021</div></td><td><div class="up-done">✅</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label">2月</td><td><select style="font-size:11px"><option selected>印尼 Semarang</option></select></td><td><input type="number" value="4"></td><td><select><option>room-night</option></select></td><td><div class="co2e-cell">0.032</div></td><td><div class="up-empty">📎</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">3~12月</td><td colspan="6" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>小計</td><td>—</td><td><b>7 room-nights</b></td><td>—</td><td><b>0.053</b></td><td colspan="2"></td></tr>
+          </tbody>
+        </table>
+        <div class="bar-actions"><button class="btn pri">💾 儲存本分頁</button></div>
+      </div>
+
+      <!-- ══ TAB：員工通勤 3.7 ══ -->
+      <div class="tab-content" id="t-commute">
+        <div class="notice n-green">🚌 員工通勤，Category 3.7。汽車/機車/公車使用 UK Gov 2025 係數；電動腳踏車使用中國產品碳足跡資料庫。各交通工具分開填報，通常以季度調查方式取得通勤距離後逐月填入。</div>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin:8px 0 8px">📌 汽車（3-7-B）</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:130px"><col style="width:65px"><col style="width:70px"><col style="width:115px"><col style="width:75px"></colgroup>
+          <thead><tr><th>月份</th><th>通勤距離</th><th>單位</th><th>人數</th><th>CO₂e (tCO₂e)</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="number" value="18500"></td><td><select><option>km</option><option>person-km</option></select></td><td><input type="number" value="62" style="width:55px"></td><td><div class="co2e-cell">0.296</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label">2月</td><td><input type="number" value="16800"></td><td><select><option>km</option></select></td><td><input type="number" value="62" style="width:55px"></td><td><div class="co2e-cell">0.269</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">3~12月</td><td colspan="5" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>小計</td><td><b>35,300 km</b></td><td>—</td><td>62人</td><td><b>0.565</b></td><td></td></tr>
+          </tbody>
+        </table>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin:14px 0 8px">📌 機車（3-7-C）</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:130px"><col style="width:65px"><col style="width:70px"><col style="width:115px"><col style="width:75px"></colgroup>
+          <thead><tr><th>月份</th><th>通勤距離</th><th>單位</th><th>人數</th><th>CO₂e (tCO₂e)</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="number" value="22400"></td><td><select><option>km</option></select></td><td><input type="number" value="58" style="width:55px"></td><td><div class="co2e-cell">0.157</div></td><td><button class="rev-btn rev-yes">✅ 已審查</button></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">2~12月</td><td colspan="5" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>小計</td><td><b>22,400 km</b></td><td>—</td><td>58人</td><td><b>0.157</b></td><td></td></tr>
+          </tbody>
+        </table>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin:14px 0 8px">📌 公車（3-7-D）</div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:130px"><col style="width:65px"><col style="width:70px"><col style="width:115px"><col style="width:75px"></colgroup>
+          <thead><tr><th>月份</th><th>通勤距離</th><th>單位</th><th>人數</th><th>CO₂e (tCO₂e)</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="number" value="4800"></td><td><select><option>km</option></select></td><td><input type="number" value="18" style="width:55px"></td><td><div class="co2e-cell">0.021</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">2~12月</td><td colspan="5" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>小計</td><td><b>4,800 km</b></td><td>—</td><td>18人</td><td><b>0.021</b></td><td></td></tr>
+          </tbody>
+        </table>
+        <div style="font-size:12px;font-weight:600;color:#374151;margin:14px 0 8px">📌 電動腳踏車（3-7-E）<span style="font-size:10px;background:#DCFCE7;color:#166534;padding:2px 7px;border-radius:10px;font-weight:400;margin-left:4px">低碳通勤</span></div>
+        <table class="monthly-table">
+          <colgroup><col style="width:55px"><col style="width:130px"><col style="width:65px"><col style="width:70px"><col style="width:115px"><col style="width:75px"></colgroup>
+          <thead><tr><th>月份</th><th>通勤距離</th><th>單位</th><th>人數</th><th>CO₂e (tCO₂e)</th><th>審查</th></tr></thead>
+          <tbody>
+            <tr><td class="month-label">1月</td><td><input type="number" value="2800"></td><td><select><option>km</option></select></td><td><input type="number" value="7" style="width:55px"></td><td><div class="co2e-cell">0.007</div></td><td><button class="rev-btn rev-no">⬜ 未審查</button></td></tr>
+            <tr><td class="month-label" style="color:#D1D5DB">2~12月</td><td colspan="5" style="color:#9CA3AF;font-size:11px">尚未填報</td></tr>
+            <tr class="annual-row"><td>小計</td><td><b>2,800 km</b></td><td>—</td><td>7人</td><td><b>0.007</b></td><td></td></tr>
+          </tbody>
+        </table>
+        <div class="bar-actions"><button class="btn pri">💾 儲存本分頁</button></div>
+      </div>
+
+      <!-- ══ TAB：碳排彙總 ══ -->
+      <div class="tab-content" id="t-summary">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+          <div class="kpi"><div class="kl">範疇 1（已審查）</div><div class="kv" style="color:#B45309">8.4</div><div class="ku">tCO₂e</div></div>
+          <div class="kpi"><div class="kl">範疇 2 Location（已審查）</div><div class="kv" style="color:#1D4ED8">91.4</div><div class="ku">tCO₂e</div></div>
+          <div class="kpi"><div class="kl">範疇 3（已審查）</div><div class="kv" style="color:#065F46">226.9</div><div class="ku">tCO₂e</div></div>
+          <div class="kpi"><div class="kl">生質 CO₂（獨立揭露）</div><div class="kv" style="color:#059669">3.9</div><div class="ku">tCO₂e</div></div>
+        </div>
+        <div class="notice n-amber">⚠️ 目前 7~12月尚未填報，數字為已填報月份加總（非全年完整數據）。</div>
+        <table class="monthly-table">
+          <thead><tr><th>排放源</th><th>活動數據</th><th>CO₂e (tCO₂e)</th><th>審查狀態</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge bs2" style="margin-right:6px">S2</span>外購電力 Location</td><td>419,200 kWh（6月）</td><td><div class="co2e-cell">198.80</div></td><td>3/6 已審查</td></tr>
+            <tr><td><span class="badge bs1" style="margin-right:6px">S1</span>公務車汽油</td><td>540 L（3月）</td><td><div class="co2e-cell">1.25</div></td><td>2/3 已審查</td></tr>
+            <tr><td><span class="badge bs1" style="margin-right:6px">S1</span>鍋爐柴油</td><td>610 L（2月）</td><td><div class="co2e-cell">1.63</div></td><td>2/2 已審查</td></tr>
+            <tr><td><span class="badge bs1" style="margin-right:6px">S1</span>木材生質（CH₄+N₂O）</td><td>2,150 kg（2月）</td><td><div class="co2e-cell">0.08</div></td><td>1/2 已審查</td></tr>
+            <tr><td style="color:#059669"><span class="badge" style="margin-right:6px;background:#DCFCE7;color:#166534">生質</span>木材生質 CO₂（獨立揭露）</td><td>2,150 kg</td><td><div style="color:#059669;font-weight:600;text-align:right">3.94</div></td><td>—</td></tr>
+            <tr><td><span class="badge bs1" style="margin-right:6px">S1</span>冷媒 R410A</td><td>3.7 kg（2筆）</td><td><div class="co2e-cell">7.73</div></td><td>2/2 已審查</td></tr>
+            <tr><td><span class="badge bs3" style="margin-right:6px">S3</span>廢棄物處理</td><td>645 kg（2月）</td><td><div class="co2e-cell">0.47</div></td><td>2/3 已審查</td></tr>
+            <tr><td><span class="badge bs3" style="margin-right:6px">S3</span>T&amp;D 輸配電損失</td><td>419,200 kWh（6月，自動）</td><td><div class="co2e-cell">4.72</div></td><td>自動計算</td></tr>
+            <tr><td><span class="badge bs3" style="margin-right:6px">S3</span>採購布料（Higg MSI）</td><td>37,500 kg（3月）</td><td><div class="co2e-cell">220.88</div></td><td>2/3 已審查</td></tr>
+            <tr><td><span class="badge bs3" style="margin-right:6px">S3</span>上游運輸（海運+陸運）</td><td>16,020 tonne-km（2月）</td><td><div class="co2e-cell">0.36</div></td><td>2/3 已審查</td></tr>
+            <tr><td><span class="badge bs3" style="margin-right:6px">S3</span>商務旅行</td><td>3,250 km（2月）</td><td><div class="co2e-cell">0.18</div></td><td>1/2 已審查</td></tr>
+            <tr><td><span class="badge bs3" style="margin-right:6px">S3</span>員工通勤</td><td>90,500 km（2月）</td><td><div class="co2e-cell">0.91</div></td><td>1/2 已審查</td></tr>
+          </tbody>
+        </table>
+        <div class="bar-actions">
+          <button class="btn">📥 匯出 Excel</button>
+        </div>
+      </div>
+
+    </div><!-- /fill-wrapper -->
+  </div>
+</div>
+
+<!-- ───── PAGE：集團彙整（簡版） ───── -->
+<div id="pg-summary" class="page">
+  <div class="topbar"><div><h1>集團碳排彙整</h1><p>對應集團清冊格式 ／ 僅納入已審查記錄</p></div>
+    <div style="display:flex;gap:8px">
+      <select style="border:1px solid #E5E7EB;border-radius:7px;padding:6px 10px;font-size:12px">
+        <option>全年加總</option><option>1月</option><option>6月</option>
+      </select>
+      <button class="btn pri">⬇️ 匯出 Excel</button>
+    </div>
+  </div>
+  <div class="content">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kl">範疇一</div><div class="kv" style="color:#B45309">2,847.3</div><div class="ku">tCO₂e</div></div>
+      <div class="kpi"><div class="kl">範疇二（Location）</div><div class="kv" style="color:#1D4ED8">18,492.1</div><div class="ku">tCO₂e</div></div>
+      <div class="kpi"><div class="kl">範疇二（Market）</div><div class="kv" style="color:#2563EB">15,203.8</div><div class="ku">tCO₂e</div></div>
+      <div class="kpi"><div class="kl">範疇三（參考）</div><div class="kv" style="color:#065F46">42,183.5</div><div class="ku">tCO₂e</div></div>
+      <div class="kpi"><div class="kl">生質 CO₂（獨立揭露）</div><div class="kv" style="color:#059669">312.4</div><div class="ku">tCO₂e</div></div>
+    </div>
+    <div class="matrix-wrap">
+      <div class="matrix-header">
+        <span style="font-size:13px;font-weight:600;color:#111827">集團碳排清冊</span>
+        <span style="font-size:11px;color:#6B7280">排放源（Y 軸）× 廠別（X 軸）/ 單位：tCO₂e</span>
+      </div>
+      <div class="matrix-scroll">
+        <table class="matrix-table">
+          <thead>
+            <tr>
+              <th class="sticky-l">排放源</th>
+              <th class="factory-h">TWN_TPE<br><span style="font-weight:400;font-size:10px;color:#9CA3AF">台北總部</span></th>
+              <th class="factory-h">TWN_CHY<br><span style="font-weight:400;font-size:10px;color:#9CA3AF">嘉義廠</span></th>
+              <th class="factory-h">CAB_MK1<br><span style="font-weight:400;font-size:10px;color:#9CA3AF">MK1柬埔寨</span></th>
+              <th class="factory-h">CHN_JY<br><span style="font-weight:400;font-size:10px;color:#9CA3AF">佳陽廠</span></th>
+              <th class="factory-h">IND_GLR1<br><span style="font-weight:400;font-size:10px;color:#9CA3AF">Glory Smrg</span></th>
+              <th class="factory-h">NVN_MK1<br><span style="font-weight:400;font-size:10px;color:#9CA3AF">MK1北越</span></th>
+              <th style="font-size:10px;color:#6B7280;background:#F9FAFB">… +17廠</th>
+              <th class="total-h">集團總計</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="section-hdr" colspan="9">🔶 範疇一 — 直接排放</td></tr>
+            <tr><td class="sticky-l" style="padding-left:20px">鍋爐-柴油（1-1A-1）</td><td>—</td><td>8.5</td><td>12.1</td><td>21.4</td><td>18.7</td><td>11.2</td><td style="color:#9CA3AF;font-style:italic">…</td><td class="total-col">187.4</td></tr>
+            <tr><td class="sticky-l" style="padding-left:20px">木材生質（1-1B-1）<br><span class="biomass-note">🌿生質CO₂獨立揭露</span></td><td>—</td><td>0.1</td><td>45.2</td><td>—</td><td>52.1</td><td>33.6</td><td style="color:#9CA3AF;font-style:italic">…</td><td class="total-col">312.4*</td></tr>
+            <tr><td class="sticky-l" style="padding-left:20px">公務車-汽油（1-2A-1）</td><td>0.3</td><td>1.2</td><td>1.2</td><td>1.5</td><td>2.1</td><td>1.4</td><td style="color:#9CA3AF;font-style:italic">…</td><td class="total-col">22.8</td></tr>
+            <tr><td class="sticky-l" style="padding-left:20px">冷媒逸散-R410A（1-4A-6）</td><td>10.4</td><td>7.7</td><td>15.2</td><td>18.9</td><td>21.3</td><td>11.7</td><td style="color:#9CA3AF;font-style:italic">…</td><td class="total-col">218.6</td></tr>
+            <tr class="subtotal"><td class="sticky-l subtotal"><b>▶ 範疇一小計</b></td><td><b>142.8</b></td><td><b>298.3</b></td><td><b>421.5</b></td><td><b>412.1</b></td><td><b>356.4</b></td><td><b>287.9</b></td><td style="color:#9CA3AF">…</td><td class="total-col subtotal"><b>2,847.3</b></td></tr>
+            <tr><td class="section-hdr" colspan="9">🔵 範疇二 — 外購電力</td></tr>
+            <tr><td class="sticky-l" style="padding-left:20px">外購電力 Location</td><td>482.3</td><td>1,205.7</td><td>2,134.8</td><td>1,543.2</td><td>2,456.1</td><td>1,876.3</td><td style="color:#9CA3AF;font-style:italic">…</td><td class="total-col">18,492.1</td></tr>
+            <tr><td class="sticky-l" style="padding-left:20px">外購電力 Market</td><td><span style="color:#059669;font-size:10px">REC</span> 0.0</td><td>987.3</td><td>2,134.8</td><td>1,321.4</td><td>2,456.1</td><td>1,543.2</td><td style="color:#9CA3AF;font-style:italic">…</td><td class="total-col">15,203.8</td></tr>
+            <tr class="subtotal"><td class="sticky-l subtotal"><b>▶ 範疇二小計（Location）</b></td><td><b>482.3</b></td><td><b>1,205.7</b></td><td><b>2,134.8</b></td><td><b>1,543.2</b></td><td><b>2,456.1</b></td><td><b>1,876.3</b></td><td style="color:#9CA3AF">…</td><td class="total-col subtotal"><b>18,492.1</b></td></tr>
+            <tr class="grand"><td class="sticky-l grand"><b>🏭 集團合計（S1+S2 Location）</b></td><td><b>625.1</b></td><td><b>1,504.0</b></td><td><b>2,556.3</b></td><td><b>1,955.3</b></td><td><b>2,812.5</b></td><td><b>2,164.2</b></td><td style="color:#9CA3AF">…</td><td class="total-col grand"><b>21,339.4</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:8px 14px;font-size:11px;color:#9CA3AF;border-top:1px solid #F3F4F6">* 生質 CO₂ 獨立揭露，不計入範疇一合計 ／ 表格共 23 個廠別，橫向捲動可見全部</div>
+    </div>
+  </div>
+</div>
+
+<!-- ───── 其他頁面（簡版佔位） ───── -->
+<div id="pg-factors" class="page">
+  <div class="topbar"><div><h1>排放係數管理</h1><p>設定各排放源的係數值與適用廠別</p></div></div>
+  <div class="content" style="display:flex;align-items:center;justify-content:center;height:60vh;color:#9CA3AF">
+    <div style="text-align:center"><div style="font-size:48px;margin-bottom:12px">🔢</div><div style="font-size:14px">排放係數管理頁（建置中）</div></div>
+  </div>
+</div>
+<div id="pg-rec" class="page">
+  <div class="topbar"><div><h1>REC 憑證管理</h1></div></div>
+  <div class="content" style="display:flex;align-items:center;justify-content:center;height:60vh;color:#9CA3AF">
+    <div style="text-align:center"><div style="font-size:48px;margin-bottom:12px">🌱</div><div style="font-size:14px">REC 憑證管理頁（建置中）</div></div>
+  </div>
+</div>
+<div id="pg-flags" class="page">
+  <div class="topbar"><div><h1>異常標記審核</h1></div></div>
+  <div class="content">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:9px;padding:14px;display:flex;gap:12px">
+        <span style="font-size:22px">⚠️</span>
+        <div><div style="font-weight:600;color:#92400E">月環比異常 — CAB_MK1 / 鍋爐-木材生質</div><div style="font-size:12px;color:#78350F;margin-top:4px">2025-06 用量 2,500 kg，較 2025-05（850 kg）增加 194%</div></div>
+        <button class="btn sm" style="margin-left:auto;align-self:center" onclick="this.closest('div[style]').style.opacity='.4'">已確認</button>
+      </div>
+      <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:9px;padding:14px;display:flex;gap:12px">
+        <span style="font-size:22px">⚠️</span>
+        <div><div style="font-weight:600;color:#92400E">跨廠比對 — NVN_MK1 / 外購電力</div><div style="font-size:12px;color:#78350F;margin-top:4px">本廠 156,800 kWh 為北越區平均 62,400 kWh 的 2.5 倍</div></div>
+        <button class="btn sm" style="margin-left:auto;align-self:center" onclick="this.closest('div[style]').style.opacity='.4'">已確認</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="pg-report" class="page">
+  <div class="topbar"><div><h1>產出報告書</h1></div></div>
+  <div class="content" style="display:flex;align-items:center;justify-content:center;height:60vh">
+    <div style="background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:40px;max-width:400px;text-align:center">
+      <div style="font-size:52px;margin-bottom:16px">📄</div>
+      <div style="font-size:16px;font-weight:600;margin-bottom:8px">產出 2025 年度報告書</div>
+      <div style="font-size:12px;color:#6B7280;margin-bottom:20px">讀取所有已審查記錄，填入 ISO 14064-1:2018 報告書模板</div>
+      <button class="btn pri" style="width:100%;justify-content:center;padding:10px" onclick="alert('報告書產出中…')">🚀 產出報告書</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- /main -->
+
+<script>
+function showPage(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  el.classList.add('active');
+}
+function switchTab(id, el) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  el.classList.add('active');
+}
+function onFactoryChange(sel) {
+  const map = {
+    'TWN_TPE':'國家：TWN ／ 產區：台灣 ／ 盤查年度：2025',
+    'TWN_CHY':'國家：TWN ／ 產區：台灣 ／ 盤查年度：2025',
+    'CAB_MK1':'國家：CAB ／ 產區：柬埔寨 ／ 盤查年度：2025',
+    'CHN_JY':'國家：CHN ／ 產區：中國 ／ 盤查年度：2025',
+    'IND_GLR1':'國家：IND ／ 產區：印尼 ／ 盤查年度：2025',
+    'NVN_MK1':'國家：NVN ／ 產區：北越 ／ 盤查年度：2025',
+  };
+  document.getElementById('fInfo').textContent = map[sel.value] || '';
+}
+// check-item toggle
+document.querySelectorAll('.check-item').forEach(item => {
+  item.addEventListener('click', function(e) {
+    if(e.target.tagName === 'INPUT') return;
+    const cb = this.querySelector('input');
+    cb.checked = !cb.checked;
+    this.classList.toggle('on', cb.checked);
+  });
+  const cb = item.querySelector('input');
+  if(cb) cb.addEventListener('change', function() {
+    item.classList.toggle('on', this.checked);
+  });
+});
+// 審查按鈕切換
+document.querySelectorAll('.rev-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const isYes = this.classList.contains('rev-yes');
+    this.className = 'rev-btn ' + (isYes ? 'rev-no' : 'rev-yes');
+    this.textContent = isYes ? '⬜ 未審查' : '✅ 已審查';
+  });
+});
+</script>
+</body>
+</html>

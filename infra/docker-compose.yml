@@ -1,0 +1,84 @@
+version: "3.9"
+
+# =============================================================
+# GHG 碳盤查平台 — 本地開發環境
+# 使用方式：docker compose up -d
+# =============================================================
+
+services:
+  # -----------------------------------------------------------
+  # PostgreSQL 資料庫
+  # -----------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: ghg_postgres
+    environment:
+      POSTGRES_DB: ghg_platform
+      POSTGRES_USER: ghg_dev
+      POSTGRES_PASSWORD: ghg_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../db/migrations:/docker-entrypoint-initdb.d  # 啟動時自動執行所有 V*.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ghg_dev -d ghg_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # -----------------------------------------------------------
+  # Python FastAPI — 計算引擎 + 報告書產生
+  # -----------------------------------------------------------
+  agents:
+    build:
+      context: ../apps/agents
+      dockerfile: Dockerfile
+    container_name: ghg_agents
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ghg_dev:ghg_dev_password@postgres:5432/ghg_platform
+      ENVIRONMENT: development
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../apps/agents:/app  # 熱重載
+    restart: unless-stopped
+
+  # -----------------------------------------------------------
+  # Next.js — 前端介面 + CRUD API
+  # -----------------------------------------------------------
+  web:
+    build:
+      context: ../apps/web
+      dockerfile: Dockerfile
+    container_name: ghg_web
+    environment:
+      DATABASE_URL: postgresql://ghg_dev:ghg_dev_password@postgres:5432/ghg_platform
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: dev-secret-please-change-in-production
+      AGENTS_BASE_URL: http://agents:8000
+      # Azure AD（本地開發先留空，用 CredentialsProvider 暫代）
+      AZURE_AD_TENANT_ID: ""
+      AZURE_AD_CLIENT_ID: ""
+      AZURE_AD_CLIENT_SECRET: ""
+      # Azure Blob（本地可先不設定，附件功能會 fallback 到本地儲存）
+      AZURE_BLOB_CONNECTION_STRING: ""
+      AZURE_BLOB_CONTAINER: "ghg-attachments"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      agents:
+        condition: service_started
+    volumes:
+      - ../apps/web:/app
+      - /app/node_modules
+      - /app/.next
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

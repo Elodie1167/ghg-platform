@@ -1,0 +1,52 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { query } from '@/lib/db';
+
+const UpdateFactorSchema = z.object({
+  factor_co2: z.number().nullable().optional(),
+  factor_ch4: z.number().nullable().optional(),
+  factor_n2o: z.number().nullable().optional(),
+  factor_substance: z.number().nullable().optional(),
+  grid_emission_factor: z.number().nullable().optional(),
+  market_residual_factor: z.number().nullable().optional(),
+  scope3_factor: z.number().nullable().optional(),
+  source_reference: z.string().nullable().optional(),
+  country_code: z.string().min(1).max(10).optional(),
+  year: z.number().int().min(2020).max(2100).optional(),
+});
+
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+
+  const { id } = await params;
+  const parsed = UpdateFactorSchema.safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json({ data: null, error: parsed.error.errors.map((e) => e.message).join('; ') }, { status: 400 });
+  }
+  const updates = parsed.data;
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ data: null, error: '未提供任何更新欄位' }, { status: 400 });
+  }
+
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+  let i = 1;
+  for (const [k, v] of Object.entries(updates)) {
+    if (v !== undefined) { setClauses.push(`${k} = $${i++}`); values.push(v); }
+  }
+  values.push(id);
+
+  const result = await query(
+    `UPDATE emission_factors SET ${setClauses.join(', ')} WHERE id = $${i} RETURNING *`,
+    values,
+  );
+  if (result.rowCount === 0) return NextResponse.json({ data: null, error: '係數不存在' }, { status: 404 });
+  return NextResponse.json({ data: result.rows[0], error: null });
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+
+  const { id } = await params;
+  const result = await query('DELETE FROM emission_factors WHERE id = $1 RETURNING id', [id]);
+  if (result.rowCount === 0) return NextResponse.json({ data: null, error: '係數不存在' }, { status: 404 });
+  return NextResponse.json({ data: { id }, error: null });
+}
