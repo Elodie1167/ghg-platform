@@ -24,6 +24,10 @@ export default async function FactorsPage() {
         ef.market_residual_factor,
         ef.scope3_factor,
         ef.source_reference,
+        ef.ncv,
+        ef.ncv_unit,
+        ef.density,
+        ef.density_unit,
         COALESCE(
           json_agg(efa.factory_id ORDER BY efa.factory_id)
             FILTER (WHERE efa.factory_id IS NOT NULL),

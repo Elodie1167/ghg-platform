@@ -2,6 +2,29 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const result = await query(`
+    SELECT
+      ef.*,
+      es.source_code,
+      es.name_zh AS source_name_zh,
+      es.scope,
+      es.category,
+      COALESCE(
+        json_agg(efa.factory_id ORDER BY efa.factory_id) FILTER (WHERE efa.factory_id IS NOT NULL),
+        '[]'
+      ) AS assigned_factory_ids
+    FROM emission_factors ef
+    JOIN emission_sources es ON ef.emission_source_id = es.id
+    LEFT JOIN emission_factor_assignments efa ON efa.emission_factor_id = ef.id
+    WHERE ef.id = $1
+    GROUP BY ef.id, es.source_code, es.name_zh, es.scope, es.category
+  `, [id]);
+  if (result.rowCount === 0) return NextResponse.json({ data: null, error: '係數不存在' }, { status: 404 });
+  return NextResponse.json({ data: result.rows[0], error: null });
+}
+
 const UpdateFactorSchema = z.object({
   factor_co2: z.number().nullable().optional(),
   factor_ch4: z.number().nullable().optional(),
@@ -13,6 +36,10 @@ const UpdateFactorSchema = z.object({
   source_reference: z.string().nullable().optional(),
   country_code: z.string().min(1).max(10).optional(),
   year: z.number().int().min(2020).max(2100).optional(),
+  ncv: z.number().nullable().optional(),
+  ncv_unit: z.string().max(20).nullable().optional(),
+  density: z.number().nullable().optional(),
+  density_unit: z.string().max(20).nullable().optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

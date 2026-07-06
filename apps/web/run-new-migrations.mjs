@@ -29,7 +29,7 @@ const client = new pg.Client({ connectionString: DB_URL });
 await client.connect();
 console.log('✅ 資料庫連線成功\n');
 
-const targets = ['V10__merge_welding.sql', 'V11__add_diesel_commute.sql'];
+const targets = ['V10__merge_welding.sql', 'V11__add_diesel_commute.sql', 'V12__add_ncv_density_to_factors.sql'];
 const migrationsDir = path.join(__dirname, '..', '..', 'db', 'migrations');
 
 for (const file of targets) {
