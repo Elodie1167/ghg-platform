@@ -17,7 +17,7 @@ const COUNTRY_LABELS: Record<string, string> = {
   CAB: '柬埔寨',
   SLV: '薩爾瓦多',
   BGD: '孟加拉',
-  IND: '印度',
+  IND: '印尼',
 };
 
 const COUNTRY_ORDER = ['TWN', 'CHN', 'NVN', 'CAB', 'SLV', 'BGD', 'IND'];
