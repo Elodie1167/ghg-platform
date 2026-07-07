@@ -25,20 +25,26 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ data: result.rows[0], error: null });
 }
 
+// pg returns NUMERIC columns as strings; coerce to number before validation
+const numOrNull = z.preprocess(
+  (v) => (v === null || v === undefined || v === '') ? null : (isNaN(Number(v)) ? null : Number(v)),
+  z.number().nullable(),
+);
+
 const UpdateFactorSchema = z.object({
-  factor_co2: z.number().nullable().optional(),
-  factor_ch4: z.number().nullable().optional(),
-  factor_n2o: z.number().nullable().optional(),
-  factor_substance: z.number().nullable().optional(),
-  grid_emission_factor: z.number().nullable().optional(),
-  market_residual_factor: z.number().nullable().optional(),
-  scope3_factor: z.number().nullable().optional(),
+  factor_co2: numOrNull.optional(),
+  factor_ch4: numOrNull.optional(),
+  factor_n2o: numOrNull.optional(),
+  factor_substance: numOrNull.optional(),
+  grid_emission_factor: numOrNull.optional(),
+  market_residual_factor: numOrNull.optional(),
+  scope3_factor: numOrNull.optional(),
   source_reference: z.string().nullable().optional(),
   country_code: z.string().min(1).max(10).optional(),
-  year: z.number().int().min(2020).max(2100).optional(),
-  ncv: z.number().nullable().optional(),
+  year: z.preprocess((v) => (v != null ? Number(v) : v), z.number().int().min(2020).max(2100)).optional(),
+  ncv: numOrNull.optional(),
   ncv_unit: z.string().max(20).nullable().optional(),
-  density: z.number().nullable().optional(),
+  density: numOrNull.optional(),
   density_unit: z.string().max(20).nullable().optional(),
   ncv_notes: z.string().nullable().optional(),
 });
