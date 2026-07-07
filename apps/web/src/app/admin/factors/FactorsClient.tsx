@@ -49,9 +49,6 @@ interface Props {
   emissionSources: EmissionSource[];
 }
 
-function fmt(v: number | null, decimals = 4): string {
-  return v != null ? Number(v).toFixed(decimals) : '—';
-}
 
 export default function FactorsClient({ initialFactors, factories, emissionSources }: Props) {
   const [factors, setFactors] = useState<FactorRow[]>(initialFactors);
@@ -107,13 +104,6 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
   function factoryCount(ids: string[]) {
     const countryCodes = new Set(factories.filter((f) => ids.includes(f.id)).map((f) => f.country_code));
     return { count: ids.length, label: ids.length > 0 ? `${ids.length} 廠 (${Array.from(countryCodes).join('/')})` : '未指定' };
-  }
-
-  function primaryEF(f: FactorRow): string {
-    if (f.grid_emission_factor != null) return `電網 ${fmt(f.grid_emission_factor, 6)}`;
-    if (f.factor_co2 != null) return `CO₂ ${fmt(f.factor_co2, 0)} kg/TJ`;
-    if (f.factor_substance != null) return `直接 ${fmt(f.factor_substance, 6)}`;
-    return '—';
   }
 
   return (
@@ -203,10 +193,7 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
                 <th className="px-3 py-3 text-left w-12">S</th>
                 <th className="px-3 py-3 text-left w-32">代碼</th>
                 <th className="px-3 py-3 text-left">排放源名稱</th>
-                <th className="px-3 py-3 text-center w-16">國家</th>
                 <th className="px-3 py-3 text-center w-16">年度</th>
-                <th className="px-3 py-3 text-left w-48">主要係數</th>
-                <th className="px-3 py-3 text-center w-16">NCV</th>
                 <th className="px-3 py-3 text-center w-36">適用廠區</th>
                 <th className="px-3 py-3 text-center w-40">操作</th>
               </tr>
@@ -214,7 +201,7 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-gray-400 text-sm">
+                  <td colSpan={6} className="px-4 py-12 text-center text-gray-400 text-sm">
                     {factors.length === 0 ? '尚無係數資料，點擊「+ 新增係數」建立' : '篩選結果為空'}
                   </td>
                 </tr>
@@ -226,14 +213,7 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
                     <td className="px-3 py-3 font-mono text-gray-400 text-xs">S{f.scope}</td>
                     <td className="px-3 py-3 font-mono text-gray-700 font-medium text-xs">{f.source_code}</td>
                     <td className="px-3 py-3 text-gray-800 text-xs">{f.source_name_zh}</td>
-                    <td className="px-3 py-3 text-center font-mono text-xs text-gray-600">{f.country_code}</td>
                     <td className="px-3 py-3 text-center text-xs text-gray-600">{f.year}</td>
-                    <td className="px-3 py-3 text-xs font-mono text-gray-700">{primaryEF(f)}</td>
-                    <td className="px-3 py-3 text-center text-xs">
-                      {f.ncv != null
-                        ? <span className="text-green-700 font-mono">{fmt(f.ncv, 3)} {f.ncv_unit}</span>
-                        : <span className="text-gray-300">—</span>}
-                    </td>
                     <td className="px-3 py-3 text-center">
                       <span className={`text-xs px-2 py-0.5 rounded-full ${hasAssigned ? 'text-green-700 bg-green-50' : 'text-gray-400 bg-gray-100'}`}>
                         {label}

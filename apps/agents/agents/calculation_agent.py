@@ -83,6 +83,9 @@ class FactorData:
     grid_emission_factor:   Optional[float] = None  # 範疇二 Location
     market_residual_factor: Optional[float] = None  # 中國 Market-Based 專用
     scope3_factor:          Optional[float] = None
+    ncv:                    Optional[float] = None   # 淨發熱值 (MJ/L 或 MJ/kg)
+    ncv_unit:               Optional[str]  = None   # 'MJ/L', 'MJ/kg', 'MJ/Nm3'
+    density:                Optional[float] = None  # 密度 (kg/L)，液態體積→重量用
     fallback_used: bool = False   # True 表示用了上一年度的 fallback 係數
 
 
@@ -144,6 +147,8 @@ class CalculationAgent:
 
     # ── 範疇一 ────────────────────────────────────────────────
 
+    _VOLUME_UNITS = frozenset({'L', 'l', 'liter', 'litre', 'KL', 'Nm3', 'Nm³', 'm3', 'm³'})
+
     def _calc_scope1(
         self,
         value: float,
@@ -152,9 +157,29 @@ class CalculationAgent:
         warnings: list[str],
     ) -> CalculationResult:
 
-        co2e_co2 = value * (factor.factor_co2 or 0.0) * GWP["CO2"]
-        co2e_ch4 = value * (factor.factor_ch4 or 0.0) * GWP["CH4"]
-        co2e_n2o = value * (factor.factor_n2o or 0.0) * GWP["N2O"]
+        # IPCC 方法論：活動量 → 能量(MJ) → TJ → × EF(kg/TJ) → kg → / 1000 → tCO₂e
+        # 前提：factor.ncv 已填入（MJ/L 或 MJ/kg）
+        if factor.ncv and factor.ncv > 0:
+            is_volume = inp.activity_unit in self._VOLUME_UNITS
+            if is_volume and factor.density and factor.density > 0:
+                # 體積 × 密度 → 質量(kg)，再 × NCV(MJ/kg)
+                energy_mj = value * factor.density * factor.ncv
+            else:
+                # NCV 為 MJ/L 或 MJ/kg，直接乘
+                energy_mj = value * factor.ncv
+            energy_tj = energy_mj / 1_000_000
+            co2_kg = energy_tj * (factor.factor_co2 or 0.0)
+            ch4_kg = energy_tj * (factor.factor_ch4 or 0.0)
+            n2o_kg = energy_tj * (factor.factor_n2o or 0.0)
+        else:
+            # 相容模式：EF 已換算為 kg/活動單位（V4 舊有資料）
+            co2_kg = value * (factor.factor_co2 or 0.0)
+            ch4_kg = value * (factor.factor_ch4 or 0.0)
+            n2o_kg = value * (factor.factor_n2o or 0.0)
+
+        co2e_co2 = co2_kg * GWP["CO2"]
+        co2e_ch4 = ch4_kg * GWP["CH4"]
+        co2e_n2o = n2o_kg * GWP["N2O"]
 
         # 冷媒 / 滅火器 / SF6：使用 factor_substance × 物質 GWP
         co2e_substance = 0.0

@@ -8,6 +8,12 @@ import type { EmissionSource, ActivityRecord } from './page';
 const ITEMS = ['布料', '線料', '紙箱', '塑料袋'] as const;
 type ItemCode = typeof ITEMS[number];
 
+const SUPPLY_TYPES = [
+  { key: 'TW', label: '台灣供貨' },
+  { key: 'FC', label: '工廠供貨' },
+] as const;
+type SupplyType = typeof SUPPLY_TYPES[number]['key'];
+
 const TRANSPORT_CODES = ['3-4-A', '3-4-B', '3-4-C'] as const;
 const TRANSPORT_LABEL: Record<string, string> = {
   '3-4-A': '陸運',
@@ -15,17 +21,18 @@ const TRANSPORT_LABEL: Record<string, string> = {
   '3-4-C': '空運',
 };
 
-// DB month constraint 1-12；用 month=1 存年度彙總值
 const ANNUAL_MONTH = 1;
 
 interface CellState {
   id: string | null;
-  tkm: string;      // activity_value: tonne-km (年度總量)
-  ton: string;      // meter_number: ton (年度總重)
+  tkm: string;
+  ton: string;
+  is_reviewed: boolean;
   saveStatus: SaveStatus;
 }
 
-type CellKey = string; // `${source_id}-${item_code}`
+// Key: `${source_id}-${supply_type}-${item}`  e.g. "uuid-TW-布料"
+type CellKey = string;
 
 export default function UpstreamTab({
   factory, year, emissionSources, existingRecords,
@@ -38,15 +45,29 @@ export default function UpstreamTab({
     const map = new Map<CellKey, CellState>();
     for (const r of existingRecords) {
       if (!r.source_code?.startsWith('3-4')) continue;
-      const itemCode = r.sub_location as ItemCode | null;
-      if (!itemCode || !ITEMS.includes(itemCode as ItemCode)) continue;
-      // Only load the annual record (month=1)
       if (r.month !== ANNUAL_MONTH) continue;
-      const key = `${r.emission_source_id}-${itemCode}`;
+      const sl = r.sub_location ?? '';
+      // Accept both new "TW-布料" format and legacy "布料" format
+      let supply: SupplyType | null = null;
+      let itemCode: ItemCode | null = null;
+      if (sl.startsWith('TW-')) {
+        supply = 'TW';
+        itemCode = sl.slice(3) as ItemCode;
+      } else if (sl.startsWith('FC-')) {
+        supply = 'FC';
+        itemCode = sl.slice(3) as ItemCode;
+      } else if (ITEMS.includes(sl as ItemCode)) {
+        // Legacy records without prefix → treat as TW
+        supply = 'TW';
+        itemCode = sl as ItemCode;
+      }
+      if (!supply || !itemCode || !ITEMS.includes(itemCode)) continue;
+      const key = `${r.emission_source_id}-${supply}-${itemCode}`;
       map.set(key, {
         id: r.id,
         tkm: r.activity_value != null ? String(r.activity_value) : '',
         ton: r.meter_number != null ? String(r.meter_number) : '',
+        is_reviewed: r.is_reviewed ?? false,
         saveStatus: 'idle',
       });
     }
@@ -58,23 +79,28 @@ export default function UpstreamTab({
   useEffect(() => { cellsRef.current = cells; }, [cells]);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  function getCell(sourceId: string, item: ItemCode): CellState {
-    return cells.get(`${sourceId}-${item}`) ?? { id: null, tkm: '', ton: '', saveStatus: 'idle' };
+  function getCell(sourceId: string, supply: SupplyType, item: ItemCode): CellState {
+    return cells.get(`${sourceId}-${supply}-${item}`) ?? {
+      id: null, tkm: '', ton: '', is_reviewed: false, saveStatus: 'idle',
+    };
   }
 
-  function updateCell(sourceId: string, item: ItemCode, field: 'tkm' | 'ton', value: string) {
-    const key = `${sourceId}-${item}`;
-    const prev = cellsRef.current.get(key) ?? { id: null, tkm: '', ton: '', saveStatus: 'idle' };
+  function updateCell(
+    sourceId: string, supply: SupplyType, item: ItemCode,
+    field: 'tkm' | 'ton', value: string,
+  ) {
+    const key = `${sourceId}-${supply}-${item}`;
+    const prev = cellsRef.current.get(key) ?? { id: null, tkm: '', ton: '', is_reviewed: false, saveStatus: 'idle' };
     const next = new Map(cellsRef.current);
     next.set(key, { ...prev, [field]: value, saveStatus: 'saving' });
     cellsRef.current = next;
     setCells(next);
     if (timers.current[key]) clearTimeout(timers.current[key]);
-    timers.current[key] = setTimeout(() => saveCell(sourceId, item), 1000);
+    timers.current[key] = setTimeout(() => saveCell(sourceId, supply, item), 1000);
   }
 
-  async function saveCell(sourceId: string, item: ItemCode) {
-    const key = `${sourceId}-${item}`;
+  async function saveCell(sourceId: string, supply: SupplyType, item: ItemCode) {
+    const key = `${sourceId}-${supply}-${item}`;
     const cell = cellsRef.current.get(key);
     if (!cell) return;
 
@@ -88,8 +114,9 @@ export default function UpstreamTab({
       month: ANNUAL_MONTH,
       activity_value: tkmNum != null && !isNaN(tkmNum) ? tkmNum : null,
       activity_unit: 'tonne-km',
-      sub_location: item,
-      meter_number: tonNum != null && !isNaN(tonNum) ? tonNum : null,
+      sub_location: `${supply}-${item}`,
+      // meter_number must be a string per API schema
+      meter_number: tonNum != null && !isNaN(tonNum) ? String(tonNum) : null,
     };
 
     try {
@@ -133,113 +160,170 @@ export default function UpstreamTab({
     }
   }
 
+  async function toggleReview(sourceId: string, supply: SupplyType, item: ItemCode) {
+    const key = `${sourceId}-${supply}-${item}`;
+    const cell = cellsRef.current.get(key);
+    if (!cell?.id) return;
+    const newVal = !cell.is_reviewed;
+    const next = new Map(cellsRef.current);
+    next.set(key, { ...cell, is_reviewed: newVal });
+    cellsRef.current = next;
+    setCells(next);
+    await fetch(`/api/records/${cell.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_reviewed: newVal }),
+    });
+  }
+
+  // Totals per item across all supply types and transport modes
+  function itemTonTotal(item: ItemCode): number {
+    let total = 0;
+    for (const src of transportSources) {
+      for (const { key: supply } of SUPPLY_TYPES) {
+        total += parseFloat(getCell(src.id, supply, item).ton) || 0;
+      }
+    }
+    return total;
+  }
+
+  if (transportSources.length === 0) {
+    return <div className="text-center py-12 text-gray-400 text-sm">排放源資料讀取中…</div>;
+  }
+
   return (
     <div>
       <div className="mb-6">
-        <h2 className="text-lg font-semibold text-gray-800">上游運輸 S3</h2>
+        <h2 className="text-lg font-semibold text-gray-800">上游運輸（進口）S3</h2>
         <p className="text-sm text-gray-500 mt-0.5">
-          填入年度總 TKM（Tonne-Kilometer）與採購總重量，數值請從自備 Excel 計算後填入。
-          重量欄將自動帶入「採購商品」頁籤。
+          填入年度 TKM 與採購總重量。重量合計會自動帶入「採購商品」頁籤。
         </p>
       </div>
 
-      {transportSources.length === 0 ? (
-        <div className="text-center py-12 text-gray-400 text-sm">排放源資料讀取中…</div>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="text-sm border-collapse" style={{ minWidth: '900px' }}>
-            <thead>
-              <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
-                <th className="px-4 py-3 text-left w-24">運輸方式</th>
-                {ITEMS.map((item) => (
-                  <th key={item} className="px-2 py-3 text-center" colSpan={2}>
-                    {item}
-                  </th>
-                ))}
-                <th className="px-3 py-3 text-center w-8">狀</th>
-              </tr>
-              <tr style={{ backgroundColor: '#1a5c44' }} className="text-white text-xs">
-                <th className="px-4 py-2" />
-                {ITEMS.map((item) => (
-                  <th key={item} className="px-2 py-2" colSpan={2}>
-                    <div className="flex gap-1 justify-center">
-                      <span className="w-28 text-right">年度 TKM</span>
-                      <span className="w-24 text-right">年度重量 (ton)</span>
-                    </div>
-                  </th>
-                ))}
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {transportSources.map((src, si) => {
-                const anyStatus = ITEMS.map((item) => getCell(src.id, item).saveStatus)
-                  .find((s) => s !== 'idle') ?? 'idle';
-                return (
+      {SUPPLY_TYPES.map(({ key: supply, label: supplyLabel }) => (
+        <div key={supply} className="mb-8">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded text-white text-xs"
+              style={{ backgroundColor: supply === 'TW' ? '#0C3D2E' : '#1a5c44' }}>
+              {supplyLabel}
+            </span>
+          </h3>
+
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="text-sm border-collapse" style={{ minWidth: '860px' }}>
+              <thead>
+                <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
+                  <th className="px-4 py-2.5 text-left w-20">運輸方式</th>
+                  {ITEMS.map((item) => (
+                    <th key={item} className="px-2 py-2.5 text-center" colSpan={2}>{item}</th>
+                  ))}
+                </tr>
+                <tr style={{ backgroundColor: '#1a5c44' }} className="text-white text-xs">
+                  <th className="px-4 py-2" />
+                  {ITEMS.map((item) => (
+                    <th key={item} className="px-2 py-2" colSpan={2}>
+                      <div className="flex gap-1 justify-center">
+                        <span className="w-24 text-right">TKM</span>
+                        <span className="w-20 text-right">重量(ton)</span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {transportSources.map((src, si) => (
                   <tr key={src.id} className={si % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap">
+                    <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap text-xs">
                       {TRANSPORT_LABEL[src.source_code]}
-                      <span className="block text-xs font-mono text-gray-400">{src.source_code}</span>
+                      <span className="block font-mono text-gray-400">{src.source_code}</span>
                     </td>
                     {ITEMS.map((item) => {
-                      const cell = getCell(src.id, item);
+                      const cell = getCell(src.id, supply, item);
+                      const hasSaved = cell.id !== null;
                       return (
                         <td key={item} className="px-2 py-1.5" colSpan={2}>
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 items-center">
                             <input
                               type="number" min="0" step="0.01" placeholder="TKM"
                               value={cell.tkm}
-                              onChange={(e) => updateCell(src.id, item, 'tkm', e.target.value)}
-                              className="w-28 border border-gray-300 rounded px-1.5 py-1 text-right text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+                              onChange={(e) => updateCell(src.id, supply, item, 'tkm', e.target.value)}
+                              className="w-24 border border-gray-300 rounded px-1.5 py-1 text-right text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
                             />
                             <input
                               type="number" min="0" step="0.01" placeholder="ton"
                               value={cell.ton}
-                              onChange={(e) => updateCell(src.id, item, 'ton', e.target.value)}
-                              className="w-24 border border-gray-300 rounded px-1.5 py-1 text-right text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+                              onChange={(e) => updateCell(src.id, supply, item, 'ton', e.target.value)}
+                              className="w-20 border border-gray-300 rounded px-1.5 py-1 text-right text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
                             />
+                            {/* review toggle — only enabled once record is saved */}
+                            <button
+                              onClick={() => toggleReview(src.id, supply, item)}
+                              disabled={!hasSaved}
+                              title={cell.is_reviewed ? '已查核（點擊取消）' : hasSaved ? '點擊標記查核' : '請先儲存資料'}
+                              className={`text-sm leading-none transition-all shrink-0
+                                ${cell.is_reviewed ? 'text-green-500' : 'text-gray-300'}
+                                ${!hasSaved ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+                              {cell.is_reviewed ? '✅' : '⬜'}
+                            </button>
+                            {/* save status indicator */}
+                            <span className="text-xs w-4 text-center shrink-0">
+                              {cell.saveStatus === 'saving' && '⏳'}
+                              {cell.saveStatus === 'saved' && '✓'}
+                              {cell.saveStatus === 'error' && '❌'}
+                            </span>
                           </div>
                         </td>
                       );
                     })}
-                    <td className="px-3 py-2 text-center text-xs">
-                      {anyStatus === 'saving' && '⏳'}
-                      {anyStatus === 'saved' && '✅'}
-                      {anyStatus === 'error' && '❌'}
-                    </td>
                   </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-xs">
-                <td className="px-4 py-2 text-gray-700">年度合計</td>
-                {ITEMS.map((item) => {
-                  const tkmTotal = transportSources.reduce(
-                    (s, src) => s + (parseFloat(getCell(src.id, item).tkm) || 0), 0
-                  );
-                  const tonTotal = transportSources.reduce(
-                    (s, src) => s + (parseFloat(getCell(src.id, item).ton) || 0), 0
-                  );
-                  return (
-                    <td key={item} className="px-2 py-2 font-mono text-gray-700" colSpan={2}>
-                      <div className="flex gap-1">
-                        <span className="w-28 text-right">
-                          {tkmTotal > 0 ? tkmTotal.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'}
-                        </span>
-                        <span className="w-24 text-right">
-                          {tonTotal > 0 ? tonTotal.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—'}
-                        </span>
-                      </div>
-                    </td>
-                  );
-                })}
-                <td />
-              </tr>
-            </tfoot>
-          </table>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-xs">
+                  <td className="px-4 py-2 text-gray-700">小計</td>
+                  {ITEMS.map((item) => {
+                    const tkmTotal = transportSources.reduce(
+                      (s, src) => s + (parseFloat(getCell(src.id, supply, item).tkm) || 0), 0,
+                    );
+                    const tonTotal = transportSources.reduce(
+                      (s, src) => s + (parseFloat(getCell(src.id, supply, item).ton) || 0), 0,
+                    );
+                    return (
+                      <td key={item} className="px-2 py-2 font-mono text-gray-700" colSpan={2}>
+                        <div className="flex gap-1">
+                          <span className="w-24 text-right">
+                            {tkmTotal > 0 ? tkmTotal.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'}
+                          </span>
+                          <span className="w-20 text-right">
+                            {tonTotal > 0 ? tonTotal.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—'}
+                          </span>
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
-      )}
+      ))}
+
+      {/* Cross-supply total — feeds into PurchaseTab */}
+      <div className="mt-2 p-4 bg-green-50 rounded-lg border border-green-200">
+        <p className="text-xs font-semibold text-gray-700 mb-2">各品項年度重量合計（台供 + 廠供）→ 帶入採購商品</p>
+        <div className="flex flex-wrap gap-4">
+          {ITEMS.map((item) => {
+            const total = itemTonTotal(item);
+            return (
+              <div key={item} className="text-xs">
+                <span className="text-gray-500">{item}：</span>
+                <span className="font-mono font-semibold text-green-800">
+                  {total > 0 ? total.toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' ton' : '—'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

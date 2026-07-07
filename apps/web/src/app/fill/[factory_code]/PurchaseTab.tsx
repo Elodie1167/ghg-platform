@@ -17,8 +17,13 @@ const DERIVED_MAP: Record<string, string> = {
 const ANNUAL_MONTH = 1;
 
 function derivedTonTotal(existingRecords: ActivityRecord[], itemLabel: string): number {
+  // Sum across all upstream records matching the item: new TW-/FC- prefixed format + legacy bare label
   return existingRecords
-    .filter((r) => r.source_code?.startsWith('3-4') && r.sub_location === itemLabel)
+    .filter((r) => {
+      if (!r.source_code?.startsWith('3-4')) return false;
+      const sl = r.sub_location ?? '';
+      return sl === itemLabel || sl === `TW-${itemLabel}` || sl === `FC-${itemLabel}`;
+    })
     .reduce((s, r) => s + (r.meter_number != null ? Number(r.meter_number) : 0), 0);
 }
 

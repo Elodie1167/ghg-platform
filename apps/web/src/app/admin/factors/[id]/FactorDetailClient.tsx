@@ -30,6 +30,7 @@ interface FactorDetail {
   ncv_unit: string | null;
   density: number | null;
   density_unit: string | null;
+  ncv_notes: string | null;
   assigned_factory_ids: string[];
 }
 
@@ -116,6 +117,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
     ncv_unit: factor.ncv_unit,
     density: factor.density,
     density_unit: factor.density_unit,
+    ncv_notes: factor.ncv_notes,
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -236,24 +238,50 @@ export default function FactorDetailClient({ factor, factories }: Props) {
 
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
-        {/* Section 1: 熱值與密度換算 */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold text-gray-800 text-sm">熱值與密度換算</h2>
-              <p className="text-xs text-gray-400 mt-0.5">固態／液態燃料需填入 NCV，液態需填密度以進行體積→重量換算</p>
+        {/* Section 1: 熱值與密度換算（僅 S1/S3 顯示，S2 不需要 NCV） */}
+        {factor.scope !== 2 && <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-800 text-sm">熱值與密度換算</h2>
+            <p className="text-xs text-gray-400 mt-0.5">固態／液態燃料需填入 NCV，液態需填密度以進行體積→重量換算</p>
+          </div>
+
+          {/* MJ 強制提示 */}
+          <div className="px-5 pt-4 pb-2">
+            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+              <span className="font-bold shrink-0">⚠ 注意</span>
+              <span>
+                NCV 數值<strong>必須以 MJ 為單位</strong>填入（MJ/L 或 MJ/kg），請勿直接填 Kcal 或 BTU 的原始值。
+                常見換算：Kcal/L → MJ/L：數值 × 0.004184｜kJ/kg → MJ/kg：數值 ÷ 1000｜BTU/lb → MJ/kg：數值 × 0.002326
+              </span>
             </div>
           </div>
-          <div className="px-5 py-4 flex flex-wrap gap-5">
-            <NumField label="淨發熱值 NCV" value={n(edit.ncv)} onChange={(v) => setEdit((e) => ({ ...e, ncv: p(v) }))} />
-            <TextField label="NCV 單位" value={edit.ncv_unit ?? ''} onChange={(v) => setEdit((e) => ({ ...e, ncv_unit: v || null }))} placeholder="MJ/kg、MJ/L…" />
+
+          <div className="px-5 py-3 flex flex-wrap gap-5">
+            <NumField label="淨發熱值 NCV（MJ）" value={n(edit.ncv)} onChange={(v) => setEdit((e) => ({ ...e, ncv: p(v) }))} hint="必須為 MJ 單位" />
+            <TextField label="NCV 單位" value={edit.ncv_unit ?? ''} onChange={(v) => setEdit((e) => ({ ...e, ncv_unit: v || null }))} placeholder="MJ/kg、MJ/L、MJ/Nm³" />
             <NumField label="密度" value={n(edit.density)} onChange={(v) => setEdit((e) => ({ ...e, density: p(v) }))} />
             <TextField label="密度單位" value={edit.density_unit ?? ''} onChange={(v) => setEdit((e) => ({ ...e, density_unit: v || null }))} placeholder="kg/L、kg/m³…" />
           </div>
-          <div className="px-5 py-3 bg-amber-50 border-t border-amber-100 text-xs text-amber-700 font-mono">
-            換算邏輯：Activity × NCV = 能量(MJ) → ÷ 1,000,000 = 能量(TJ) → × EF(kg/TJ) ÷ 1000 = 排放(ton) → × GWP = CO₂-eq(ton)
+
+          {/* 換算備註欄 */}
+          <div className="px-5 pb-4">
+            <label className="block text-xs text-gray-500 mb-1">
+              換算備註
+              <span className="ml-1 text-gray-400">（記錄原始數據來源與換算過程，供日後查核）</span>
+            </label>
+            <textarea
+              value={edit.ncv_notes ?? ''}
+              onChange={(e) => setEdit((prev) => ({ ...prev, ncv_notes: e.target.value || null }))}
+              placeholder={`例：IPCC 2006 Table 1.2 柴油 NCV = 35.87 MJ/L\n原始資料：8,636 Kcal/L → × 0.004184 = 36.13 MJ/L\n採用 IPCC 標準值 35.87 MJ/L`}
+              rows={3}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 resize-y"
+            />
           </div>
-        </div>
+
+          <div className="px-5 py-3 bg-amber-50 border-t border-amber-100 text-xs text-amber-700 font-mono">
+            換算邏輯：Activity × NCV(MJ) → ÷ 1,000,000 = TJ → × EF(kg/TJ) ÷ 1000 = t → × GWP = tCO₂-eq
+          </div>
+        </div>}
 
         {/* Section 2: 排放係數 */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -439,7 +467,15 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               <h2 className="font-semibold text-gray-800 text-sm">適用廠區指定</h2>
               <p className="text-xs text-gray-400 mt-0.5">已選 {assignedIds.size} / {factories.length} 廠</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setAssignedIds(new Set(
+                  factories.filter((f) => f.country_code === factor.country_code).map((f) => f.id)
+                ))}
+                className="px-3 py-1 rounded-full text-xs font-medium text-white hover:opacity-90 transition"
+                style={{ backgroundColor: '#1a5c44' }}>
+                {factor.country_code} 廠
+              </button>
               <button onClick={() => setAssignedIds(new Set(factories.map((f) => f.id)))}
                 className="px-3 py-1 rounded-full text-xs font-medium text-white hover:opacity-90 transition"
                 style={{ backgroundColor: HEADER_BG }}>全部廠區</button>

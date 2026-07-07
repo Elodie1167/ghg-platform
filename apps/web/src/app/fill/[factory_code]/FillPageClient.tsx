@@ -9,6 +9,7 @@ import FuelTab from './FuelTab';
 import CombustionTab from './CombustionTab';
 import FugitiveTab from './FugitiveTab';
 import UpstreamTab from './UpstreamTab';
+import DownstreamTab from './DownstreamTab';
 import PurchaseTab from './PurchaseTab';
 import TravelTab from './TravelTab';
 import CommuteTab from './CommuteTab';
@@ -1125,8 +1126,8 @@ export default function FillPageClient({
       case 'process':    return <ProcessTab />;
       case 'purchase':   return <PurchaseTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
       case 'energy':     return <StubTab label="能源相關 3.3" tabId="energy" />;
-      case 'upstream':   return <UpstreamTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
-      case 'downstream': return <StubTab label="下游運輸 3.9" tabId="downstream" />;
+      case 'upstream':   return null;  // always-mounted outside TabContent
+      case 'downstream': return <DownstreamTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
       case 'travel':     return <TravelTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
       case 'commute':    return <CommuteTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
       case 'summary':    return <SummaryTab />;
@@ -1203,7 +1204,15 @@ export default function FillPageClient({
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      {/* UpstreamTab always mounted; CSS hides it when not active to preserve state */}
+      <div style={{ display: activeTab === 'upstream' ? undefined : 'none' }}
+        className="max-w-7xl mx-auto px-4 py-6">
+        <UpstreamTab factory={factory} year={year} emissionSources={emissionSources}
+          selectedSourceIds={selectedSourceIds} existingRecords={existingRecords}
+          setActiveTab={(t) => setActiveTab(t as TabId)} />
+      </div>
+
+      <main className="max-w-7xl mx-auto px-4 py-6" style={{ display: activeTab === 'upstream' ? 'none' : undefined }}>
         <TabContent />
       </main>
 
