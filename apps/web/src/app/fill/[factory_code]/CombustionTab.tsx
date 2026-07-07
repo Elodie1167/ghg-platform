@@ -21,6 +21,8 @@ interface EventRow {
   saveStatus: SaveStatus;
 }
 
+interface LpgRow { barrels: string; kgPerBarrel: string; }
+
 export default function CombustionTab({
   factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab,
 }: TabProps) {
@@ -99,7 +101,11 @@ function MonthlySection({
   year: number;
   records: ActivityRecord[];
 }) {
+  const isLPG = source.source_code === '1-1A-3';
+
+  // Non-LPG: direct activity_value per month via autosave
   const [lv, setLv] = useState<Record<number, string>>(() => {
+    if (isLPG) return {};
     const init: Record<number, string> = {};
     for (const r of records) {
       init[r.month] = r.activity_value != null ? String(r.activity_value) : '';
@@ -107,6 +113,18 @@ function MonthlySection({
     return init;
   });
   const lvRef = useRef(lv);
+
+  // LPG: barrels + kgPerBarrel, stored in sub_location + meter_number
+  const [lpgData, setLpgData] = useState<Record<number, LpgRow>>(() => {
+    if (!isLPG) return {};
+    const init: Record<number, LpgRow> = {};
+    for (const r of records) {
+      init[r.month] = { barrels: r.sub_location ?? '', kgPerBarrel: r.meter_number ?? '' };
+    }
+    return init;
+  });
+  const lpgRef = useRef(lpgData);
+  useEffect(() => { if (isLPG) lpgRef.current = lpgData; }, [lpgData, isLPG]);
 
   const [recordIds, setRecordIds] = useState<Record<number, string | null>>(() => {
     const init: Record<number, string | null> = {};
@@ -122,9 +140,7 @@ function MonthlySection({
   const [status, setStatus] = useState<SaveStatus>('idle');
   const tmr = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isLPG = source.source_code === '1-1A-3';
-  const colLabel = isLPG ? `用量 (${source.default_unit})` : `重量 (${source.default_unit})`;
-
+  // Non-LPG autosave
   function onChange(month: number, val: string) {
     const next = { ...lvRef.current, [month]: val };
     lvRef.current = next;
@@ -156,6 +172,47 @@ function MonthlySection({
     }, 1000);
   }
 
+  // LPG: two-field change → save via regular endpoint with meter_number
+  function onLpgChange(month: number, field: 'barrels' | 'kgPerBarrel', val: string) {
+    const current = lpgRef.current[month] ?? { barrels: '', kgPerBarrel: '' };
+    const next = { ...lpgRef.current, [month]: { ...current, [field]: val } };
+    lpgRef.current = next;
+    setLpgData(next);
+    if (tmr.current) clearTimeout(tmr.current);
+    tmr.current = setTimeout(() => saveLpgMonth(month), 1000);
+  }
+
+  async function saveLpgMonth(month: number) {
+    const row = lpgRef.current[month] ?? { barrels: '', kgPerBarrel: '' };
+    const b = parseFloat(row.barrels) || 0;
+    const k = parseFloat(row.kgPerBarrel) || 0;
+    const totalKg = b > 0 && k > 0 ? b * k : null;
+    const id = recordIds[month];
+    setStatus('saving');
+    try {
+      const payload = {
+        factory_id: factory.id, emission_source_id: source.id, year, month,
+        activity_value: totalKg, activity_unit: source.default_unit,
+        sub_location: row.barrels || null, meter_number: row.kgPerBarrel || null,
+      };
+      if (id) {
+        const res = await fetch(`/api/records/${id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error();
+      } else {
+        const res = await fetch('/api/records', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setRecordIds((prev) => ({ ...prev, [month]: data.data.id }));
+      }
+      setStatus('saved');
+      setTimeout(() => setStatus('idle'), 2000);
+    } catch { setStatus('error'); }
+  }
+
   async function toggleReview(month: number) {
     const id = recordIds[month];
     if (!id) return;
@@ -167,8 +224,99 @@ function MonthlySection({
     });
   }
 
-  const total = Object.values(lv).reduce((s, v) => s + (parseFloat(v) || 0), 0);
   const co2eTotal = records.filter((r) => r.co2e_total != null).reduce((s, r) => s + (r.co2e_total ?? 0), 0);
+
+  if (isLPG) {
+    const totalKg = MONTHS.reduce((s, m) => {
+      const row = lpgData[m] ?? { barrels: '', kgPerBarrel: '' };
+      return s + (parseFloat(row.barrels) || 0) * (parseFloat(row.kgPerBarrel) || 0);
+    }, 0);
+
+    return (
+      <div className="mb-6">
+        <div className="flex items-center gap-3 mb-2">
+          <h4 className="font-semibold text-gray-800">
+            {source.name_zh}
+            <span className="ml-2 text-xs font-mono text-gray-400">{source.source_code}</span>
+          </h4>
+          {status !== 'idle' && (
+            <span className={`text-xs ${status === 'saving' ? 'text-yellow-500' : status === 'saved' ? 'text-green-600' : 'text-red-500'}`}>
+              {status === 'saving' ? '⏳ 儲存中' : status === 'saved' ? '✅ 已儲存' : '❌ 失敗'}
+            </span>
+          )}
+        </div>
+        <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-2xl">
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
+                <th className="px-4 py-2 text-left w-16">月份</th>
+                <th className="px-4 py-2 text-right w-28">採購桶數</th>
+                <th className="px-4 py-2 text-right w-28">一桶 (kg)</th>
+                <th className="px-4 py-2 text-right w-28">合計 kg（自動）</th>
+                <th className="px-4 py-2 text-right w-28">CO₂e (t)</th>
+                <th className="px-4 py-2 text-center w-10">查核</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MONTHS.map((m) => {
+                const rec = records.find((r) => r.month === m);
+                const row = lpgData[m] ?? { barrels: '', kgPerBarrel: '' };
+                const hasId = !!recordIds[m];
+                const isRev = reviewed[m] ?? false;
+                const b = parseFloat(row.barrels) || 0;
+                const k = parseFloat(row.kgPerBarrel) || 0;
+                const computedKg = b > 0 && k > 0 ? (b * k).toFixed(2) : '—';
+                return (
+                  <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                    <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
+                    <td className="px-4 py-1.5">
+                      <input type="number" min="0" step="1" placeholder="桶數"
+                        value={row.barrels}
+                        onChange={(e) => onLpgChange(m, 'barrels', e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </td>
+                    <td className="px-4 py-1.5">
+                      <input type="number" min="0" step="0.1" placeholder="kg/桶"
+                        value={row.kgPerBarrel}
+                        onChange={(e) => onLpgChange(m, 'kgPerBarrel', e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </td>
+                    <td className="px-4 py-1.5 text-right font-mono text-gray-600 text-xs">{computedKg}</td>
+                    <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono">
+                      {rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—'}
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      <button onClick={() => toggleReview(m)} disabled={!hasId}
+                        title={isRev ? '已查核（點擊取消）' : '點擊標記查核完成'}
+                        className={`text-base leading-none transition-all ${isRev ? 'text-green-500' : 'text-gray-300'} ${!hasId ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+                        {isRev ? '✅' : '⬜'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold">
+                <td className="px-4 py-2 text-gray-700">合計</td>
+                <td colSpan={2} />
+                <td className="px-4 py-2 text-right font-mono text-gray-700">
+                  {totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
+                </td>
+                <td className="px-4 py-2 text-right font-mono text-gray-700">
+                  {co2eTotal > 0 ? co2eTotal.toFixed(4) + ' t' : '—'}
+                </td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  // Non-LPG monthly table (unchanged)
+  const total = Object.values(lv).reduce((s, v) => s + (parseFloat(v) || 0), 0);
 
   return (
     <div className="mb-6">
@@ -188,7 +336,7 @@ function MonthlySection({
           <thead>
             <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
               <th className="px-4 py-2 text-left w-16">月份</th>
-              <th className="px-4 py-2 text-right">{colLabel}</th>
+              <th className="px-4 py-2 text-right">重量 ({source.default_unit})</th>
               <th className="px-4 py-2 text-right w-28">CO₂e (t)</th>
               <th className="px-4 py-2 text-center w-10">查核</th>
             </tr>

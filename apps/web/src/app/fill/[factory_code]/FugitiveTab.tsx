@@ -21,11 +21,19 @@ interface EventRow {
   saveStatus: SaveStatus;
 }
 
-const SOURCE_LABELS: Record<string, string> = {
-  '1-4A': '冷媒',
-  '1-4C': '滅火器',
-  '1-4D': 'SF₆',
-};
+// 滅火器專用 row（1-4C）
+interface ExtRow {
+  tempKey: string;
+  id: string | null;
+  month: number;
+  date_from: string;
+  new_count: string;      // stored in sub_location
+  refill_count: string;   // stored in notes
+  kg_per_bottle: string;  // stored in meter_number
+  co2e_total: number | null;
+  is_reviewed: boolean;
+  saveStatus: SaveStatus;
+}
 
 export default function FugitiveTab({
   factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab,
@@ -48,7 +56,8 @@ export default function FugitiveTab({
   }
 
   const monthlySources = sources.filter((s) => MONTHLY_FUGITIVE.includes(s.source_code));
-  const eventSources = sources.filter((s) => !MONTHLY_FUGITIVE.includes(s.source_code));
+  const extinguisherSources = sources.filter((s) => s.source_code.startsWith('1-4C'));
+  const otherEventSources = sources.filter((s) => !MONTHLY_FUGITIVE.includes(s.source_code) && !s.source_code.startsWith('1-4C'));
 
   return (
     <div>
@@ -72,10 +81,25 @@ export default function FugitiveTab({
         </div>
       )}
 
-      {eventSources.length > 0 && (
+      {extinguisherSources.length > 0 && (
+        <div className="mb-8">
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">滅火器使用記錄</h3>
+          {extinguisherSources.map((src) => (
+            <ExtinguisherSection
+              key={src.id}
+              source={src}
+              factory={factory}
+              year={year}
+              records={existingRecords.filter((r) => r.emission_source_id === src.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {otherEventSources.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">逐次填充 / 使用記錄</h3>
-          {eventSources.map((src) => (
+          {otherEventSources.map((src) => (
             <EventFugitiveSection
               key={src.id}
               source={src}
@@ -190,6 +214,214 @@ function MonthlyFugitiveSection({
   );
 }
 
+// ─── 滅火器專用（1-4C）：新購瓶數 + 填充瓶數 + 一瓶kg ────────────────────
+function ExtinguisherSection({
+  source, factory, year, records,
+}: {
+  source: EmissionSource;
+  factory: TabProps['factory'];
+  year: number;
+  records: ActivityRecord[];
+}) {
+  const [rows, setRows] = useState<ExtRow[]>(() =>
+    records.map((r) => ({
+      tempKey: r.id, id: r.id, month: r.month,
+      date_from: r.date_from ?? '',
+      new_count: r.sub_location ?? '',
+      refill_count: r.notes ?? '',
+      kg_per_bottle: r.meter_number ?? '',
+      co2e_total: r.co2e_total,
+      is_reviewed: r.is_reviewed ?? false, saveStatus: 'idle' as SaveStatus,
+    }))
+  );
+  const rowsRef = useRef(rows);
+  useEffect(() => { rowsRef.current = rows; }, [rows]);
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  function addRow() {
+    const tempKey = `new-${Date.now()}`;
+    setRows((p) => [...p, { tempKey, id: null, month: new Date().getMonth() + 1, date_from: '', new_count: '', refill_count: '', kg_per_bottle: '', co2e_total: null, is_reviewed: false, saveStatus: 'idle' }]);
+  }
+
+  async function toggleReview(tempKey: string) {
+    const row = rowsRef.current.find((r) => r.tempKey === tempKey);
+    if (!row?.id) return;
+    const newVal = !row.is_reviewed;
+    setRows((p) => p.map((r) => r.tempKey === tempKey ? { ...r, is_reviewed: newVal } : r));
+    await fetch(`/api/records/${row.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_reviewed: newVal }),
+    });
+  }
+
+  function updateRow(tempKey: string, field: keyof ExtRow, value: string | number) {
+    setRows((p) => p.map((r) => r.tempKey === tempKey ? { ...r, [field]: value } : r));
+    if (timers.current[tempKey]) clearTimeout(timers.current[tempKey]);
+    timers.current[tempKey] = setTimeout(() => saveRow(tempKey), 1000);
+  }
+
+  async function saveRow(tempKey: string) {
+    const row = rowsRef.current.find((r) => r.tempKey === tempKey);
+    if (!row) return;
+    setRows((p) => p.map((r) => r.tempKey === tempKey ? { ...r, saveStatus: 'saving' } : r));
+
+    const newC = parseFloat(row.new_count) || 0;
+    const refillC = parseFloat(row.refill_count) || 0;
+    const kgPerB = parseFloat(row.kg_per_bottle) || 0;
+    const totalKg = (newC + refillC) * kgPerB;
+
+    const payload = {
+      factory_id: factory.id, emission_source_id: source.id, year, month: row.month,
+      activity_value: totalKg > 0 ? totalKg : null,
+      activity_unit: source.default_unit,
+      sub_location: row.new_count || null,
+      notes: row.refill_count || null,
+      meter_number: row.kg_per_bottle || null,
+      date_from: row.date_from || null,
+    };
+    try {
+      if (row.id) {
+        const res = await fetch(`/api/records/${row.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!res.ok) throw new Error();
+      } else {
+        const res = await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setRows((p) => p.map((r) => r.tempKey === tempKey ? { ...r, id: data.data.id } : r));
+      }
+      setRows((p) => p.map((r) => r.tempKey === tempKey ? { ...r, saveStatus: 'saved' } : r));
+      setTimeout(() => setRows((p) => p.map((r) => r.tempKey === tempKey && r.saveStatus === 'saved' ? { ...r, saveStatus: 'idle' } : r)), 2000);
+    } catch {
+      setRows((p) => p.map((r) => r.tempKey === tempKey ? { ...r, saveStatus: 'error' } : r));
+    }
+  }
+
+  async function deleteRow(tempKey: string) {
+    const row = rowsRef.current.find((r) => r.tempKey === tempKey);
+    if (!row) return;
+    if (row.id) { const res = await fetch(`/api/records/${row.id}`, { method: 'DELETE' }); if (!res.ok) return; }
+    setRows((p) => p.filter((r) => r.tempKey !== tempKey));
+  }
+
+  const totalKg = rows.reduce((s, r) => {
+    return s + (parseFloat(r.new_count) + parseFloat(r.refill_count) || 0) * (parseFloat(r.kg_per_bottle) || 0);
+  }, 0);
+  const totalCo2e = rows.reduce((s, r) => s + (r.co2e_total ?? 0), 0);
+
+  return (
+    <div className="mb-8">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="font-semibold text-gray-800">
+          {source.name_zh}
+          <span className="ml-2 text-xs font-mono text-gray-400">{source.source_code}</span>
+        </h4>
+        <button onClick={addRow}
+          className="px-3 py-1.5 rounded-lg text-white text-xs font-medium hover:opacity-90 transition"
+          style={{ backgroundColor: BTN_BG }}>+ 新增記錄</button>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="text-center py-6 text-gray-400 text-sm border border-dashed border-gray-300 rounded-lg">
+          <button onClick={addRow} className="text-green-600 underline">+ 新增第一筆記錄</button>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
+                <th className="px-3 py-2.5 text-left w-20">月份</th>
+                <th className="px-3 py-2.5 text-left w-28">日期</th>
+                <th className="px-3 py-2.5 text-right w-24">新購 (瓶)</th>
+                <th className="px-3 py-2.5 text-right w-24">填充 (瓶)</th>
+                <th className="px-3 py-2.5 text-right w-28">一瓶 (kg)</th>
+                <th className="px-3 py-2.5 text-right w-28">合計 (kg)</th>
+                <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
+                <th className="px-3 py-2.5 text-center w-8">查核</th>
+                <th className="px-3 py-2.5 text-center w-8">狀</th>
+                <th className="px-3 py-2.5 w-8" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, idx) => {
+                const newC = parseFloat(row.new_count) || 0;
+                const refillC = parseFloat(row.refill_count) || 0;
+                const kgPerB = parseFloat(row.kg_per_bottle) || 0;
+                const totalRowKg = (newC + refillC) * kgPerB;
+                return (
+                  <tr key={row.tempKey} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-2 py-1.5">
+                      <select value={row.month}
+                        onChange={(e) => updateRow(row.tempKey, 'month', parseInt(e.target.value))}
+                        className="w-full border border-gray-300 rounded px-1 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-green-500">
+                        {MONTHS.map((m) => <option key={m} value={m}>{m} 月</option>)}
+                      </select>
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input type="date" value={row.date_from}
+                        onChange={(e) => updateRow(row.tempKey, 'date_from', e.target.value)}
+                        className="w-full border border-gray-300 rounded px-1 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input type="number" min="0" step="1" placeholder="0" value={row.new_count}
+                        onChange={(e) => updateRow(row.tempKey, 'new_count', e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input type="number" min="0" step="1" placeholder="0" value={row.refill_count}
+                        onChange={(e) => updateRow(row.tempKey, 'refill_count', e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <input type="number" min="0" step="0.1" placeholder="kg" value={row.kg_per_bottle}
+                        onChange={(e) => updateRow(row.tempKey, 'kg_per_bottle', e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-gray-600 text-xs font-mono">
+                      {totalRowKg > 0 ? totalRowKg.toFixed(2) : '—'}
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
+                      {row.co2e_total != null ? row.co2e_total.toFixed(4) : '—'}
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      <button onClick={() => toggleReview(row.tempKey)} disabled={!row.id}
+                        title={row.is_reviewed ? '已查核（點擊取消）' : '點擊標記查核完成'}
+                        className={`text-base leading-none transition-all ${row.is_reviewed ? 'text-green-500' : 'text-gray-300'} ${!row.id ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+                        {row.is_reviewed ? '✅' : '⬜'}
+                      </button>
+                    </td>
+                    <td className="px-2 py-1.5 text-center text-xs">
+                      {row.saveStatus === 'saving' && '⏳'}
+                      {row.saveStatus === 'saved' && '✓'}
+                      {row.saveStatus === 'error' && '❌'}
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      <button onClick={() => !row.is_reviewed && deleteRow(row.tempKey)}
+                        disabled={row.is_reviewed}
+                        className={`text-lg leading-none transition ${row.is_reviewed ? 'text-gray-100 cursor-not-allowed' : 'text-gray-300 hover:text-red-500'}`}>×</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
+                <td colSpan={5} className="px-3 py-2 text-gray-700">合計</td>
+                <td className="px-3 py-2 text-right font-mono text-gray-700">
+                  {totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
+                </td>
+                <td className="px-3 py-2 text-right font-mono text-gray-700">
+                  {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
+                </td>
+                <td colSpan={3} />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EventFugitiveSection({
   source, factory, year, records,
 }: {
@@ -268,9 +500,7 @@ function EventFugitiveSection({
     setRows((p) => p.filter((r) => r.tempKey !== tempKey));
   }
 
-  // Determine location placeholder: 冷媒 = 設備名稱 / 型號; 滅火器 = 滅火器位置; SF6 = 設備名稱
-  const srcPfx = source.source_code.slice(0, 4);
-  const locPlaceholder = srcPfx === '1-4A' ? '設備 / 冷媒型號' : srcPfx === '1-4C' ? '滅火器位置' : '設備名稱';
+  const locPlaceholder = source.source_code.startsWith('1-4A') ? '設備 / 冷媒型號' : '設備名稱';
 
   const totalVol = rows.reduce((s, r) => s + (parseFloat(r.activity_value) || 0), 0);
   const totalCo2e = rows.reduce((s, r) => s + (r.co2e_total ?? 0), 0);

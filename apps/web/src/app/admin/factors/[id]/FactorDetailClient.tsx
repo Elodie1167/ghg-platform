@@ -310,11 +310,13 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               })()}
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-2 border-t border-gray-100">
-              <NumField label="電網排放係數 (Location)" value={n(edit.grid_emission_factor)} onChange={(v) => setEdit((e) => ({ ...e, grid_emission_factor: p(v) }))} unit="tCO₂/MWh" hint="S2 Location-Based" />
-              <NumField label="市場剩餘係數 (Market)" value={n(edit.market_residual_factor)} onChange={(v) => setEdit((e) => ({ ...e, market_residual_factor: p(v) }))} unit="tCO₂/MWh" hint="S2 Market-Based" />
-              <NumField label="S3 T&D 損失係數" value={n(edit.scope3_factor)} onChange={(v) => setEdit((e) => ({ ...e, scope3_factor: p(v) }))} unit="tCO₂/MWh" hint="S3" />
-            </div>
+            {factor.scope === 2 && (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-2 border-t border-gray-100">
+                <NumField label="電網排放係數 (Location)" value={n(edit.grid_emission_factor)} onChange={(v) => setEdit((e) => ({ ...e, grid_emission_factor: p(v) }))} unit="tCO₂/MWh" hint="S2 Location-Based" />
+                <NumField label="市場剩餘係數 (Market)" value={n(edit.market_residual_factor)} onChange={(v) => setEdit((e) => ({ ...e, market_residual_factor: p(v) }))} unit="tCO₂/MWh" hint="S2 Market-Based" />
+                <NumField label="S3 T&D 損失係數" value={n(edit.scope3_factor)} onChange={(v) => setEdit((e) => ({ ...e, scope3_factor: p(v) }))} unit="tCO₂/MWh" hint="S3" />
+              </div>
+            )}
             <div className="pt-2 border-t border-gray-100">
               <label className="block text-xs text-gray-500 mb-1">係數資料來源</label>
               <input type="text" value={edit.source_reference ?? ''} placeholder="如：IPCC 2006 Guideline、Taiwan EPA 2025…"
@@ -336,7 +338,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-100">
             <h2 className="font-semibold text-gray-800 text-sm">計算預覽</h2>
-            <p className="text-xs text-gray-400 mt-0.5">輸入活動量，即時預覽 CO₂-eq 計算過程（AR6 GWP：CO₂=1, CH₄=27.9, N₂O=273）</p>
+            <p className="text-xs text-gray-400 mt-0.5">輸入活動量，即時預覽 CO₂-eq 計算過程</p>
           </div>
           <div className="px-5 py-4">
             <div className="flex items-center gap-3 mb-5">

@@ -20,6 +20,7 @@ interface EventRow {
 
 const FUEL_SOURCE_CODES = ['1-2A-1', '1-2A-2', '1-2A-4', '1-2A-5', '1-2A-6'];
 const CAR_CODES = ['1-2A-1', '1-2A-2', '1-2A-6'];
+const FORKLIFT_CODES = ['1-2A-4', '1-2A-5'];
 
 export default function FuelTab({
   factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab,
@@ -57,20 +58,56 @@ export default function FuelTab({
           year={year}
           records={existingRecords.filter((r) => r.emission_source_id === src.id)}
           locationLabel={CAR_CODES.includes(src.source_code) ? '車牌號碼' : '設備名稱'}
+          isForklift={FORKLIFT_CODES.includes(src.source_code)}
         />
       ))}
     </div>
   );
 }
 
+// ─── 台數統計小元件（年底一次性調查，存 localStorage）─────────────────
+function VehicleCountBadge({
+  lsKey, label, placeholder,
+}: {
+  lsKey: string;
+  label: string;
+  placeholder: string;
+}) {
+  const [count, setCount] = useState('');
+  useEffect(() => {
+    setCount(localStorage.getItem(lsKey) ?? '');
+  }, [lsKey]);
+
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+      {label}
+      <input
+        type="number"
+        min="0"
+        step="1"
+        value={count}
+        placeholder={placeholder}
+        onChange={(e) => {
+          setCount(e.target.value);
+          localStorage.setItem(lsKey, e.target.value);
+        }}
+        className="w-12 bg-transparent border-none text-center focus:outline-none font-mono text-xs"
+        title="年底填寫一次，僅供參考，不影響計算"
+      />
+      台
+    </span>
+  );
+}
+
 function FuelSection({
-  source, factory, year, records, locationLabel,
+  source, factory, year, records, locationLabel, isForklift,
 }: {
   source: EmissionSource;
   factory: TabProps['factory'];
   year: number;
   records: ActivityRecord[];
   locationLabel: string;
+  isForklift: boolean;
 }) {
   const [rows, setRows] = useState<EventRow[]>(() =>
     records.map((r) => ({
@@ -90,6 +127,9 @@ function FuelSection({
   const rowsRef = useRef(rows);
   useEffect(() => { rowsRef.current = rows; }, [rows]);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const lsKeyDiesel = `ghg:vehcount:${factory.id}:${year}:${source.source_code}`;
+  const lsKeyElectric = `ghg:vehcount:${factory.id}:${year}:forklift_electric`;
 
   function addRow() {
     const tempKey = `new-${Date.now()}`;
@@ -175,11 +215,23 @@ function FuelSection({
   return (
     <div className="mb-8">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-gray-800">
-          {source.name_zh}
-          <span className="ml-2 text-xs font-mono text-gray-400">{source.source_code}</span>
-          {source.is_biomass && <span className="ml-2 text-xs text-green-600">🌿 生質</span>}
-        </h3>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="font-semibold text-gray-800">
+            {source.name_zh}
+            <span className="ml-2 text-xs font-mono text-gray-400">{source.source_code}</span>
+            {source.is_biomass && <span className="ml-2 text-xs text-green-600">🌿 生質</span>}
+          </h3>
+          {/* 年底台數統計（存 localStorage，不影響 CO₂e） */}
+          {isForklift ? (
+            <>
+              <VehicleCountBadge lsKey={lsKeyDiesel} label="柴油堆高機" placeholder="0" />
+              <VehicleCountBadge lsKey={lsKeyElectric} label="電動堆高機" placeholder="0" />
+            </>
+          ) : (
+            <VehicleCountBadge lsKey={lsKeyDiesel} label="車輛" placeholder="0" />
+          )}
+          <span className="text-xs text-gray-400">（年底填寫）</span>
+        </div>
         <button onClick={addRow}
           className="px-3 py-1.5 rounded-lg text-white text-xs font-medium hover:opacity-90 transition"
           style={{ backgroundColor: BTN_BG }}>
