@@ -35,9 +35,13 @@ interface AnnualRow {
   status: SaveStatus;
 }
 
+interface PurchaseTabProps extends TabProps {
+  upstreamTons?: Record<string, number>;
+}
+
 export default function PurchaseTab({
-  factory, year, emissionSources, selectedSourceIds, existingRecords,
-}: TabProps) {
+  factory, year, emissionSources, selectedSourceIds, existingRecords, upstreamTons,
+}: PurchaseTabProps) {
   const purchaseSources = emissionSources
     .filter((s) => s.source_code.startsWith('3-1') && selectedSourceIds.has(s.id))
     .sort((a, b) => a.source_code.localeCompare(b.source_code));
@@ -91,7 +95,7 @@ export default function PurchaseTab({
               <tbody>
                 {derivedSources.map((src, idx) => {
                   const label = DERIVED_MAP[src.source_code];
-                  const ton = derivedTonTotal(existingRecords, label);
+                  const ton = upstreamTons?.[label] ?? derivedTonTotal(existingRecords, label);
                   return (
                     <tr key={src.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                       <td className="px-4 py-2">

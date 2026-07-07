@@ -34,9 +34,27 @@ interface CellState {
 // Key: `${source_id}-${supply_type}-${item}`  e.g. "uuid-TW-布料"
 type CellKey = string;
 
+function computeItemTons(cells: Map<CellKey, CellState>): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const item of ITEMS) {
+    let total = 0;
+    for (const [key, cell] of cells) {
+      if (key.endsWith(`-TW-${item}`) || key.endsWith(`-FC-${item}`)) {
+        total += parseFloat(cell.ton) || 0;
+      }
+    }
+    totals[item] = total;
+  }
+  return totals;
+}
+
+interface UpstreamTabProps extends TabProps {
+  onTonsChange?: (tons: Record<string, number>) => void;
+}
+
 export default function UpstreamTab({
-  factory, year, emissionSources, existingRecords,
-}: TabProps) {
+  factory, year, emissionSources, existingRecords, onTonsChange,
+}: UpstreamTabProps) {
   const transportSources = emissionSources
     .filter((s) => TRANSPORT_CODES.includes(s.source_code as typeof TRANSPORT_CODES[number]))
     .sort((a, b) => a.source_code.localeCompare(b.source_code));
@@ -144,6 +162,7 @@ export default function UpstreamTab({
       if (cur) saved.set(key, { ...cur, saveStatus: 'saved' });
       cellsRef.current = saved;
       setCells(saved);
+      onTonsChange?.(computeItemTons(saved));
       setTimeout(() => {
         const reset = new Map(cellsRef.current);
         const c = reset.get(key);

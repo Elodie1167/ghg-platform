@@ -141,6 +141,21 @@ export default function FillPageClient({
   });
 
   const recordMap = useRef(buildRecordMap(existingRecords));
+
+  const [upstreamTons, setUpstreamTons] = useState<Record<string, number>>(() => {
+    const items = ['布料', '線料', '紙箱', '塑料袋'];
+    const totals: Record<string, number> = {};
+    for (const item of items) {
+      totals[item] = existingRecords
+        .filter((r) => {
+          if (!r.source_code?.startsWith('3-4')) return false;
+          const sl = r.sub_location ?? '';
+          return sl === item || sl === `TW-${item}` || sl === `FC-${item}`;
+        })
+        .reduce((s, r) => s + (r.meter_number != null ? Number(r.meter_number) : 0), 0);
+    }
+    return totals;
+  });
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localValuesRef = useRef(localValues);
   const elecSource = emissionSources.find((s) => s.source_code === ELEC_SOURCE_CODE);
@@ -359,6 +374,45 @@ export default function FillPageClient({
                    s.source_code !== '3-5-W1' && s.source_code !== '3-5-W2',
           );
           if (groupSources.length === 0) return null;
+
+          // 製程（焊條）：所有 1-3 來源合併成一個「焊條」checkbox
+          if (group.tabId === 'process') {
+            const weldSources = groupSources.filter((s) => !s.is_always_active);
+            if (weldSources.length === 0) return null;
+            const allChecked = weldSources.every((s) => pendingIds.has(s.id));
+            const anyChecked = weldSources.some((s) => pendingIds.has(s.id));
+            return (
+              <div key={group.tabId} className="mb-6">
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="font-semibold text-gray-700 text-sm">{group.label}</h3>
+                  <span className="text-xs px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: anyChecked ? '#d1fae5' : '#f3f4f6', color: anyChecked ? '#065f46' : '#6b7280' }}>
+                    {anyChecked ? '已選' : '未選'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                  <label
+                    className="flex items-start gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all select-none"
+                    style={{ backgroundColor: allChecked ? '#f0fdf4' : '#fff', borderColor: allChecked ? '#86efac' : '#e5e7eb', color: allChecked ? '#14532d' : '#374151' }}>
+                    <input type="checkbox" checked={allChecked}
+                      onChange={(e) => {
+                        setPendingIds((prev) => {
+                          const next = new Set(prev);
+                          weldSources.forEach((s) => e.target.checked ? next.add(s.id) : next.delete(s.id));
+                          return next;
+                        });
+                      }}
+                      className="mt-0.5 w-4 h-4 flex-shrink-0" style={{ accentColor: '#16a34a' }}
+                    />
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium leading-snug">焊條</div>
+                      <div className="text-xs opacity-50 font-mono">1-3</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            );
+          }
 
           // 若整個群組都是自動啟用，只顯示 badge
           if (groupSources.every((s) => s.is_always_active)) {
@@ -1124,7 +1178,7 @@ export default function FillPageClient({
       case 'combustion': return <CombustionTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
       case 'fugitive':   return <FugitiveTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
       case 'process':    return <ProcessTab />;
-      case 'purchase':   return <PurchaseTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
+      case 'purchase':   return <PurchaseTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} upstreamTons={upstreamTons} />;
       case 'energy':     return <StubTab label="能源相關 3.3" tabId="energy" />;
       case 'upstream':   return null;  // always-mounted outside TabContent
       case 'downstream': return <DownstreamTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
@@ -1209,7 +1263,8 @@ export default function FillPageClient({
         className="max-w-7xl mx-auto px-4 py-6">
         <UpstreamTab factory={factory} year={year} emissionSources={emissionSources}
           selectedSourceIds={selectedSourceIds} existingRecords={existingRecords}
-          setActiveTab={(t) => setActiveTab(t as TabId)} />
+          setActiveTab={(t) => setActiveTab(t as TabId)}
+          onTonsChange={(tons) => setUpstreamTons(tons)} />
       </div>
 
       <main className="max-w-7xl mx-auto px-4 py-6" style={{ display: activeTab === 'upstream' ? 'none' : undefined }}>
