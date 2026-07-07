@@ -107,6 +107,18 @@ function MonthlySection({
     return init;
   });
   const lvRef = useRef(lv);
+
+  const [recordIds, setRecordIds] = useState<Record<number, string | null>>(() => {
+    const init: Record<number, string | null> = {};
+    for (const r of records) { init[r.month] = r.id; }
+    return init;
+  });
+  const [reviewed, setReviewed] = useState<Record<number, boolean>>(() => {
+    const init: Record<number, boolean> = {};
+    for (const r of records) { init[r.month] = r.is_reviewed ?? false; }
+    return init;
+  });
+
   const [status, setStatus] = useState<SaveStatus>('idle');
   const tmr = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -136,10 +148,23 @@ function MonthlySection({
           }),
         });
         if (!res.ok) throw new Error();
+        const data = await res.json();
+        setRecordIds((prev) => ({ ...prev, [month]: data.data.id }));
         setStatus('saved');
         setTimeout(() => setStatus('idle'), 2000);
       } catch { setStatus('error'); }
     }, 1000);
+  }
+
+  async function toggleReview(month: number) {
+    const id = recordIds[month];
+    if (!id) return;
+    const newVal = !(reviewed[month] ?? false);
+    setReviewed((prev) => ({ ...prev, [month]: newVal }));
+    await fetch(`/api/records/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_reviewed: newVal }),
+    });
   }
 
   const total = Object.values(lv).reduce((s, v) => s + (parseFloat(v) || 0), 0);
@@ -158,19 +183,22 @@ function MonthlySection({
           </span>
         )}
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-md">
+      <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-lg">
         <table className="w-full text-sm">
           <thead>
             <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
               <th className="px-4 py-2 text-left w-16">月份</th>
               <th className="px-4 py-2 text-right">{colLabel}</th>
               <th className="px-4 py-2 text-right w-28">CO₂e (t)</th>
+              <th className="px-4 py-2 text-center w-10">查核</th>
             </tr>
           </thead>
           <tbody>
             {MONTHS.map((m) => {
               const rec = records.find((r) => r.month === m);
               const val = lv[m] ?? (rec?.activity_value != null ? String(rec.activity_value) : '');
+              const hasId = !!recordIds[m];
+              const isRev = reviewed[m] ?? false;
               return (
                 <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                   <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
@@ -183,6 +211,13 @@ function MonthlySection({
                   </td>
                   <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono">
                     {rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—'}
+                  </td>
+                  <td className="px-2 py-1.5 text-center">
+                    <button onClick={() => toggleReview(m)} disabled={!hasId}
+                      title={isRev ? '已查核（點擊取消）' : '點擊標記查核完成'}
+                      className={`text-base leading-none transition-all ${isRev ? 'text-green-500' : 'text-gray-300'} ${!hasId ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+                      {isRev ? '✅' : '⬜'}
+                    </button>
                   </td>
                 </tr>
               );
@@ -197,6 +232,7 @@ function MonthlySection({
               <td className="px-4 py-2 text-right font-mono text-gray-700">
                 {co2eTotal > 0 ? co2eTotal.toFixed(4) + ' t' : '—'}
               </td>
+              <td />
             </tr>
           </tfoot>
         </table>

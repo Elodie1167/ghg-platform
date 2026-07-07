@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Factory, FactoryListItem, EmissionSource, ActivityRecord, WasteConfig, WasteMethodConfig } from './page';
+import { MONTHS } from './tabTypes';
 import ImportModal from './ImportModal';
 import FuelTab from './FuelTab';
 import CombustionTab from './CombustionTab';
@@ -697,62 +698,66 @@ export default function FillPageClient({
     }
 
     function ProcessSection({ source }: { source: EmissionSource }) {
-      const annualRec = existingRecords.find(
-        (r) => r.emission_source_id === source.id && r.month === 1,
-      );
-
-      interface ProcState {
+      interface ProcRow {
         id: string | null;
-        value: string;        // activity_value: 採購 kg
-        carbonContent: string; // meter_number: 含碳量 %
+        value: string;
+        carbonContent: string;
         notes: string;
         co2e: number | null;
         is_reviewed: boolean;
         saveStatus: SaveStatus;
       }
 
-      const [proc, setProc] = useState<ProcState>({
-        id: annualRec?.id ?? null,
-        value: annualRec?.activity_value != null ? String(annualRec.activity_value) : '',
-        carbonContent: annualRec?.meter_number != null ? String(annualRec.meter_number) : '',
-        notes: annualRec?.notes ?? '',
-        co2e: annualRec?.co2e_total ?? null,
-        is_reviewed: annualRec?.is_reviewed ?? false,
-        saveStatus: 'idle',
+      const [rows, setRows] = useState<Record<number, ProcRow>>(() => {
+        const init: Record<number, ProcRow> = {};
+        for (const m of MONTHS) {
+          const r = existingRecords.find(
+            (rec) => rec.emission_source_id === source.id && rec.month === m,
+          );
+          init[m] = {
+            id: r?.id ?? null,
+            value: r?.activity_value != null ? String(r.activity_value) : '',
+            carbonContent: r?.meter_number != null ? String(r.meter_number) : '',
+            notes: r?.notes ?? '',
+            co2e: r?.co2e_total ?? null,
+            is_reviewed: r?.is_reviewed ?? false,
+            saveStatus: 'idle',
+          };
+        }
+        return init;
       });
-      const procRef = useRef(proc);
-      const tmr = useRef<ReturnType<typeof setTimeout> | null>(null);
+      const rowsRef = useRef(rows);
+      useEffect(() => { rowsRef.current = rows; }, [rows]);
+      const timers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
 
-      // 估計碳重：採購量 × 含碳量% ÷ 100
-      const kgVal = parseFloat(proc.value) || 0;
-      const ccVal = parseFloat(proc.carbonContent) || 0;
-      const estCarbonKg = kgVal > 0 && ccVal > 0 ? kgVal * ccVal / 100 : null;
-
-      function onChange(field: keyof Pick<ProcState, 'value' | 'carbonContent' | 'notes'>, val: string) {
-        const next = { ...procRef.current, [field]: val };
-        procRef.current = next;
-        setProc(next);
-        if (tmr.current) clearTimeout(tmr.current);
-        tmr.current = setTimeout(save, 1000);
+      function onChange(month: number, field: 'value' | 'carbonContent' | 'notes', val: string) {
+        const next = { ...rowsRef.current[month], [field]: val };
+        rowsRef.current = { ...rowsRef.current, [month]: next };
+        setRows((prev) => ({ ...prev, [month]: next }));
+        if (timers.current[month]) clearTimeout(timers.current[month]);
+        timers.current[month] = setTimeout(() => saveRow(month), 1000);
       }
 
-      async function save() {
-        const p = procRef.current;
-        const numVal = p.value !== '' ? parseFloat(p.value) : null;
-        if (p.value !== '' && (numVal === null || isNaN(numVal))) return;
-        const next = { ...procRef.current, saveStatus: 'saving' as SaveStatus };
-        procRef.current = next; setProc(next);
+      async function saveRow(month: number) {
+        const row = rowsRef.current[month];
+        if (!row) return;
+        const numVal = row.value !== '' ? parseFloat(row.value) : null;
+        if (row.value !== '' && (numVal === null || isNaN(numVal))) return;
+        const saving = { ...row, saveStatus: 'saving' as SaveStatus };
+        rowsRef.current = { ...rowsRef.current, [month]: saving };
+        setRows((prev) => ({ ...prev, [month]: saving }));
+        const payload = {
+          factory_id: factory.id, emission_source_id: source.id,
+          year, month,
+          activity_value: numVal != null && !isNaN(numVal) ? numVal : null,
+          activity_unit: source.default_unit,
+          meter_number: row.carbonContent || null,
+          notes: row.notes || null,
+        };
         try {
-          const payload = {
-            factory_id: factory.id, emission_source_id: source.id,
-            year, month: 1,
-            activity_value: numVal != null && !isNaN(numVal) ? numVal : null,
-            activity_unit: source.default_unit,
-            meter_number: p.carbonContent || null,
-            notes: p.notes || null,
-          };
-          if (p.id) {
-            const res = await fetch(`/api/records/${p.id}`, {
+          let id = row.id;
+          if (id) {
+            const res = await fetch(`/api/records/${id}`, {
               method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
             });
             if (!res.ok) throw new Error();
@@ -762,99 +767,123 @@ export default function FillPageClient({
             });
             if (!res.ok) throw new Error();
             const data = await res.json();
-            const withId = { ...procRef.current, id: data.data.id };
-            procRef.current = withId; setProc(withId);
+            id = data.data.id;
           }
-          const saved = { ...procRef.current, saveStatus: 'saved' as SaveStatus };
-          procRef.current = saved; setProc(saved);
-          setTimeout(() => { const reset = { ...procRef.current, saveStatus: 'idle' as SaveStatus }; procRef.current = reset; setProc(reset); }, 2000);
+          const saved = { ...rowsRef.current[month], id, saveStatus: 'saved' as SaveStatus };
+          rowsRef.current = { ...rowsRef.current, [month]: saved };
+          setRows((prev) => ({ ...prev, [month]: saved }));
+          setTimeout(() => {
+            const idle = { ...rowsRef.current[month], saveStatus: 'idle' as SaveStatus };
+            rowsRef.current = { ...rowsRef.current, [month]: idle };
+            setRows((prev) => ({ ...prev, [month]: idle }));
+          }, 2000);
         } catch {
-          const err = { ...procRef.current, saveStatus: 'error' as SaveStatus };
-          procRef.current = err; setProc(err);
+          const err = { ...rowsRef.current[month], saveStatus: 'error' as SaveStatus };
+          rowsRef.current = { ...rowsRef.current, [month]: err };
+          setRows((prev) => ({ ...prev, [month]: err }));
         }
       }
 
-      async function toggleReview() {
-        if (!procRef.current.id) return;
-        const newVal = !procRef.current.is_reviewed;
-        const next = { ...procRef.current, is_reviewed: newVal };
-        procRef.current = next; setProc(next);
-        await fetch(`/api/records/${next.id}`, {
+      async function toggleReview(month: number) {
+        const row = rowsRef.current[month];
+        if (!row.id) return;
+        const newVal = !row.is_reviewed;
+        const next = { ...row, is_reviewed: newVal };
+        rowsRef.current = { ...rowsRef.current, [month]: next };
+        setRows((prev) => ({ ...prev, [month]: next }));
+        await fetch(`/api/records/${row.id}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ is_reviewed: newVal }),
         });
       }
 
+      const totalVol = Object.values(rows).reduce((s, r) => s + (parseFloat(r.value) || 0), 0);
+      const totalCo2e = Object.values(rows).reduce((s, r) => s + (r.co2e ?? 0), 0);
+
       return (
-        <div className="mb-8 max-w-3xl">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-gray-800">
-              {source.name_zh}
-              <span className="ml-2 text-xs font-mono text-gray-400">{source.source_code}</span>
-            </h3>
-            <div className="flex items-center gap-2 text-xs">
-              {proc.saveStatus === 'saving' && <span className="text-yellow-500">⏳ 儲存中…</span>}
-              {proc.saveStatus === 'saved' && <span className="text-green-600">✓ 已儲存</span>}
-              {proc.saveStatus === 'error' && <span className="text-red-500">❌ 失敗</span>}
-            </div>
-          </div>
+        <div className="mb-8">
+          <h3 className="font-semibold text-gray-800 mb-3">
+            {source.name_zh}
+            <span className="ml-2 text-xs font-mono text-gray-400">{source.source_code}</span>
+          </h3>
           <div className="overflow-x-auto rounded-lg border border-gray-200">
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ backgroundColor: '#0C3D2E' }} className="text-white">
-                  <th className="px-4 py-2.5 text-right w-44">年度採購量 ({source.default_unit})</th>
-                  <th className="px-4 py-2.5 text-right w-32">含碳量 (%)</th>
-                  <th className="px-4 py-2.5 text-right w-36">估計碳重 (kg)</th>
-                  <th className="px-4 py-2.5 text-left">備註</th>
-                  <th className="px-4 py-2.5 text-right w-28">CO₂e (t)</th>
-                  <th className="px-4 py-2.5 text-center w-10">查核</th>
+                  <th className="px-3 py-2.5 text-left w-16">月份</th>
+                  <th className="px-3 py-2.5 text-right w-36">採購量 ({source.default_unit})</th>
+                  <th className="px-3 py-2.5 text-right w-28">含碳量 (%)</th>
+                  <th className="px-3 py-2.5 text-right w-32">估計碳重 (kg)</th>
+                  <th className="px-3 py-2.5 text-left">備註</th>
+                  <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
+                  <th className="px-3 py-2.5 text-center w-8">查核</th>
+                  <th className="px-3 py-2.5 text-center w-8">狀</th>
                 </tr>
               </thead>
               <tbody>
-                <tr className="bg-white">
-                  <td className="px-4 py-2">
-                    <input type="number" min="0" step="0.01" placeholder="全年採購 kg"
-                      value={proc.value}
-                      onChange={(e) => onChange('value', e.target.value)}
-                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-right focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </td>
-                  <td className="px-4 py-2">
-                    <input type="number" min="0" max="100" step="0.001" placeholder="例：0.08"
-                      value={proc.carbonContent}
-                      onChange={(e) => onChange('carbonContent', e.target.value)}
-                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-right focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-sm text-gray-700">
-                    {estCarbonKg != null ? estCarbonKg.toFixed(3) : '—'}
-                  </td>
-                  <td className="px-4 py-2">
-                    <input type="text" placeholder="供應商、規格等"
-                      value={proc.notes}
-                      onChange={(e) => onChange('notes', e.target.value)}
-                      className="w-full border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
-                    />
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs text-gray-400">
-                    {proc.co2e != null ? proc.co2e.toFixed(4) : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-center">
-                    <button onClick={toggleReview} disabled={!proc.id}
-                      title={proc.is_reviewed ? '已查核（點擊取消）' : '點擊標記查核完成'}
-                      className={`text-base leading-none transition-all ${proc.is_reviewed ? 'text-green-500' : 'text-gray-300'} ${!proc.id ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
-                      {proc.is_reviewed ? '✅' : '⬜'}
-                    </button>
-                  </td>
-                </tr>
+                {MONTHS.map((m) => {
+                  const row = rows[m];
+                  const kgVal = parseFloat(row.value) || 0;
+                  const ccVal = parseFloat(row.carbonContent) || 0;
+                  const estC = kgVal > 0 && ccVal > 0 ? kgVal * ccVal / 100 : null;
+                  return (
+                    <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                      <td className="px-3 py-1.5 font-medium text-gray-700">{m} 月</td>
+                      <td className="px-2 py-1.5">
+                        <input type="number" min="0" step="0.01" placeholder="採購量"
+                          value={row.value}
+                          onChange={(e) => onChange(m, 'value', e.target.value)}
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input type="number" min="0" max="100" step="0.001" placeholder="例：0.08"
+                          value={row.carbonContent}
+                          onChange={(e) => onChange(m, 'carbonContent', e.target.value)}
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono text-xs text-gray-700">
+                        {estC != null ? estC.toFixed(3) : '—'}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input type="text" placeholder="供應商、規格等"
+                          value={row.notes}
+                          onChange={(e) => onChange(m, 'notes', e.target.value)}
+                          className="w-full border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono text-xs text-gray-400">
+                        {row.co2e != null ? row.co2e.toFixed(4) : '—'}
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <button onClick={() => toggleReview(m)} disabled={!row.id}
+                          title={row.is_reviewed ? '已查核（點擊取消）' : '點擊標記查核完成'}
+                          className={`text-base leading-none transition-all ${row.is_reviewed ? 'text-green-500' : 'text-gray-300'} ${!row.id ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+                          {row.is_reviewed ? '✅' : '⬜'}
+                        </button>
+                      </td>
+                      <td className="px-2 py-1.5 text-center text-xs">
+                        {row.saveStatus === 'saving' && '⏳'}
+                        {row.saveStatus === 'saved' && '✓'}
+                        {row.saveStatus === 'error' && '❌'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
+              <tfoot>
+                <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
+                  <td className="px-3 py-2 text-gray-700">合計</td>
+                  <td className="px-3 py-2 text-right font-mono text-gray-700">
+                    {totalVol.toLocaleString(undefined, { maximumFractionDigits: 2 })} {source.default_unit}
+                  </td>
+                  <td colSpan={3} />
+                  <td className="px-3 py-2 text-right font-mono text-gray-700">
+                    {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
+                  </td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
             </table>
           </div>
-          {estCarbonKg != null && (
-            <p className="text-xs text-gray-400 mt-1.5 text-right">
-              估計碳重 = {kgVal} kg × {ccVal}% ÷ 100 = {estCarbonKg.toFixed(3)} kg C
-            </p>
-          )}
         </div>
       );
     }
@@ -863,7 +892,7 @@ export default function FillPageClient({
       <div>
         <div className="mb-6">
           <h2 className="text-lg font-semibold text-gray-800">製程排放 S1 — 焊條</h2>
-          <p className="text-sm text-gray-500 mt-0.5">填入年度採購量（kg）與含碳量（%），系統計算估計碳重，輸入停止 1 秒後自動儲存</p>
+          <p className="text-sm text-gray-500 mt-0.5">每月填入採購量（kg）與含碳量（%），系統計算估計碳重，輸入停止 1 秒後自動儲存</p>
         </div>
         {processSources.map((src) => <ProcessSection key={src.id} source={src} />)}
       </div>

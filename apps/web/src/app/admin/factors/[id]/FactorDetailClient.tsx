@@ -260,6 +260,31 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               <NumField label="EF N₂O" value={n(edit.factor_n2o)} onChange={(v) => setEdit((e) => ({ ...e, factor_n2o: p(v) }))} unit="kg N₂O/TJ" />
               <NumField label="物質/HFCs 係數" value={n(edit.factor_substance)} onChange={(v) => setEdit((e) => ({ ...e, factor_substance: p(v) }))} unit="tCO₂-eq/unit" />
             </div>
+            {/* GWP 換算摘要 */}
+            {(edit.factor_co2 != null || edit.factor_ch4 != null || edit.factor_n2o != null) && (() => {
+              const total =
+                (edit.factor_co2 ?? 0) * GWP_CO2 +
+                (edit.factor_ch4 ?? 0) * GWP_CH4 +
+                (edit.factor_n2o ?? 0) * GWP_N2O;
+              return (
+                <div className="flex flex-wrap items-center gap-2 p-3 bg-green-50 rounded-lg border border-green-100 text-xs font-mono">
+                  <span className="font-sans text-gray-500 font-medium">CO₂-eq 合計 (per TJ)：</span>
+                  {edit.factor_co2 != null && (
+                    <span className="text-gray-700">{edit.factor_co2} × <span className="text-blue-600">1</span> <span className="text-gray-400">(CO₂)</span></span>
+                  )}
+                  {edit.factor_ch4 != null && (
+                    <span className="text-gray-700">+ {edit.factor_ch4} × <span className="text-blue-600">27.9</span> <span className="text-gray-400">(CH₄)</span></span>
+                  )}
+                  {edit.factor_n2o != null && (
+                    <span className="text-gray-700">+ {edit.factor_n2o} × <span className="text-blue-600">273</span> <span className="text-gray-400">(N₂O)</span></span>
+                  )}
+                  <span className="text-gray-400">=</span>
+                  <span className="font-bold text-green-800 text-sm">{total.toFixed(2)} kg CO₂-eq/TJ</span>
+                  <span className="text-gray-300 ml-1 font-sans">AR6 GWP</span>
+                </div>
+              );
+            })()}
+
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-2 border-t border-gray-100">
               <NumField label="電網排放係數 (Location)" value={n(edit.grid_emission_factor)} onChange={(v) => setEdit((e) => ({ ...e, grid_emission_factor: p(v) }))} unit="tCO₂/MWh" hint="S2 Location-Based" />
               <NumField label="市場剩餘係數 (Market)" value={n(edit.market_residual_factor)} onChange={(v) => setEdit((e) => ({ ...e, market_residual_factor: p(v) }))} unit="tCO₂/MWh" hint="S2 Market-Based" />
