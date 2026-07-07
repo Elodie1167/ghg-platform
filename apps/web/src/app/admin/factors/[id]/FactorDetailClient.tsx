@@ -4,10 +4,10 @@ import { useState } from 'react';
 
 const HEADER_BG = '#0C3D2E';
 
-// AR6 GWP constants
-const GWP_CO2 = 1;
-const GWP_CH4 = 27.9;
-const GWP_N2O = 273;
+// AR6 GWP defaults
+const GWP_CO2_DEFAULT = 1;
+const GWP_CH4_DEFAULT = 27.9;
+const GWP_N2O_DEFAULT = 273;
 
 interface FactorDetail {
   id: string;
@@ -127,6 +127,14 @@ export default function FactorDetailClient({ factor, factories }: Props) {
   // preview inputs
   const [previewActivity, setPreviewActivity] = useState('1000');
   const [previewUnit, setPreviewUnit] = useState('kg');
+
+  // GWP values (editable, defaults to AR6)
+  const [gwpCO2, setGwpCO2] = useState(String(GWP_CO2_DEFAULT));
+  const [gwpCH4, setGwpCH4] = useState(String(GWP_CH4_DEFAULT));
+  const [gwpN2O, setGwpN2O] = useState(String(GWP_N2O_DEFAULT));
+  const GWP_CO2 = parseFloat(gwpCO2) || GWP_CO2_DEFAULT;
+  const GWP_CH4 = parseFloat(gwpCH4) || GWP_CH4_DEFAULT;
+  const GWP_N2O = parseFloat(gwpN2O) || GWP_N2O_DEFAULT;
 
   async function handleSave() {
     setSaving(true);
@@ -260,30 +268,47 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               <NumField label="EF N₂O" value={n(edit.factor_n2o)} onChange={(v) => setEdit((e) => ({ ...e, factor_n2o: p(v) }))} unit="kg N₂O/TJ" />
               <NumField label="物質/HFCs 係數" value={n(edit.factor_substance)} onChange={(v) => setEdit((e) => ({ ...e, factor_substance: p(v) }))} unit="tCO₂-eq/unit" />
             </div>
-            {/* GWP 換算摘要 */}
-            {(edit.factor_co2 != null || edit.factor_ch4 != null || edit.factor_n2o != null) && (() => {
-              const total =
-                (edit.factor_co2 ?? 0) * GWP_CO2 +
-                (edit.factor_ch4 ?? 0) * GWP_CH4 +
-                (edit.factor_n2o ?? 0) * GWP_N2O;
-              return (
-                <div className="flex flex-wrap items-center gap-2 p-3 bg-green-50 rounded-lg border border-green-100 text-xs font-mono">
-                  <span className="font-sans text-gray-500 font-medium">CO₂-eq 合計 (per TJ)：</span>
-                  {edit.factor_co2 != null && (
-                    <span className="text-gray-700">{edit.factor_co2} × <span className="text-blue-600">1</span> <span className="text-gray-400">(CO₂)</span></span>
-                  )}
-                  {edit.factor_ch4 != null && (
-                    <span className="text-gray-700">+ {edit.factor_ch4} × <span className="text-blue-600">27.9</span> <span className="text-gray-400">(CH₄)</span></span>
-                  )}
-                  {edit.factor_n2o != null && (
-                    <span className="text-gray-700">+ {edit.factor_n2o} × <span className="text-blue-600">273</span> <span className="text-gray-400">(N₂O)</span></span>
-                  )}
-                  <span className="text-gray-400">=</span>
-                  <span className="font-bold text-green-800 text-sm">{total.toFixed(2)} kg CO₂-eq/TJ</span>
-                  <span className="text-gray-300 ml-1 font-sans">AR6 GWP</span>
+            {/* GWP 全球暖化潛勢 */}
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-semibold text-blue-800">GWP 全球暖化潛勢（可調整）</span>
+                <button onClick={() => { setGwpCO2(String(GWP_CO2_DEFAULT)); setGwpCH4(String(GWP_CH4_DEFAULT)); setGwpN2O(String(GWP_N2O_DEFAULT)); }}
+                  className="text-xs text-blue-500 hover:text-blue-700 underline">重設為 AR6</button>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">GWP CO₂</label>
+                  <input type="number" step="any" value={gwpCO2} onChange={(e) => setGwpCO2(e.target.value)}
+                    className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
                 </div>
-              );
-            })()}
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">GWP CH₄</label>
+                  <input type="number" step="any" value={gwpCH4} onChange={(e) => setGwpCH4(e.target.value)}
+                    className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">GWP N₂O</label>
+                  <input type="number" step="any" value={gwpN2O} onChange={(e) => setGwpN2O(e.target.value)}
+                    className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                </div>
+              </div>
+              {(edit.factor_co2 != null || edit.factor_ch4 != null || edit.factor_n2o != null) && (() => {
+                const total =
+                  (edit.factor_co2 ?? 0) * GWP_CO2 +
+                  (edit.factor_ch4 ?? 0) * GWP_CH4 +
+                  (edit.factor_n2o ?? 0) * GWP_N2O;
+                return (
+                  <div className="mt-3 pt-3 border-t border-blue-100 flex flex-wrap items-center gap-2 text-xs font-mono">
+                    <span className="font-sans text-gray-500">合計：</span>
+                    {edit.factor_co2 != null && <span className="text-gray-700">{edit.factor_co2}×{GWP_CO2}</span>}
+                    {edit.factor_ch4 != null && <span className="text-gray-700">+ {edit.factor_ch4}×{GWP_CH4}</span>}
+                    {edit.factor_n2o != null && <span className="text-gray-700">+ {edit.factor_n2o}×{GWP_N2O}</span>}
+                    <span className="text-gray-400">=</span>
+                    <span className="font-bold text-green-800">{total.toFixed(2)} kg CO₂-eq/TJ</span>
+                  </div>
+                );
+              })()}
+            </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-2 border-t border-gray-100">
               <NumField label="電網排放係數 (Location)" value={n(edit.grid_emission_factor)} onChange={(v) => setEdit((e) => ({ ...e, grid_emission_factor: p(v) }))} unit="tCO₂/MWh" hint="S2 Location-Based" />
