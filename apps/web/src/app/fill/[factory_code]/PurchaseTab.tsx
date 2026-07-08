@@ -42,20 +42,15 @@ interface PurchaseTabProps extends TabProps {
 export default function PurchaseTab({
   factory, year, emissionSources, selectedSourceIds, existingRecords, upstreamTons,
 }: PurchaseTabProps) {
-  const purchaseSources = emissionSources
-    .filter((s) => s.source_code.startsWith('3-1') && selectedSourceIds.has(s.id))
+  // 布料（3-1-A）：需手動在 BasicTab 啟用，由 Higg MSI 填入 CO₂e
+  const fabricSource = emissionSources.find(
+    (s) => s.source_code === FABRIC_CODE && selectedSourceIds.has(s.id),
+  ) ?? null;
+
+  // 線料/紙箱/塑料袋（3-1-B/C/D）：重量自動帶入，不需在 BasicTab 勾選
+  const derivedSources = emissionSources
+    .filter((s) => s.source_code in DERIVED_MAP)
     .sort((a, b) => a.source_code.localeCompare(b.source_code));
-
-  const fabricSource = purchaseSources.find((s) => s.source_code === FABRIC_CODE);
-  const derivedSources = purchaseSources.filter((s) => s.source_code in DERIVED_MAP);
-
-  if (purchaseSources.length === 0) {
-    return (
-      <div className="flex flex-col items-center py-20 text-gray-400">
-        <p className="text-base">尚未設定採購商品排放源</p>
-      </div>
-    );
-  }
 
   return (
     <div>
