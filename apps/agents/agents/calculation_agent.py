@@ -177,23 +177,25 @@ class CalculationAgent:
             ch4_kg = value * (factor.factor_ch4 or 0.0)
             n2o_kg = value * (factor.factor_n2o or 0.0)
 
-        co2e_co2 = co2_kg * GWP["CO2"]
-        co2e_ch4 = ch4_kg * GWP["CH4"]
-        co2e_n2o = n2o_kg * GWP["N2O"]
+        # 各氣體先換算到 tCO₂e，各自取 4 位後加總，最終再取 4 位
+        # 規則：活動數據 × 係數保留全精度；/1000 (kg→t) 後每氣體取 4 位；最終 CO₂e 取 4 位
+        t_co2 = round(co2_kg * GWP["CO2"] / 1000, 4)
+        t_ch4 = round(ch4_kg * GWP["CH4"] / 1000, 4)
+        t_n2o = round(n2o_kg * GWP["N2O"] / 1000, 4)
 
         # 冷媒 / 滅火器 / SF6：使用 factor_substance × 物質 GWP
-        co2e_substance = 0.0
+        t_substance = 0.0
         if factor.factor_substance is not None and inp.substance:
             gwp_substance = GWP.get(inp.substance)
             if gwp_substance is None:
                 warnings.append(f"⚠️ 未知物質 {inp.substance}，無法套用 GWP，co2e_substance 計為 0")
             else:
-                co2e_substance = value * factor.factor_substance * gwp_substance
+                t_substance = round(value * factor.factor_substance * gwp_substance / 1000, 4)
 
         if inp.is_biomass:
             # 生質排放：CO₂ 獨立揭露，CH₄/N₂O 正常計入
-            biomass_co2 = round(co2e_co2 / 1000, 6)   # kg → tCO₂e
-            co2e_total  = round((co2e_ch4 + co2e_n2o + co2e_substance) / 1000, 6)
+            biomass_co2 = t_co2   # 已是 tCO₂e，保留 4 位
+            co2e_total  = round(t_ch4 + t_n2o + t_substance, 4)
             return CalculationResult(
                 co2e_total=co2e_total,
                 co2e_location=None,
@@ -203,7 +205,7 @@ class CalculationAgent:
                 warnings=warnings,
             )
         else:
-            co2e_total = round((co2e_co2 + co2e_ch4 + co2e_n2o + co2e_substance) / 1000, 6)
+            co2e_total = round(t_co2 + t_ch4 + t_n2o + t_substance, 4)
             return CalculationResult(
                 co2e_total=co2e_total,
                 co2e_location=None,
@@ -227,7 +229,7 @@ class CalculationAgent:
         grid_ef = factor.grid_emission_factor or 0.0
 
         # Location-Based（所有產區通用）
-        co2e_location = round(kwh * grid_ef / 1000, 6)   # kg → tCO₂e
+        co2e_location = round(kwh * grid_ef / 1000, 4)   # kg → tCO₂e，取 4 位
 
         # Market-Based
         net_kwh = kwh - rec_kwh
@@ -238,10 +240,10 @@ class CalculationAgent:
                 warnings.append("⚠️ 中國市場剩餘電力排放係數尚未設定，Market-Based 無法計算")
                 co2e_market = None
             else:
-                co2e_market = round(max(0.0, net_kwh * market_ef) / 1000, 6)
+                co2e_market = round(max(0.0, net_kwh * market_ef) / 1000, 4)
         else:
             # 一般產區：使用電網係數，REC 不可使排放為負
-            co2e_market = round(max(0.0, net_kwh * grid_ef) / 1000, 6)
+            co2e_market = round(max(0.0, net_kwh * grid_ef) / 1000, 4)
 
         return CalculationResult(
             co2e_total=co2e_location,  # 彙總 VIEW 使用 location 作為基準
@@ -263,7 +265,7 @@ class CalculationAgent:
     ) -> CalculationResult:
 
         f3 = factor.scope3_factor or 0.0
-        co2e_total = round(value * f3 / 1000, 6)   # kg → tCO₂e
+        co2e_total = round(value * f3 / 1000, 4)   # kg → tCO₂e，取 4 位
 
         return CalculationResult(
             co2e_total=co2e_total,

@@ -61,6 +61,12 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
   const [addCountry, setAddCountry] = useState('TWN');
   const [addYear, setAddYear] = useState(2025);
 
+  const [showCopyForm, setShowCopyForm] = useState(false);
+  const [copyFromYear, setCopyFromYear] = useState(2025);
+  const [copyToYear, setCopyToYear] = useState(2026);
+  const [copying, setCopying] = useState(false);
+  const [copyMsg, setCopyMsg] = useState('');
+
   const availableYears = Array.from(new Set(factors.map((f) => f.year))).sort((a, b) => b - a);
 
   const filtered = factors.filter((f) => {
@@ -99,6 +105,29 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
       }, ...prev]);
     }
     setShowAddForm(false); setAddSource('');
+  }
+
+  async function copyYear() {
+    if (copyFromYear >= copyToYear) { setCopyMsg('❌ 來源年度必須早於目標年度'); return; }
+    const confirmed = window.confirm(
+      `確定要將 ${copyFromYear} 年的所有係數複製到 ${copyToYear} 年？\n已存在的係數不會被覆蓋。`,
+    );
+    if (!confirmed) return;
+    setCopying(true); setCopyMsg('');
+    try {
+      const res = await fetch('/api/admin/factors/copy-year', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from_year: copyFromYear, to_year: copyToYear }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setCopyMsg(`❌ ${data.error}`); return; }
+      const { copied, skipped } = data.data as { copied: number; skipped: number; from_year: number; to_year: number };
+      setCopyMsg(`✅ 成功複製 ${copied} 筆，跳過已存在 ${skipped} 筆。請重新整理頁面查看 ${copyToYear} 年係數。`);
+    } catch {
+      setCopyMsg('❌ 發生錯誤，請重試');
+    } finally {
+      setCopying(false);
+    }
   }
 
   function factoryCount(ids: string[]) {
@@ -142,14 +171,53 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white w-56 focus:outline-none focus:ring-2 focus:ring-green-500"
           />
 
-          <div className="ml-auto">
-            <button onClick={() => setShowAddForm(!showAddForm)}
+          <div className="ml-auto flex gap-2">
+            <button onClick={() => { setShowCopyForm(!showCopyForm); setShowAddForm(false); }}
+              className="px-4 py-1.5 rounded-lg text-sm font-medium hover:opacity-90 transition border"
+              style={{ borderColor: HEADER_BG, color: HEADER_BG }}>
+              複製係數到下一年
+            </button>
+            <button onClick={() => { setShowAddForm(!showAddForm); setShowCopyForm(false); }}
               className="px-4 py-1.5 rounded-lg text-white text-sm font-medium hover:opacity-90 transition"
               style={{ backgroundColor: HEADER_BG }}>
               + 新增係數
             </button>
           </div>
         </div>
+
+        {/* 複製年度表單 */}
+        {showCopyForm && (
+          <div className="mb-6 p-4 bg-amber-50 rounded-lg border border-amber-200 shadow-sm">
+            <p className="text-sm font-semibold text-amber-800 mb-3">
+              一鍵複製排放係數到新年度（已存在的係數不會被覆蓋）
+            </p>
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">來源年度</label>
+                <input type="number" min="2020" max="2099" value={copyFromYear}
+                  onChange={(e) => setCopyFromYear(Number(e.target.value))}
+                  className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 w-24" />
+              </div>
+              <span className="text-gray-500 mb-1.5">→</span>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">目標年度</label>
+                <input type="number" min="2021" max="2100" value={copyToYear}
+                  onChange={(e) => setCopyToYear(Number(e.target.value))}
+                  className="border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 w-24" />
+              </div>
+              <button onClick={copyYear} disabled={copying}
+                className="px-4 py-1.5 rounded-lg text-white text-sm font-medium transition disabled:opacity-50"
+                style={{ backgroundColor: '#b45309' }}>
+                {copying ? '複製中…' : '確認複製'}
+              </button>
+              <button onClick={() => { setShowCopyForm(false); setCopyMsg(''); }}
+                className="px-4 py-1.5 rounded-lg text-sm border border-gray-300 hover:bg-gray-50 transition">
+                取消
+              </button>
+            </div>
+            {copyMsg && <p className="text-sm mt-3 text-gray-700">{copyMsg}</p>}
+          </div>
+        )}
 
         {/* 新增表單 */}
         {showAddForm && (

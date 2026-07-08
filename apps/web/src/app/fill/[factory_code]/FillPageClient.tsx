@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Factory, FactoryListItem, EmissionSource, ActivityRecord, WasteConfig, WasteMethodConfig } from './page';
+import type { Factory, FactoryListItem, EmissionSource, ActivityRecord, WasteConfig, WasteMethodConfig, AssignedFactor } from './page';
 import { MONTHS } from './tabTypes';
 import ImportModal from './ImportModal';
 import FuelTab from './FuelTab';
@@ -84,6 +84,7 @@ interface Props {
   year: number;
   initialSelectedIds: string[];
   initialWasteConfig: Partial<WasteConfig> | null;
+  assignedFactors: AssignedFactor[];
 }
 
 function buildRecordMap(records: ActivityRecord[]): Map<string, ActivityRecord> {
@@ -94,6 +95,9 @@ function buildRecordMap(records: ActivityRecord[]): Map<string, ActivityRecord> 
   return map;
 }
 
+// Available reporting years (expand as needed)
+const REPORT_YEARS = [2023, 2024, 2025, 2026, 2027, 2028];
+
 export default function FillPageClient({
   factory,
   allFactories,
@@ -102,7 +106,12 @@ export default function FillPageClient({
   year,
   initialSelectedIds,
   initialWasteConfig,
+  assignedFactors,
 }: Props) {
+  // Build a lookup: emission_source_id → assigned factor for quick access in tabs
+  const factorBySourceId = Object.fromEntries(
+    assignedFactors.map((f) => [f.emission_source_id, f]),
+  ) as Record<string, AssignedFactor>;
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>('basic');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -1168,6 +1177,79 @@ export default function FillPageClient({
     );
   }
 
+  // ─── FactorPanel：顯示當前 tab 的係數資訊 ───────────────────
+  function FactorPanel() {
+    const [expanded, setExpanded] = useState(false);
+    const grp = SOURCE_GROUPS.find((g) => g.tabId === activeTab);
+    if (!grp) return null;
+
+    const tabSources = emissionSources.filter((s) => s.source_code.startsWith(grp.prefix));
+    const tabFactors = tabSources
+      .map((s) => ({ source: s, factor: factorBySourceId[s.id] ?? null }))
+      .filter((x) => x.factor !== null);
+
+    if (tabFactors.length === 0) return null;
+
+    function fmtNum(v: number | null, digits = 6): string {
+      if (v === null) return '—';
+      return v.toFixed(digits);
+    }
+
+    return (
+      <div className="mt-6 border border-blue-100 rounded-xl bg-blue-50/40">
+        <button
+          onClick={() => setExpanded((e) => !e)}
+          className="w-full flex items-center justify-between px-4 py-3 text-left">
+          <span className="text-sm font-semibold text-blue-700">
+            適用係數（{tabFactors.length} 個排放源，{year} 年）
+          </span>
+          <span className="text-blue-400 text-sm">{expanded ? '▲ 收起' : '▼ 展開查看'}</span>
+        </button>
+        {expanded && (
+          <div className="px-4 pb-4 overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="text-blue-600 border-b border-blue-200 text-right">
+                  <th className="py-1.5 text-left font-semibold w-24">代碼</th>
+                  <th className="py-1.5 text-left font-semibold pr-3">名稱</th>
+                  <th className="py-1.5 font-semibold">CO₂ EF</th>
+                  <th className="py-1.5 font-semibold">CH₄ EF</th>
+                  <th className="py-1.5 font-semibold">N₂O EF</th>
+                  <th className="py-1.5 font-semibold">電網 EF</th>
+                  <th className="py-1.5 font-semibold">S3 EF</th>
+                  <th className="py-1.5 font-semibold">NCV</th>
+                  <th className="py-1.5 text-left font-semibold pl-3">來源</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tabFactors.map(({ source, factor }, idx) => (
+                  <tr key={source.id} className={idx % 2 === 0 ? 'bg-white/70' : ''}>
+                    <td className="py-1.5 font-mono text-gray-500">{source.source_code}</td>
+                    <td className="py-1.5 text-gray-800 pr-3">{source.name_zh}</td>
+                    <td className="py-1.5 text-right font-mono">{fmtNum(factor!.factor_co2)}</td>
+                    <td className="py-1.5 text-right font-mono">{fmtNum(factor!.factor_ch4)}</td>
+                    <td className="py-1.5 text-right font-mono">{fmtNum(factor!.factor_n2o)}</td>
+                    <td className="py-1.5 text-right font-mono">{fmtNum(factor!.grid_emission_factor)}</td>
+                    <td className="py-1.5 text-right font-mono">{fmtNum(factor!.scope3_factor)}</td>
+                    <td className="py-1.5 text-right font-mono pl-3">
+                      {factor!.ncv != null ? `${factor!.ncv} ${factor!.ncv_unit ?? ''}` : '—'}
+                    </td>
+                    <td className="py-1.5 pl-3 text-gray-400 truncate max-w-[10rem]" title={factor!.source_reference ?? ''}>
+                      {factor!.source_reference ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-xs text-blue-300 mt-2">
+              範疇一 EF 單位：kg/TJ；範疇二電網 EF：kg/kWh；S3：kg/kg 或 kg/tonne-km
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ─── TabContent ──────────────────────────────────────────────
   function TabContent() {
     switch (activeTab) {
@@ -1202,7 +1284,7 @@ export default function FillPageClient({
                 <span className="text-white font-semibold text-sm flex-shrink-0">工廠：</span>
                 <select
                   value={factory.factory_code}
-                  onChange={(e) => router.push(`/fill/${e.target.value}`)}
+                  onChange={(e) => router.push(`/fill/${e.target.value}?year=${year}`)}
                   className="bg-green-800 text-white text-sm rounded px-2 py-1 border border-green-600 focus:outline-none focus:ring-2 focus:ring-green-400"
                   style={{ minWidth: '200px' }}
                 >
@@ -1213,9 +1295,20 @@ export default function FillPageClient({
                   ))}
                 </select>
               </div>
+              <div className="flex items-center gap-2">
+                <span className="text-white font-semibold text-sm flex-shrink-0">盤查年度：</span>
+                <select
+                  value={year}
+                  onChange={(e) => router.push(`/fill/${factory.factory_code}?year=${e.target.value}`)}
+                  className="bg-green-800 text-white text-sm rounded px-2 py-1 border border-green-600 focus:outline-none focus:ring-2 focus:ring-green-400"
+                >
+                  {REPORT_YEARS.map((y) => (
+                    <option key={y} value={y}>{y} 年</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="flex items-center gap-4 flex-shrink-0">
-              <span className="text-green-300 text-sm hidden sm:inline">{year} 年</span>
               {saveStatus !== 'idle' && (
                 <span className={`text-sm font-medium ${saveColors[saveStatus]}`}>
                   {saveLabels[saveStatus]}
@@ -1265,10 +1358,12 @@ export default function FillPageClient({
           selectedSourceIds={selectedSourceIds} existingRecords={existingRecords}
           setActiveTab={(t) => setActiveTab(t as TabId)}
           onTonsChange={(tons) => setUpstreamTons(tons)} />
+        {activeTab === 'upstream' && <FactorPanel />}
       </div>
 
       <main className="max-w-7xl mx-auto px-4 py-6" style={{ display: activeTab === 'upstream' ? 'none' : undefined }}>
         <TabContent />
+        {activeTab !== 'basic' && activeTab !== 'summary' && <FactorPanel />}
       </main>
 
       <footer className="text-center text-xs text-gray-400 py-6 border-t border-gray-200 mt-8">
