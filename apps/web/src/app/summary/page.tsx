@@ -1,6 +1,4 @@
 import { query } from '@/lib/db';
-import { auth } from '@/lib/auth';
-import { redirect } from 'next/navigation';
 import SummaryClient from './SummaryClient';
 
 export interface FactoryMeta {
@@ -43,9 +41,6 @@ export default async function SummaryPage({
 }: {
   searchParams: Promise<{ year?: string }>;
 }) {
-  const session = await auth();
-  if (!session) redirect('/login');
-
   const sp = await searchParams;
   const parsedYear = sp.year ? parseInt(sp.year, 10) : NaN;
   const year =
