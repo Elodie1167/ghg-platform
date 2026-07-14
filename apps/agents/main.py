@@ -29,6 +29,7 @@ class CalculateRequest(BaseModel):
     factory_id: str
     country_code: str
     emission_source_id: str
+    source_code: str = ""
     scope: int
     is_biomass: bool = False
     substance: Optional[str] = None
@@ -37,6 +38,7 @@ class CalculateRequest(BaseModel):
     activity_value: float
     activity_unit: str
     rec_kwh: float = 0.0
+    bio_fraction: float = 0.0   # 0–100，生質燃料占比
 
 
 class CalculateResponse(BaseModel):
@@ -75,6 +77,7 @@ async def calculate(req: CalculateRequest):
         factory_id=req.factory_id,
         country_code=req.country_code,
         emission_source_id=req.emission_source_id,
+        source_code=req.source_code,
         scope=req.scope,
         is_biomass=req.is_biomass,
         substance=req.substance,
@@ -82,6 +85,7 @@ async def calculate(req: CalculateRequest):
         month=req.month,
         activity_value=req.activity_value,
         activity_unit=req.activity_unit,
+        bio_fraction=req.bio_fraction,
     )
 
     result = agent.calculate(inp, factor, rec_kwh=req.rec_kwh)

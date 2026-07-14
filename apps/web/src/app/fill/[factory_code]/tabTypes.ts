@@ -1,4 +1,4 @@
-import type { Factory, EmissionSource, ActivityRecord } from './page';
+import type { Factory, EmissionSource, ActivityRecord, AssignedFactor } from './page';
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -9,6 +9,7 @@ export interface TabProps {
   selectedSourceIds: Set<string>;
   existingRecords: ActivityRecord[];
   setActiveTab: (tab: string) => void;
+  assignedFactors?: AssignedFactor[];
 }
 
 export const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);

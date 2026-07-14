@@ -280,7 +280,10 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
                   <tr key={f.id} className={`border-b border-gray-100 hover:bg-green-50/30 transition ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
                     <td className="px-3 py-3 font-mono text-gray-400 text-xs">S{f.scope}</td>
                     <td className="px-3 py-3 font-mono text-gray-700 font-medium text-xs">{f.source_code}</td>
-                    <td className="px-3 py-3 text-gray-800 text-xs">{f.source_name_zh}</td>
+                    <td className="px-3 py-3 text-gray-800 text-xs">
+                      {f.source_name_zh}
+                      <span className="ml-1.5 font-mono text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">{f.country_code}</span>
+                    </td>
                     <td className="px-3 py-3 text-center text-xs text-gray-600">{f.year}</td>
                     <td className="px-3 py-3 text-center">
                       <span className={`text-xs px-2 py-0.5 rounded-full ${hasAssigned ? 'text-green-700 bg-green-50' : 'text-gray-400 bg-gray-100'}`}>

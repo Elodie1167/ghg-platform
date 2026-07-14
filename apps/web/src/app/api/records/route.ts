@@ -38,9 +38,16 @@ interface CalcResult {
 async function callCalculate(payload: {
   emission_source_id: string;
   factory_id: string;
+  country_code: string;
   year: number;
+  month: number;
   activity_value: number;
   activity_unit: string;
+  scope: number;
+  is_biomass: boolean;
+  activity_record_id: string;
+  source_code?: string;
+  bio_fraction?: number;
   rec_kwh?: number;
 }): Promise<CalcResult | null> {
   try {
@@ -194,13 +201,33 @@ export async function POST(req: NextRequest) {
     const newId: string = insertResult.rows[0].id;
 
     // Step 2：呼叫 FastAPI 計算 CO₂e（activity_value 為 null 時跳過）
-    const calc = activity_value != null ? await callCalculate({
-      emission_source_id,
-      factory_id,
-      year,
-      activity_value,
-      activity_unit,
-    }) : null;
+    let calc: CalcResult | null = null;
+    if (activity_value != null) {
+      const srcRow = await query(
+        `SELECT es.scope, es.is_biomass, es.source_code, f.country_code
+         FROM emission_sources es, factories f
+         WHERE es.id = $1 AND f.id = $2`,
+        [emission_source_id, factory_id],
+      );
+      if (srcRow.rows.length) {
+        const { scope, is_biomass, source_code: srcCode, country_code } = srcRow.rows[0];
+        const bio_fraction = meter_number ? parseFloat(meter_number) : 0;
+        calc = await callCalculate({
+          emission_source_id,
+          factory_id,
+          country_code,
+          year,
+          month,
+          activity_value,
+          activity_unit,
+          scope,
+          is_biomass,
+          source_code: srcCode ?? '',
+          activity_record_id: newId,
+          bio_fraction: isNaN(bio_fraction) ? 0 : bio_fraction,
+        });
+      }
+    }
 
     // Step 3：若計算成功，回寫 co2e 欄位
     if (calc) {

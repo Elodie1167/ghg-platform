@@ -22,6 +22,9 @@ interface FactorDetail {
   factor_ch4: number | null;
   factor_n2o: number | null;
   factor_substance: number | null;
+  factor_co2_bio: number | null;
+  factor_ch4_bio: number | null;
+  factor_n2o_bio: number | null;
   grid_emission_factor: number | null;
   market_residual_factor: number | null;
   scope3_factor: number | null;
@@ -109,6 +112,9 @@ export default function FactorDetailClient({ factor, factories }: Props) {
     factor_ch4: factor.factor_ch4,
     factor_n2o: factor.factor_n2o,
     factor_substance: factor.factor_substance,
+    factor_co2_bio: factor.factor_co2_bio,
+    factor_ch4_bio: factor.factor_ch4_bio,
+    factor_n2o_bio: factor.factor_n2o_bio,
     grid_emission_factor: factor.grid_emission_factor,
     market_residual_factor: factor.market_residual_factor,
     scope3_factor: factor.scope3_factor,
@@ -129,6 +135,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
   // preview inputs
   const [previewActivity, setPreviewActivity] = useState('1000');
   const [previewUnit, setPreviewUnit] = useState('kg');
+  const [previewBioFrac, setPreviewBioFrac] = useState('0');
 
   // GWP values (editable, defaults to AR6)
   const [gwpCO2, setGwpCO2] = useState(String(GWP_CO2_DEFAULT));
@@ -137,6 +144,9 @@ export default function FactorDetailClient({ factor, factories }: Props) {
   const GWP_CO2 = parseFloat(gwpCO2) || GWP_CO2_DEFAULT;
   const GWP_CH4 = parseFloat(gwpCH4) || GWP_CH4_DEFAULT;
   const GWP_N2O = parseFloat(gwpN2O) || GWP_N2O_DEFAULT;
+
+  const isSeptic = factor.source_code === '1-4B-1';
+  const isRefrigerant = !isSeptic && (factor.category?.includes('冷媒') || factor.source_code.startsWith('1-4'));
 
   async function handleSave() {
     setSaving(true);
@@ -195,17 +205,39 @@ export default function FactorDetailClient({ factor, factories }: Props) {
   const ncv = edit.ncv ?? 0;
   const density = edit.density ?? 0;
 
-  // If the input is in volume (L/m3), convert via density first
   const isVolume = previewUnit === 'L' || previewUnit === 'm³' || previewUnit === 'Nm³';
   const massKg = isVolume && density > 0 ? actVal * density : actVal;
   const energyMJ = ncv > 0 ? massKg * ncv : 0;
   const energyTJ = energyMJ / 1_000_000;
-  const tonCO2 = edit.factor_co2 != null && energyTJ > 0 ? energyTJ * edit.factor_co2 / 1000 : null;
-  const tonCH4 = edit.factor_ch4 != null && energyTJ > 0 ? energyTJ * edit.factor_ch4 / 1000 : null;
-  const tonN2O = edit.factor_n2o != null && energyTJ > 0 ? energyTJ * edit.factor_n2o / 1000 : null;
-  const co2eq = (tonCO2 != null || tonCH4 != null || tonN2O != null)
-    ? ((tonCO2 ?? 0) * GWP_CO2 + (tonCH4 ?? 0) * GWP_CH4 + (tonN2O ?? 0) * GWP_N2O)
+
+  // Bio-aware calculation: fossil CO₂ counts toward total; bio CO₂ tracked separately
+  const hasBioEF = edit.factor_co2_bio != null;
+  const bioFracPct = parseFloat(previewBioFrac) || 0;
+  const bioFrac = Math.min(bioFracPct / 100, 1);
+  const fossilFrac = 1 - bioFrac;
+  const fossilTJ = energyTJ * fossilFrac;
+  const bioTJ = energyTJ * bioFrac;
+
+  const tonCO2Fossil = edit.factor_co2 != null && energyTJ > 0 ? fossilTJ * edit.factor_co2 / 1000 : null;
+  const tonCO2Bio = hasBioEF && bioFrac > 0 && edit.factor_co2_bio != null && energyTJ > 0
+    ? bioTJ * edit.factor_co2_bio / 1000 : null;
+
+  const tonCH4 = edit.factor_ch4 != null && energyTJ > 0
+    ? (hasBioEF && bioFrac > 0
+        ? (fossilTJ * edit.factor_ch4 + bioTJ * (edit.factor_ch4_bio ?? edit.factor_ch4)) / 1000
+        : energyTJ * edit.factor_ch4 / 1000)
     : null;
+  const tonN2O = edit.factor_n2o != null && energyTJ > 0
+    ? (hasBioEF && bioFrac > 0
+        ? (fossilTJ * edit.factor_n2o + bioTJ * (edit.factor_n2o_bio ?? edit.factor_n2o)) / 1000
+        : energyTJ * edit.factor_n2o / 1000)
+    : null;
+
+  // Total = fossil CO₂ + all CH₄ + all N₂O (bio CO₂ not included)
+  const co2eq = (tonCO2Fossil != null || tonCH4 != null || tonN2O != null)
+    ? ((tonCO2Fossil ?? 0) * GWP_CO2 + (tonCH4 ?? 0) * GWP_CH4 + (tonN2O ?? 0) * GWP_N2O)
+    : null;
+  const co2eBio = tonCO2Bio != null ? tonCO2Bio * GWP_CO2 : null;
 
   // Grid-based quick calc
   const gridCO2eq = edit.grid_emission_factor != null
@@ -238,8 +270,8 @@ export default function FactorDetailClient({ factor, factories }: Props) {
 
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
-        {/* Section 1: 熱值與密度換算（僅 S1/S3 顯示，S2 不需要 NCV） */}
-        {factor.scope !== 2 && <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        {/* Section 1: 熱值與密度換算（S1/S3 燃燒類顯示；S2 和冷媒/化糞池不需要） */}
+        {factor.scope !== 2 && !isRefrigerant && !isSeptic && <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-100">
             <h2 className="font-semibold text-gray-800 text-sm">熱值與密度換算</h2>
             <p className="text-xs text-gray-400 mt-0.5">固態／液態燃料需填入 NCV，液態需填密度以進行體積→重量換算</p>
@@ -290,12 +322,50 @@ export default function FactorDetailClient({ factor, factories }: Props) {
             <p className="text-xs text-gray-400 mt-0.5">燃燒排放填 CO₂/CH₄/N₂O (kg/TJ)；電力填電網係數 (tCO₂/MWh)</p>
           </div>
           <div className="px-5 py-4 space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <NumField label="EF CO₂" value={n(edit.factor_co2)} onChange={(v) => setEdit((e) => ({ ...e, factor_co2: p(v) }))} unit="kg CO₂/TJ" />
-              <NumField label="EF CH₄" value={n(edit.factor_ch4)} onChange={(v) => setEdit((e) => ({ ...e, factor_ch4: p(v) }))} unit="kg CH₄/TJ" />
-              <NumField label="EF N₂O" value={n(edit.factor_n2o)} onChange={(v) => setEdit((e) => ({ ...e, factor_n2o: p(v) }))} unit="kg N₂O/TJ" />
-              <NumField label="物質/HFCs 係數" value={n(edit.factor_substance)} onChange={(v) => setEdit((e) => ({ ...e, factor_substance: p(v) }))} unit="tCO₂-eq/unit" />
-            </div>
+            {isSeptic ? (
+              <div className="p-4 bg-teal-50 rounded-lg border border-teal-100">
+                <p className="text-xs text-teal-700 mb-3">化糞池：填入 BOD per capita、最大 CH₄ 產量 Bo、修正係數 MCF，系統以 <code>total_hours ÷ 24 × BOD × Bo × MCF</code> 計算 CH₄ 排放量（t/year）。</p>
+                <div className="grid grid-cols-3 gap-4 mb-3">
+                  <NumField label="BOD per capita" value={n(edit.factor_co2)} onChange={(v) => setEdit((e) => ({ ...e, factor_co2: p(v) }))} unit="kg CH₄/kg MANDAY" hint="預設 0.04" />
+                  <NumField label="Bo 最大 CH₄ 產量" value={n(edit.factor_ch4)} onChange={(v) => setEdit((e) => ({ ...e, factor_ch4: p(v) }))} unit="kg CH₄/kg BOD" hint="預設 0.6" />
+                  <NumField label="MCF 修正係數" value={n(edit.factor_substance)} onChange={(v) => setEdit((e) => ({ ...e, factor_substance: p(v) }))} unit="無量綱" hint="預設 0.5" />
+                </div>
+                {edit.factor_co2 != null && edit.factor_ch4 != null && edit.factor_substance != null && (
+                  <div className="p-2 bg-teal-100 rounded text-xs font-mono text-teal-800">
+                    CH₄ emission = {edit.factor_co2} × {edit.factor_ch4} × {edit.factor_substance} = <span className="font-bold">{(edit.factor_co2 * edit.factor_ch4 * (edit.factor_substance ?? 0)).toFixed(4)}</span> kg CH₄/manday
+                  </div>
+                )}
+              </div>
+            ) : isRefrigerant ? (
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <p className="text-xs text-blue-700 mb-3">冷媒逸散：填入 GWP 係數（tCO₂-eq/kg），計算引擎以 <code>活動量 × 係數</code> 計算。</p>
+                <NumField label="GWP 係數" value={n(edit.factor_substance)} onChange={(v) => setEdit((e) => ({ ...e, factor_substance: p(v) }))} unit="tCO₂-eq/kg" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <NumField label="EF CO₂" value={n(edit.factor_co2)} onChange={(v) => setEdit((e) => ({ ...e, factor_co2: p(v) }))} unit="kg CO₂/TJ" />
+                <NumField label="EF CH₄" value={n(edit.factor_ch4)} onChange={(v) => setEdit((e) => ({ ...e, factor_ch4: p(v) }))} unit="kg CH₄/TJ" />
+                <NumField label="EF N₂O" value={n(edit.factor_n2o)} onChange={(v) => setEdit((e) => ({ ...e, factor_n2o: p(v) }))} unit="kg N₂O/TJ" />
+                <NumField label="物質/HFCs 係數" value={n(edit.factor_substance)} onChange={(v) => setEdit((e) => ({ ...e, factor_substance: p(v) }))} unit="tCO₂-eq/unit" />
+              </div>
+            )}
+            {/* 生質燃料分段係數（僅 S1 非冷媒/非化糞池顯示） */}
+            {factor.scope === 1 && !isRefrigerant && !isSeptic && (
+              <div className="p-4 bg-green-50 rounded-lg border border-green-100">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-semibold text-green-800">🌿 生質部分係數（適用混合生質燃料，如 B20/B40）</span>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">
+                  密度與 NCV 與主燃料相同。填報時輸入生質占比 %，系統依比例分別計算生質與化石部分。
+                </p>
+                <div className="grid grid-cols-3 gap-4">
+                  <NumField label="EF CO₂ (生質)" value={n(edit.factor_co2_bio)} onChange={(v) => setEdit((e) => ({ ...e, factor_co2_bio: p(v) }))} unit="kg CO₂/TJ" />
+                  <NumField label="EF CH₄ (生質)" value={n(edit.factor_ch4_bio)} onChange={(v) => setEdit((e) => ({ ...e, factor_ch4_bio: p(v) }))} unit="kg CH₄/TJ" />
+                  <NumField label="EF N₂O (生質)" value={n(edit.factor_n2o_bio)} onChange={(v) => setEdit((e) => ({ ...e, factor_n2o_bio: p(v) }))} unit="kg N₂O/TJ" />
+                </div>
+              </div>
+            )}
+
             {/* GWP 全球暖化潛勢 */}
             <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
               <div className="flex items-center justify-between mb-3">
@@ -303,22 +373,26 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                 <button onClick={() => { setGwpCO2(String(GWP_CO2_DEFAULT)); setGwpCH4(String(GWP_CH4_DEFAULT)); setGwpN2O(String(GWP_N2O_DEFAULT)); }}
                   className="text-xs text-blue-500 hover:text-blue-700 underline">重設為 AR6</button>
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">GWP CO₂</label>
-                  <input type="number" step="any" value={gwpCO2} onChange={(e) => setGwpCO2(e.target.value)}
-                    className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
-                </div>
+              <div className={`grid gap-3 ${isSeptic ? 'grid-cols-1 max-w-xs' : 'grid-cols-3'}`}>
+                {!isSeptic && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">GWP CO₂</label>
+                    <input type="number" step="any" value={gwpCO2} onChange={(e) => setGwpCO2(e.target.value)}
+                      className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">GWP CH₄</label>
                   <input type="number" step="any" value={gwpCH4} onChange={(e) => setGwpCH4(e.target.value)}
                     className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
                 </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">GWP N₂O</label>
-                  <input type="number" step="any" value={gwpN2O} onChange={(e) => setGwpN2O(e.target.value)}
-                    className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
-                </div>
+                {!isSeptic && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">GWP N₂O</label>
+                    <input type="number" step="any" value={gwpN2O} onChange={(e) => setGwpN2O(e.target.value)}
+                      className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                )}
               </div>
               {(edit.factor_co2 != null || edit.factor_ch4 != null || edit.factor_n2o != null) && (() => {
                 const total =
@@ -369,7 +443,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
             <p className="text-xs text-gray-400 mt-0.5">輸入活動量，即時預覽 CO₂-eq 計算過程</p>
           </div>
           <div className="px-5 py-4">
-            <div className="flex items-center gap-3 mb-5">
+            <div className="flex items-center gap-3 mb-5 flex-wrap">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">活動量</label>
                 <input type="number" step="any" value={previewActivity} onChange={(e) => setPreviewActivity(e.target.value)}
@@ -380,6 +454,13 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                 <input type="text" value={previewUnit} onChange={(e) => setPreviewUnit(e.target.value)}
                   className="border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono w-24 focus:outline-none focus:ring-2 focus:ring-green-500" />
               </div>
+              {hasBioEF && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">🌿 生質占比 %</label>
+                  <input type="number" min="0" max="100" step="1" value={previewBioFrac} onChange={(e) => setPreviewBioFrac(e.target.value)}
+                    className="border border-green-300 rounded-lg px-3 py-2 text-sm font-mono w-24 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                </div>
+              )}
             </div>
 
             {/* Combustion calculation chain */}
@@ -400,14 +481,23 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                   <span className="text-gray-400">= {energyTJ.toFixed(8)} TJ</span>
                 </div>
 
-                {tonCO2 != null && (
+                {tonCO2Fossil != null && (
                   <div className="flex items-center gap-2 flex-wrap pl-4 border-l-2 border-gray-200">
-                    <span className="text-gray-500">CO₂:</span>
-                    <span>{energyTJ.toFixed(8)} TJ × {edit.factor_co2} kg/TJ ÷ 1000</span>
+                    <span className="text-gray-500">CO₂ {bioFrac > 0 ? '(化石)' : ''}:</span>
+                    <span>{fossilTJ.toFixed(8)} TJ × {edit.factor_co2} kg/TJ ÷ 1000</span>
                     <span className="text-gray-400">=</span>
-                    <span className="text-gray-700">{fmtNum(tonCO2, 6)} tCO₂</span>
+                    <span className="text-gray-700">{fmtNum(tonCO2Fossil, 6)} tCO₂</span>
                     <span className="text-gray-400">× {GWP_CO2}</span>
-                    <span className="font-semibold text-green-700">{fmtNum(tonCO2 * GWP_CO2, 6)} tCO₂-eq</span>
+                    <span className="font-semibold text-green-700">{fmtNum(tonCO2Fossil * GWP_CO2, 6)} tCO₂-eq</span>
+                  </div>
+                )}
+                {tonCO2Bio != null && (
+                  <div className="flex items-center gap-2 flex-wrap pl-4 border-l-2 border-green-300 bg-green-50/50 rounded-r">
+                    <span className="text-green-700">🌿 CO₂ (生質):</span>
+                    <span className="text-green-600">{bioTJ.toFixed(8)} TJ × {edit.factor_co2_bio} kg/TJ ÷ 1000</span>
+                    <span className="text-gray-400">=</span>
+                    <span className="text-green-700">{fmtNum(tonCO2Bio, 6)} tCO₂</span>
+                    <span className="text-gray-400 text-[10px]">（另計，不入化石排放總量）</span>
                   </div>
                 )}
                 {tonCH4 != null && (
@@ -432,9 +522,16 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                 )}
 
                 {co2eq != null && (
-                  <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200 flex items-center gap-3">
-                    <span className="text-xs text-gray-600">{previewActivity} {previewUnit} 合計排放：</span>
+                  <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200 flex flex-wrap items-center gap-3">
+                    <span className="text-xs text-gray-600">{previewActivity} {previewUnit} 化石排放合計：</span>
                     <span className="text-lg font-bold text-green-800">{co2eq.toFixed(4)} tCO₂-eq</span>
+                    {co2eBio != null && (
+                      <>
+                        <span className="text-xs text-gray-400 mx-1">｜</span>
+                        <span className="text-xs text-green-700">🌿 生質 CO₂（另計）：</span>
+                        <span className="font-semibold text-green-700">{co2eBio.toFixed(4)} tCO₂</span>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -454,7 +551,41 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               </div>
             )}
 
-            {edit.ncv == null && edit.grid_emission_factor == null && (
+            {/* Septic tank calculation chain */}
+            {isSeptic && edit.factor_co2 != null && edit.factor_ch4 != null && edit.factor_substance != null && actVal > 0 && (() => {
+              const bod = edit.factor_co2 ?? 0.04;
+              const bo = edit.factor_ch4 ?? 0.6;
+              const mcf = edit.factor_substance ?? 0.5;
+              const effectiveMandays = actVal / 24;
+              const ch4Kg = effectiveMandays * bod * bo * mcf;
+              const tCH4 = ch4Kg / 1000;
+              const tCO2e = tCH4 * GWP_CH4;
+              return (
+                <div className="space-y-2 font-mono text-xs">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{previewActivity} hr</span>
+                    <span className="text-gray-400">÷ 24</span>
+                    <span className="text-gray-400">=</span>
+                    <span className="bg-amber-50 text-amber-800 px-2 py-1 rounded">{effectiveMandays.toFixed(4)} mandays</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap pl-4 border-l-2 border-gray-200">
+                    <span className="text-gray-500">CH₄:</span>
+                    <span>{effectiveMandays.toFixed(4)} mandays × BOD {bod} × Bo {bo} × MCF {mcf}</span>
+                    <span className="text-gray-400">=</span>
+                    <span className="text-gray-700">{ch4Kg.toFixed(6)} kg CH₄</span>
+                    <span className="text-gray-400">= {tCH4.toFixed(8)} tCH₄</span>
+                    <span className="text-gray-400">× GWP {GWP_CH4}</span>
+                    <span className="font-semibold text-green-700">{tCO2e.toFixed(6)} tCO₂-eq</span>
+                  </div>
+                  <div className="mt-2 p-3 bg-green-50 rounded-lg border border-green-200 flex items-center gap-3">
+                    <span className="text-xs text-gray-600">{previewActivity} hr 排放合計：</span>
+                    <span className="text-lg font-bold text-green-800">{tCO2e.toFixed(6)} tCO₂-eq</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {!isSeptic && edit.ncv == null && edit.grid_emission_factor == null && (
               <p className="text-xs text-gray-400 italic">請先填入 NCV（燃燒排放）或電網係數（電力）後，預覽才會顯示計算過程。</p>
             )}
           </div>

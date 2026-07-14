@@ -13,6 +13,7 @@ import DownstreamTab from './DownstreamTab';
 import PurchaseTab from './PurchaseTab';
 import TravelTab from './TravelTab';
 import CommuteTab from './CommuteTab';
+import RECPanel from './RECPanel';
 
 const SOURCE_GROUPS = [
   { tabId: 'elec',        label: '電力來源',                 prefix: '2-'  },
@@ -605,6 +606,17 @@ export default function FillPageClient({
       setRows((prev) => prev.filter((r) => r.tempKey !== tempKey));
     }
 
+    async function toggleReview(tempKey: string) {
+      const row = rowsRef.current.find((r) => r.tempKey === tempKey);
+      if (!row?.id) return;
+      const newVal = !row.is_reviewed;
+      setRows((p) => p.map((r) => r.tempKey === tempKey ? { ...r, is_reviewed: newVal } : r));
+      await fetch(`/api/records/${row.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_reviewed: newVal }),
+      });
+    }
+
     const totalKwh = rows.reduce((s, r) => s + (parseFloat(r.activity_value) || 0), 0);
     const totalCo2e = rows.reduce((s, r) => s + (r.co2e_total ?? 0), 0);
 
@@ -644,6 +656,7 @@ export default function FillPageClient({
                     <th className="px-3 py-3 text-left w-32">帳單迄日</th>
                     <th className="px-3 py-3 text-left w-32">電表號碼</th>
                     <th className="px-3 py-3 text-right w-24">CO₂e (t)</th>
+                    <th className="px-3 py-3 text-center w-10">查核</th>
                     <th className="px-3 py-3 text-center w-12">狀態</th>
                     <th className="px-3 py-3 w-10" />
                   </tr>
@@ -698,6 +711,14 @@ export default function FillPageClient({
                       <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
                         {row.co2e_total != null ? row.co2e_total.toFixed(4) : '—'}
                       </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <button onClick={() => toggleReview(row.tempKey)}
+                          disabled={!row.id}
+                          className="text-xl leading-none disabled:opacity-30"
+                          title={row.is_reviewed ? '取消查核' : '標記已查核'}>
+                          {row.is_reviewed ? '✅' : '⬜'}
+                        </button>
+                      </td>
                       <td className="px-2 py-1.5 text-center text-sm">
                         {row.saveStatus === 'saving' && '⏳'}
                         {row.saveStatus === 'saved' && '✅'}
@@ -707,9 +728,10 @@ export default function FillPageClient({
                         )}
                       </td>
                       <td className="px-2 py-1.5 text-center">
-                        <button onClick={() => deleteRow(row.tempKey)}
-                          className="text-gray-300 hover:text-red-500 transition text-lg leading-none"
-                          title="刪除此帳單">
+                        <button onClick={() => !row.is_reviewed && deleteRow(row.tempKey)}
+                          disabled={row.is_reviewed}
+                          className="text-gray-300 hover:text-red-500 transition text-lg leading-none disabled:opacity-30 disabled:cursor-not-allowed"
+                          title={row.is_reviewed ? '已查核，不可刪除' : '刪除此帳單'}>
                           ×
                         </button>
                       </td>
@@ -726,7 +748,7 @@ export default function FillPageClient({
                     <td className="px-3 py-2 text-right text-gray-700 font-mono">
                       {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
                     </td>
-                    <td colSpan={2} />
+                    <td colSpan={3} />
                   </tr>
                 </tfoot>
               </table>
@@ -736,6 +758,14 @@ export default function FillPageClient({
             </p>
           </>
         )}
+        <RECPanel
+          factoryId={factory.id}
+          year={year}
+          totalElecKwh={totalKwh}
+          gridFactor={
+            assignedFactors.find((f) => f.source_code === '2-1-A')?.grid_emission_factor ?? null
+          }
+        />
       </div>
     );
   }
@@ -958,7 +988,9 @@ export default function FillPageClient({
           <h2 className="text-lg font-semibold text-gray-800">製程排放 S1 — 焊條</h2>
           <p className="text-sm text-gray-500 mt-0.5">每月填入採購量（kg）與含碳量（%），系統計算估計碳重，輸入停止 1 秒後自動儲存</p>
         </div>
-        {processSources.map((src) => <ProcessSection key={src.id} source={src} />)}
+        {processSources.length > 0 && (
+          <ProcessSection source={{ ...processSources[0], name_zh: '焊條', source_code: '1-3' }} />
+        )}
       </div>
     );
   }
@@ -1155,8 +1187,8 @@ export default function FillPageClient({
 
   // ─── SummaryTab ──────────────────────────────────────────────
   function SummaryTab() {
-    const totalCo2e = existingRecords.filter((r) => r.co2e_total != null).reduce((s, r) => s + (r.co2e_total ?? 0), 0);
-    const reviewedCo2e = existingRecords.filter((r) => r.co2e_total != null && r.is_reviewed).reduce((s, r) => s + (r.co2e_total ?? 0), 0);
+    const totalCo2e = existingRecords.filter((r) => r.co2e_total != null).reduce((s, r) => s + (Number(r.co2e_total) || 0), 0);
+    const reviewedCo2e = existingRecords.filter((r) => r.co2e_total != null && r.is_reviewed).reduce((s, r) => s + (Number(r.co2e_total) || 0), 0);
     return (
       <div className="max-w-3xl">
         <h2 className="text-lg font-semibold text-gray-800 mb-6">碳排彙總 — {factory.name_zh} {year} 年</h2>
@@ -1193,6 +1225,102 @@ export default function FillPageClient({
     function fmtNum(v: number | null, digits = 6): string {
       if (v === null) return '—';
       return v.toFixed(digits);
+    }
+
+    // ─── 逸散 tab：客製化係數預覽 ────────────────────────────
+    if (activeTab === 'fugitive') {
+      const selFactors = tabFactors.filter(({ source }) => selectedSourceIds.has(source.id));
+      if (selFactors.length === 0) return null;
+      const CH4_GWP = 27.9;
+      return (
+        <div className="mt-6 border border-blue-100 rounded-xl bg-blue-50/40">
+          <button
+            onClick={() => setExpanded((e) => !e)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left">
+            <span className="text-sm font-semibold text-blue-700">
+              逸散係數（{selFactors.length} 個排放源，{year} 年）
+            </span>
+            <span className="text-blue-400 text-sm">{expanded ? '▲ 收起' : '▼ 展開查看'}</span>
+          </button>
+          {expanded && (
+            <div className="px-4 pb-4 space-y-2">
+              {selFactors.map(({ source, factor }) => {
+                const isSeptic = source.source_code === '1-4B-1';
+                const isSF6 = source.source_code === '1-4D-1';
+                const isRefrig = source.source_code.startsWith('1-4A');
+
+                if (isRefrig) {
+                  return (
+                    <div key={source.id} className="flex items-center gap-3 text-xs bg-white rounded-lg px-3 py-2 border border-blue-100">
+                      <span className="font-mono text-gray-400 w-16 flex-shrink-0">{source.source_code}</span>
+                      <span className="text-gray-800 flex-1">{source.name_zh}</span>
+                      <span className="text-gray-500 text-xs">HFCs GWP</span>
+                      <span className="font-mono font-bold text-blue-700 text-sm">
+                        {factor!.factor_substance != null ? Number(factor!.factor_substance).toLocaleString() : '—'}
+                      </span>
+                    </div>
+                  );
+                }
+
+                if (isSF6) {
+                  return (
+                    <div key={source.id} className="flex items-center gap-3 text-xs bg-white rounded-lg px-3 py-2 border border-purple-100">
+                      <span className="font-mono text-gray-400 w-16 flex-shrink-0">{source.source_code}</span>
+                      <span className="text-gray-800 flex-1">{source.name_zh}</span>
+                      <span className="text-gray-500 text-xs">SF₆ GWP</span>
+                      <span className="font-mono font-bold text-purple-700 text-sm">
+                        {factor!.factor_substance != null ? Number(factor!.factor_substance).toLocaleString() : '—'}
+                      </span>
+                    </div>
+                  );
+                }
+
+                if (isSeptic) {
+                  const srcRecs = existingRecords.filter((r) => r.emission_source_id === source.id);
+                  const totalHoursY = srcRecs.reduce((s, r) => s + (Number(r.activity_value) || 0), 0);
+                  const BOD = Number(factor!.factor_co2) || 0;
+                  const Bo  = Number(factor!.factor_ch4) || 0;
+                  const MCF = Number(factor!.factor_substance) || 0;
+                  const ch4T = BOD > 0 && Bo > 0 && MCF > 0 && totalHoursY > 0
+                    ? totalHoursY * BOD * Bo * MCF / 24 / 1000
+                    : null;
+                  return (
+                    <div key={source.id} className="text-xs bg-white rounded-lg px-3 py-2.5 border border-teal-100">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-mono text-gray-400">{source.source_code}</span>
+                        <span className="font-semibold text-gray-700">{source.name_zh}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-6 gap-y-1 mb-2">
+                        <span className="text-gray-500">BOD = <span className="font-mono font-semibold text-gray-700">{factor!.factor_co2 != null ? Number(factor!.factor_co2) : '—'}</span> kg CH₄/人·日</span>
+                        <span className="text-gray-500">Bo = <span className="font-mono font-semibold text-gray-700">{factor!.factor_ch4 != null ? Number(factor!.factor_ch4) : '—'}</span> kg CH₄/kg BOD</span>
+                        <span className="text-gray-500">MCF = <span className="font-mono font-semibold text-gray-700">{factor!.factor_substance != null ? Number(factor!.factor_substance) : '—'}</span></span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-6 gap-y-1">
+                        <span className="text-gray-500">CH₄ 排放 (T/YEAR) = <span className="font-mono font-bold text-teal-700">
+                          {ch4T != null ? ch4T.toFixed(4) + ' t' : '尚無填報資料'}
+                        </span></span>
+                        <span className="text-gray-500">CH₄ GWP = <span className="font-mono font-semibold text-gray-700">{CH4_GWP}</span></span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // 滅火器 1-4C
+                return (
+                  <div key={source.id} className="flex items-center gap-3 text-xs bg-white rounded-lg px-3 py-2 border border-gray-200">
+                    <span className="font-mono text-gray-400 w-16 flex-shrink-0">{source.source_code}</span>
+                    <span className="text-gray-800 flex-1">{source.name_zh}</span>
+                    <span className="text-gray-500 text-xs">CO₂ EF</span>
+                    <span className="font-mono font-bold text-gray-700 text-sm">
+                      {factor!.factor_substance != null ? Number(factor!.factor_substance).toLocaleString() : fmtNum(factor!.factor_co2, 4)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
     }
 
     return (
@@ -1256,8 +1384,8 @@ export default function FillPageClient({
       case 'basic':      return <BasicTab />;
       case 'elec':       return <ElecTab />;
       case 'waste':      return <WasteTab />;
-      case 'fuel':       return <FuelTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
-      case 'combustion': return <CombustionTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
+      case 'fuel':       return <FuelTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} assignedFactors={assignedFactors} />;
+      case 'combustion': return <CombustionTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} assignedFactors={assignedFactors} />;
       case 'fugitive':   return <FugitiveTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
       case 'process':    return <ProcessTab />;
       case 'purchase':   return <PurchaseTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} upstreamTons={upstreamTons} />;

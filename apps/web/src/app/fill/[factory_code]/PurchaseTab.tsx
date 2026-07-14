@@ -42,9 +42,9 @@ interface PurchaseTabProps extends TabProps {
 export default function PurchaseTab({
   factory, year, emissionSources, selectedSourceIds, existingRecords, upstreamTons,
 }: PurchaseTabProps) {
-  // 布料（3-1-A）：需手動在 BasicTab 啟用，由 Higg MSI 填入 CO₂e
+  // 布料（3-1-A）：is_always_active，不需在 BasicTab 勾選，直接顯示
   const fabricSource = emissionSources.find(
-    (s) => s.source_code === FABRIC_CODE && selectedSourceIds.has(s.id),
+    (s) => s.source_code === FABRIC_CODE,
   ) ?? null;
 
   // 線料/紙箱/塑料袋（3-1-B/C/D）：重量自動帶入，不需在 BasicTab 勾選

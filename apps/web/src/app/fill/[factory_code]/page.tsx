@@ -68,6 +68,9 @@ export interface AssignedFactor {
   factor_ch4: number | null;
   factor_n2o: number | null;
   factor_substance: number | null;
+  factor_co2_bio: number | null;
+  factor_ch4_bio: number | null;
+  factor_n2o_bio: number | null;
   grid_emission_factor: number | null;
   market_residual_factor: number | null;
   scope3_factor: number | null;
@@ -133,7 +136,7 @@ export default async function FillPage({
 
   const recordsResult = await query(
     `SELECT ar.id, ar.emission_source_id, es.source_code, ar.year, ar.month,
-            ar.activity_value, ar.activity_unit, ar.notes, ar.co2e_total, ar.is_reviewed,
+            ar.activity_value::float, ar.activity_unit, ar.notes, ar.co2e_total::float, ar.is_reviewed,
             ar.sub_location, ar.meter_number,
             ar.date_from::text AS date_from, ar.date_to::text AS date_to
      FROM activity_records ar
@@ -144,18 +147,20 @@ export default async function FillPage({
   );
   const existingRecords: ActivityRecord[] = recordsResult.rows;
 
-  // 查詢本廠本年度指定係數（用於填報頁顯示）
+  // 查詢本廠指定係數（取 ≤ 當年度的最新一筆，支援跨年 fallback）
   const factorsResult = await query(
-    `SELECT ef.id, ef.emission_source_id, ef.year,
+    `SELECT DISTINCT ON (ef.emission_source_id)
+            ef.id, ef.emission_source_id, ef.year,
             ef.factor_co2, ef.factor_ch4, ef.factor_n2o, ef.factor_substance,
+            ef.factor_co2_bio, ef.factor_ch4_bio, ef.factor_n2o_bio,
             ef.grid_emission_factor, ef.market_residual_factor, ef.scope3_factor,
             ef.source_reference, ef.ncv, ef.ncv_unit, ef.density, ef.density_unit,
             es.source_code
      FROM emission_factors ef
      JOIN emission_sources es ON es.id = ef.emission_source_id
      JOIN emission_factor_assignments efa ON efa.emission_factor_id = ef.id
-     WHERE efa.factory_id = $1 AND ef.year = $2
-     ORDER BY es.source_code`,
+     WHERE efa.factory_id = $1 AND ef.year <= $2
+     ORDER BY ef.emission_source_id, ef.year DESC`,
     [factory.id, currentYear],
   );
   const assignedFactors: AssignedFactor[] = factorsResult.rows;

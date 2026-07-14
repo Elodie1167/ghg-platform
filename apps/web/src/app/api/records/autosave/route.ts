@@ -29,9 +29,16 @@ interface CalcResult {
 async function callCalculateAsync(payload: {
   emission_source_id: string;
   factory_id: string;
+  country_code: string;
   year: number;
+  month: number;
   activity_value: number;
   activity_unit: string;
+  scope: number;
+  is_biomass: boolean;
+  activity_record_id: string;
+  source_code?: string;
+  bio_fraction?: number;
 }): Promise<CalcResult | null> {
   try {
     const res = await fetch(`${FASTAPI_URL}/calculate`, {
@@ -89,6 +96,15 @@ export async function POST(req: NextRequest) {
     : (notes ?? null);
 
   try {
+    // 查詢排放源 & 廠區附加資訊（FastAPI 必填欄位）
+    const metaRow = await query(
+      `SELECT es.scope, es.is_biomass, es.source_code, f.country_code
+       FROM emission_sources es, factories f
+       WHERE es.id = $1 AND f.id = $2`,
+      [emission_source_id, factory_id],
+    );
+    const meta = metaRow.rows[0] ?? { scope: 1, is_biomass: false, source_code: '', country_code: 'TW' };
+
     // 1. 查詢是否已存在該月份記錄
     const existing = await query(
       `SELECT id FROM activity_records
@@ -119,30 +135,21 @@ export async function POST(req: NextRequest) {
       // 非同步呼叫 FastAPI 計算（不阻塞回應）
       if (activity_value !== null && activity_value > 0) {
         callCalculateAsync({
-          emission_source_id,
-          factory_id,
-          year,
-          activity_value,
-          activity_unit,
+          emission_source_id, factory_id,
+          country_code: meta.country_code,
+          year, month, activity_value, activity_unit,
+          scope: meta.scope, is_biomass: meta.is_biomass,
+          source_code: meta.source_code ?? '',
+          activity_record_id: recordId,
         }).then(async (calc) => {
           if (calc) {
             await query(
               `UPDATE activity_records
-               SET co2e_location      = $1,
-                   co2e_market        = $2,
-                   co2e_total         = $3,
-                   co2e_biomass_co2   = $4,
-                   emission_factor_id = $5,
-                   updated_at         = NOW()
+               SET co2e_location = $1, co2e_market = $2, co2e_total = $3,
+                   co2e_biomass_co2 = $4, emission_factor_id = $5, updated_at = NOW()
                WHERE id = $6`,
-              [
-                calc.co2e_location,
-                calc.co2e_market,
-                calc.co2e_total,
-                calc.co2e_biomass_co2,
-                calc.emission_factor_id,
-                recordId,
-              ],
+              [calc.co2e_location, calc.co2e_market, calc.co2e_total,
+               calc.co2e_biomass_co2, calc.emission_factor_id, recordId],
             );
           }
         }).catch(() => { /* 靜默失敗 */ });
@@ -171,30 +178,21 @@ export async function POST(req: NextRequest) {
       // 非同步呼叫 FastAPI 計算
       if (activity_value !== null && activity_value > 0) {
         callCalculateAsync({
-          emission_source_id,
-          factory_id,
-          year,
-          activity_value,
-          activity_unit,
+          emission_source_id, factory_id,
+          country_code: meta.country_code,
+          year, month, activity_value, activity_unit,
+          scope: meta.scope, is_biomass: meta.is_biomass,
+          source_code: meta.source_code ?? '',
+          activity_record_id: recordId,
         }).then(async (calc) => {
           if (calc) {
             await query(
               `UPDATE activity_records
-               SET co2e_location      = $1,
-                   co2e_market        = $2,
-                   co2e_total         = $3,
-                   co2e_biomass_co2   = $4,
-                   emission_factor_id = $5,
-                   updated_at         = NOW()
+               SET co2e_location = $1, co2e_market = $2, co2e_total = $3,
+                   co2e_biomass_co2 = $4, emission_factor_id = $5, updated_at = NOW()
                WHERE id = $6`,
-              [
-                calc.co2e_location,
-                calc.co2e_market,
-                calc.co2e_total,
-                calc.co2e_biomass_co2,
-                calc.emission_factor_id,
-                recordId,
-              ],
+              [calc.co2e_location, calc.co2e_market, calc.co2e_total,
+               calc.co2e_biomass_co2, calc.emission_factor_id, recordId],
             );
           }
         }).catch(() => { /* 靜默失敗 */ });

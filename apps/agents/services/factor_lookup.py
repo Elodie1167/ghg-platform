@@ -20,7 +20,8 @@ _FACTOR_COLS = """
     ef.factor_substance,
     ef.grid_emission_factor, ef.market_residual_factor,
     ef.scope3_factor,
-    ef.ncv, ef.ncv_unit, ef.density
+    ef.ncv, ef.ncv_unit, ef.density,
+    ef.factor_co2_bio, ef.factor_ch4_bio, ef.factor_n2o_bio
 """
 
 _FACTOR_QUERY = f"""
@@ -67,6 +68,9 @@ def _row_to_factor(row, fallback_used: bool = False) -> FactorData:
         ncv=row["ncv"],
         ncv_unit=row["ncv_unit"],
         density=row["density"],
+        factor_co2_bio=row["factor_co2_bio"],
+        factor_ch4_bio=row["factor_ch4_bio"],
+        factor_n2o_bio=row["factor_n2o_bio"],
         fallback_used=fallback_used,
     )
 

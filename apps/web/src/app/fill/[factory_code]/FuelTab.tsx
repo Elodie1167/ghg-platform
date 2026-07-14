@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
 import { MONTHS, HEADER_BG, BTN_BG } from './tabTypes';
-import type { EmissionSource, ActivityRecord } from './page';
+import type { EmissionSource, ActivityRecord, AssignedFactor } from './page';
 
 interface EventRow {
   tempKey: string;
@@ -12,6 +12,7 @@ interface EventRow {
   date_from: string;
   sub_location: string;
   activity_value: string;
+  meter_number: string;
   notes: string;
   co2e_total: number | null;
   is_reviewed: boolean;
@@ -23,7 +24,7 @@ const CAR_CODES = ['1-2A-1', '1-2A-2', '1-2A-6'];
 const FORKLIFT_CODES = ['1-2A-4', '1-2A-5'];
 
 export default function FuelTab({
-  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab,
+  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab, assignedFactors,
 }: TabProps) {
   const fuelSources = emissionSources
     .filter((s) => FUEL_SOURCE_CODES.includes(s.source_code) && selectedSourceIds.has(s.id))
@@ -59,6 +60,7 @@ export default function FuelTab({
           records={existingRecords.filter((r) => r.emission_source_id === src.id)}
           locationLabel={CAR_CODES.includes(src.source_code) ? '車牌號碼' : '設備名稱'}
           isForklift={FORKLIFT_CODES.includes(src.source_code)}
+          assignedFactor={assignedFactors?.find((f) => f.emission_source_id === src.id)}
         />
       ))}
     </div>
@@ -100,7 +102,7 @@ function VehicleCountBadge({
 }
 
 function FuelSection({
-  source, factory, year, records, locationLabel, isForklift,
+  source, factory, year, records, locationLabel, isForklift, assignedFactor,
 }: {
   source: EmissionSource;
   factory: TabProps['factory'];
@@ -108,7 +110,10 @@ function FuelSection({
   records: ActivityRecord[];
   locationLabel: string;
   isForklift: boolean;
+  assignedFactor?: AssignedFactor;
 }) {
+  const hasBioFactor = source.is_biomass;
+
   const [rows, setRows] = useState<EventRow[]>(() =>
     records.map((r) => ({
       tempKey: r.id,
@@ -117,6 +122,7 @@ function FuelSection({
       date_from: r.date_from ?? '',
       sub_location: r.sub_location ?? '',
       activity_value: r.activity_value != null ? String(r.activity_value) : '',
+      meter_number: r.meter_number ?? '',
       notes: r.notes ?? '',
       co2e_total: r.co2e_total,
       is_reviewed: r.is_reviewed ?? false,
@@ -136,7 +142,7 @@ function FuelSection({
     setRows((prev) => [...prev, {
       tempKey, id: null,
       month: new Date().getMonth() + 1,
-      date_from: '', sub_location: '', activity_value: '', notes: '',
+      date_from: '', sub_location: '', activity_value: '', meter_number: '', notes: '',
       co2e_total: null, is_reviewed: false, saveStatus: 'idle',
     }]);
   }
@@ -172,6 +178,7 @@ function FuelSection({
       activity_unit: source.default_unit,
       sub_location: row.sub_location || null,
       date_from: row.date_from || null,
+      meter_number: row.meter_number || null,
       notes: row.notes || null,
     };
     try {
@@ -252,6 +259,7 @@ function FuelSection({
                 <th className="px-3 py-2.5 text-left w-28">加油日期</th>
                 <th className="px-3 py-2.5 text-left">{locationLabel}</th>
                 <th className="px-3 py-2.5 text-right w-28">用量 ({source.default_unit})</th>
+                {hasBioFactor && <th className="px-3 py-2.5 text-right w-24">生質占比 %</th>}
                 <th className="px-3 py-2.5 text-left w-32">備註（費用等）</th>
                 <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
@@ -288,6 +296,15 @@ function FuelSection({
                       className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                   </td>
+                  {hasBioFactor && (
+                    <td className="px-2 py-1.5">
+                      <input type="number" min="0" max="100" step="1" placeholder="0"
+                        value={row.meter_number}
+                        onChange={(e) => updateRow(row.tempKey, 'meter_number', e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                      />
+                    </td>
+                  )}
                   <td className="px-2 py-1.5">
                     <input type="text" placeholder="費用、備註…" value={row.notes}
                       onChange={(e) => updateRow(row.tempKey, 'notes', e.target.value)}
@@ -326,6 +343,7 @@ function FuelSection({
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalVol.toLocaleString(undefined, { maximumFractionDigits: 2 })} {source.default_unit}
                 </td>
+                {hasBioFactor && <td />}
                 <td />
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}

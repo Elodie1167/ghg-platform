@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
 import { MONTHS, HEADER_BG, BTN_BG } from './tabTypes';
-import type { EmissionSource, ActivityRecord } from './page';
+import type { EmissionSource, ActivityRecord, AssignedFactor } from './page';
 
 // 用月度表格（帳單/計量）
 const MONTHLY_CODES = ['1-1A-3', '1-1A-9'];
@@ -15,6 +15,7 @@ interface EventRow {
   date_from: string;
   sub_location: string;
   activity_value: string;
+  meter_number: string;
   notes: string;
   co2e_total: number | null;
   is_reviewed: boolean;
@@ -24,7 +25,7 @@ interface EventRow {
 interface LpgRow { barrels: string; kgPerBarrel: string; }
 
 export default function CombustionTab({
-  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab,
+  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab, assignedFactors,
 }: TabProps) {
   const sources = emissionSources
     .filter((s) => s.source_code.startsWith('1-1') && selectedSourceIds.has(s.id))
@@ -67,6 +68,7 @@ export default function CombustionTab({
               factory={factory}
               year={year}
               records={existingRecords.filter((r) => r.emission_source_id === src.id)}
+              assignedFactor={assignedFactors?.find((f) => f.emission_source_id === src.id)}
             />
           ))}
         </div>
@@ -84,6 +86,7 @@ export default function CombustionTab({
               factory={factory}
               year={year}
               records={existingRecords.filter((r) => r.emission_source_id === src.id)}
+              assignedFactor={assignedFactors?.find((f) => f.emission_source_id === src.id)}
             />
           ))}
         </div>
@@ -92,14 +95,61 @@ export default function CombustionTab({
   );
 }
 
+// ─── 係數顯示面板 ────────────────────────────────────────────────
+function FactorPanel({ factor }: { factor: AssignedFactor }) {
+  const [open, setOpen] = useState(false);
+  const fmt = (v: number | null) => v != null ? v.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—';
+  return (
+    <div className="mt-2 mb-3">
+      <button onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 text-xs text-green-700 hover:text-green-900 transition">
+        <span className={`transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
+        <span>已套用係數</span>
+        {factor.source_reference && (
+          <span className="text-gray-400 font-normal">· {factor.source_reference}</span>
+        )}
+      </button>
+      {open && (
+        <div className="mt-2 p-3 bg-green-50 border border-green-100 rounded-lg text-xs text-gray-700 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1.5">
+          {factor.ncv != null && (
+            <div><span className="text-gray-400">NCV</span><br /><span className="font-mono">{fmt(factor.ncv)} {factor.ncv_unit ?? ''}</span></div>
+          )}
+          {factor.density != null && (
+            <div><span className="text-gray-400">密度</span><br /><span className="font-mono">{fmt(factor.density)} {factor.density_unit ?? ''}</span></div>
+          )}
+          {factor.factor_co2 != null && (
+            <div><span className="text-gray-400">EF CO₂</span><br /><span className="font-mono">{fmt(factor.factor_co2)} kg/TJ</span></div>
+          )}
+          {factor.factor_ch4 != null && (
+            <div><span className="text-gray-400">EF CH₄</span><br /><span className="font-mono">{fmt(factor.factor_ch4)} kg/TJ</span></div>
+          )}
+          {factor.factor_n2o != null && (
+            <div><span className="text-gray-400">EF N₂O</span><br /><span className="font-mono">{fmt(factor.factor_n2o)} kg/TJ</span></div>
+          )}
+          {factor.factor_co2_bio != null && (
+            <div><span className="text-gray-400">EF CO₂ (生質)</span><br /><span className="font-mono">{fmt(factor.factor_co2_bio)} kg/TJ</span></div>
+          )}
+          {factor.factor_ch4_bio != null && (
+            <div><span className="text-gray-400">EF CH₄ (生質)</span><br /><span className="font-mono">{fmt(factor.factor_ch4_bio)} kg/TJ</span></div>
+          )}
+          {factor.factor_n2o_bio != null && (
+            <div><span className="text-gray-400">EF N₂O (生質)</span><br /><span className="font-mono">{fmt(factor.factor_n2o_bio)} kg/TJ</span></div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── 月度表格（LPG 帳單、廢布月度重量）───────────────────────────────
 function MonthlySection({
-  source, factory, year, records,
+  source, factory, year, records, assignedFactor,
 }: {
   source: EmissionSource;
   factory: TabProps['factory'];
   year: number;
   records: ActivityRecord[];
+  assignedFactor?: AssignedFactor;
 }) {
   const isLPG = source.source_code === '1-1A-3';
 
@@ -245,6 +295,7 @@ function MonthlySection({
             </span>
           )}
         </div>
+        {assignedFactor && <FactorPanel factor={assignedFactor} />}
         <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-2xl">
           <table className="w-full text-sm">
             <thead>
@@ -331,6 +382,7 @@ function MonthlySection({
           </span>
         )}
       </div>
+      {assignedFactor && <FactorPanel factor={assignedFactor} />}
       <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-lg">
         <table className="w-full text-sm">
           <thead>
@@ -391,13 +443,16 @@ function MonthlySection({
 
 // ─── 逐筆事件列（發電機、消防演練、鍋爐等）─────────────────────────────
 function EventSection({
-  source, factory, year, records,
+  source, factory, year, records, assignedFactor,
 }: {
   source: EmissionSource;
   factory: TabProps['factory'];
   year: number;
   records: ActivityRecord[];
+  assignedFactor?: AssignedFactor;
 }) {
+  const hasBioFactor = source.is_biomass;
+
   const [rows, setRows] = useState<EventRow[]>(() =>
     records.map((r) => ({
       tempKey: r.id,
@@ -406,6 +461,7 @@ function EventSection({
       date_from: r.date_from ?? '',
       sub_location: r.sub_location ?? '',
       activity_value: r.activity_value != null ? String(r.activity_value) : '',
+      meter_number: r.meter_number ?? '',
       notes: r.notes ?? '',
       co2e_total: r.co2e_total,
       is_reviewed: r.is_reviewed ?? false,
@@ -422,7 +478,7 @@ function EventSection({
     setRows((p) => [...p, {
       tempKey, id: null,
       month: new Date().getMonth() + 1,
-      date_from: '', sub_location: '', activity_value: '', notes: '',
+      date_from: '', sub_location: '', activity_value: '', meter_number: '', notes: '',
       co2e_total: null, is_reviewed: false, saveStatus: 'idle',
     }]);
   }
@@ -456,6 +512,7 @@ function EventSection({
       activity_value: numVal != null && !isNaN(numVal) ? numVal : null,
       activity_unit: source.default_unit,
       sub_location: row.sub_location || null,
+      meter_number: row.meter_number || null,
       date_from: row.date_from || null,
       notes: row.notes || null,
     };
@@ -504,6 +561,7 @@ function EventSection({
           {source.name_zh}
           <span className="ml-2 text-xs font-mono text-gray-400">{source.source_code}</span>
           {source.is_biomass && <span className="ml-2 text-xs text-green-600">🌿 生質</span>}
+          {hasBioFactor && <span className="ml-2 text-xs text-green-700 bg-green-50 px-1.5 py-0.5 rounded">含生質係數</span>}
         </h4>
         <button onClick={addRow}
           className="px-3 py-1.5 rounded-lg text-white text-xs font-medium hover:opacity-90 transition"
@@ -511,6 +569,7 @@ function EventSection({
           + 新增記錄
         </button>
       </div>
+      {assignedFactor && <FactorPanel factor={assignedFactor} />}
 
       {rows.length === 0 ? (
         <div className="text-center py-6 text-gray-400 text-sm border border-dashed border-gray-300 rounded-lg">
@@ -525,6 +584,7 @@ function EventSection({
                 <th className="px-3 py-2.5 text-left w-28">日期</th>
                 <th className="px-3 py-2.5 text-left">設備 / 用途</th>
                 <th className="px-3 py-2.5 text-right w-28">用量 ({source.default_unit})</th>
+                {hasBioFactor && <th className="px-3 py-2.5 text-right w-24">生質占比 %</th>}
                 <th className="px-3 py-2.5 text-left w-28">備註</th>
                 <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
@@ -561,6 +621,16 @@ function EventSection({
                       className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                   </td>
+                  {hasBioFactor && (
+                    <td className="px-2 py-1.5">
+                      <input type="number" min="0" max="100" step="0.1" placeholder="0"
+                        value={row.meter_number}
+                        onChange={(e) => updateRow(row.tempKey, 'meter_number', e.target.value)}
+                        className="w-full border border-green-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                        title="生質燃料占比（0–100），例 B40 填 40"
+                      />
+                    </td>
+                  )}
                   <td className="px-2 py-1.5">
                     <input type="text" placeholder="備註" value={row.notes}
                       onChange={(e) => updateRow(row.tempKey, 'notes', e.target.value)}
@@ -596,6 +666,7 @@ function EventSection({
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalVol.toLocaleString(undefined, { maximumFractionDigits: 2 })} {source.default_unit}
                 </td>
+                {hasBioFactor && <td />}
                 <td />
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}

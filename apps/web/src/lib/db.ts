@@ -3,10 +3,10 @@ import { Pool } from 'pg';
 // 建立連線 Pool，connectionString 由環境變數注入
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // 本地開發預設不需要 SSL；生產環境（Azure/RDS）請設 ssl: { rejectUnauthorized: false }
-  ssl: process.env.NODE_ENV === 'production'
-    ? { rejectUnauthorized: false }
-    : false,
+  ssl: { rejectUnauthorized: false },
+  max: 5,
+  idleTimeoutMillis: 20000,
+  connectionTimeoutMillis: 30000,
 });
 
 /**

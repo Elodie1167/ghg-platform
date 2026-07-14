@@ -1,10 +1,10 @@
-{
+﻿{
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "ghg-web",
+      "name": "GHG Web Dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "apps/web"],
+      "runtimeArgs": ["run", "dev"],
       "port": 3000
     }
   ]

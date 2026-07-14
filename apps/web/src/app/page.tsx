@@ -54,8 +54,14 @@ export default async function Home() {
               聚陽實業 — 永續發展部 ｜ 盤查年度：{currentYear} 年
             </p>
           </div>
-          <div className="text-green-300 text-sm">
-            共 {factories.length} 個廠別
+          <div className="flex items-center gap-4">
+            <Link
+              href="/summary"
+              className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
+            >
+              集團碳排彙整表 →
+            </Link>
+            <span className="text-green-300 text-sm">共 {factories.length} 個廠別</span>
           </div>
         </div>
       </header>

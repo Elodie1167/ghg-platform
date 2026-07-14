@@ -2,6 +2,33 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 
+const FASTAPI_URL = process.env.FASTAPI_URL ?? 'http://localhost:8000';
+
+interface CalcResult {
+  co2e_location: number | null;
+  co2e_market: number | null;
+  co2e_total: number | null;
+  co2e_biomass_co2: number | null;
+  emission_factor_id: string | null;
+  warnings: string[];
+}
+
+async function callCalculate(payload: Record<string, unknown>): Promise<CalcResult | null> {
+  try {
+    const res = await fetch(`${FASTAPI_URL}/calculate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) { console.warn(`[FastAPI /calculate] HTTP ${res.status}`); return null; }
+    return (await res.json()) as CalcResult;
+  } catch (err) {
+    console.warn('[FastAPI /calculate] 無法連線：', err);
+    return null;
+  }
+}
+
 // ── PUT/PATCH body schema ─────────────────────────────────────────
 const UpdateRecordSchema = z.object({
   activity_value: z.number().min(0).nullable().optional(),
@@ -125,7 +152,52 @@ export async function PUT(
     `;
 
     const result = await query(updateSql, values);
-    return NextResponse.json({ data: result.rows[0], error: null });
+    const updatedRow = result.rows[0];
+
+    // 若 activity_value 或 meter_number 有變動，觸發重新計算
+    const needsCalc = updates.activity_value !== undefined || updates.meter_number !== undefined;
+    if (needsCalc && updatedRow.activity_value != null) {
+      const srcRow = await query(
+        `SELECT es.scope, es.is_biomass, es.source_code, f.country_code
+         FROM emission_sources es, factories f
+         WHERE es.id = $1 AND f.id = $2`,
+        [updatedRow.emission_source_id, updatedRow.factory_id],
+      );
+      if (srcRow.rows.length) {
+        const { scope, is_biomass, source_code: srcCode, country_code } = srcRow.rows[0];
+        const bio_fraction_raw = updatedRow.meter_number ? parseFloat(updatedRow.meter_number) : 0;
+        const bio_fraction = isNaN(bio_fraction_raw) ? 0 : bio_fraction_raw;
+        const calc = await callCalculate({
+          emission_source_id: updatedRow.emission_source_id,
+          factory_id: updatedRow.factory_id,
+          country_code,
+          year: updatedRow.year,
+          month: updatedRow.month,
+          activity_value: parseFloat(updatedRow.activity_value),
+          activity_unit: updatedRow.activity_unit,
+          scope,
+          is_biomass,
+          source_code: srcCode ?? '',
+          activity_record_id: id,
+          bio_fraction,
+        });
+        if (calc) {
+          await query(
+            `UPDATE activity_records
+             SET co2e_location = $1, co2e_market = $2, co2e_total = $3,
+                 co2e_biomass_co2 = $4, emission_factor_id = $5, updated_at = NOW()
+             WHERE id = $6`,
+            [calc.co2e_location, calc.co2e_market, calc.co2e_total,
+             calc.co2e_biomass_co2, calc.emission_factor_id, id],
+          );
+          updatedRow.co2e_total = calc.co2e_total;
+          updatedRow.co2e_location = calc.co2e_location;
+          updatedRow.co2e_market = calc.co2e_market;
+        }
+      }
+    }
+
+    return NextResponse.json({ data: updatedRow, error: null });
   } catch (err) {
     console.error('[PUT /api/records/:id]', err);
     return NextResponse.json(

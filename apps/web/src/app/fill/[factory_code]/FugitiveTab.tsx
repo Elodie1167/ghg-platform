@@ -1,9 +1,33 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Component, type ReactNode, type ErrorInfo } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
 import { MONTHS, HEADER_BG, BTN_BG } from './tabTypes';
 import type { EmissionSource, ActivityRecord } from './page';
+
+class FugitiveErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) { console.error('[FugitiveTab]', error, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-6 bg-red-50 border border-red-300 rounded-xl text-sm text-red-800 whitespace-pre-wrap">
+          <div className="font-bold mb-2">逸散填報錯誤（請截圖回報）</div>
+          <div className="font-mono text-xs">{String(this.state.error)}</div>
+          <div className="font-mono text-xs mt-2 text-red-500">{this.state.error.stack}</div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // 1-4B-1 化糞池 → 月度
 const MONTHLY_FUGITIVE = ['1-4B-1'];
@@ -15,6 +39,7 @@ interface EventRow {
   date_from: string;
   sub_location: string;
   activity_value: string;
+  unit_count: string;
   notes: string;
   co2e_total: number | null;
   is_reviewed: boolean;
@@ -35,7 +60,7 @@ interface ExtRow {
   saveStatus: SaveStatus;
 }
 
-export default function FugitiveTab({
+function FugitiveTabInner({
   factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab,
 }: TabProps) {
   const sources = emissionSources
@@ -70,7 +95,7 @@ export default function FugitiveTab({
         <div className="mb-8">
           <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">月度計量</h3>
           {monthlySources.map((src) => (
-            <MonthlyFugitiveSection
+            <SepticSection
               key={src.id}
               source={src}
               factory={factory}
@@ -114,7 +139,16 @@ export default function FugitiveTab({
   );
 }
 
-function MonthlyFugitiveSection({
+interface SepticMonthData {
+  id: string | null;
+  days: string;
+  workers: string;
+  hours: string;
+  co2e: number | null;
+  saveStatus: SaveStatus;
+}
+
+function SepticSection({
   source, factory, year, records,
 }: {
   source: EmissionSource;
@@ -122,39 +156,67 @@ function MonthlyFugitiveSection({
   year: number;
   records: ActivityRecord[];
 }) {
-  const [lv, setLv] = useState<Record<number, string>>(() => {
-    const init: Record<number, string> = {};
-    for (const r of records) { init[r.month] = r.activity_value != null ? String(r.activity_value) : ''; }
-    return init;
-  });
-  const lvRef = useRef(lv);
-  const [status, setStatus] = useState<SaveStatus>('idle');
-  const tmr = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [rows, setRows] = useState<SepticMonthData[]>(() =>
+    MONTHS.map((m) => {
+      const r = records.find((rec) => rec.month === m);
+      return {
+        id: r?.id ?? null,
+        days: r?.meter_number ?? '',
+        workers: r?.sub_location ?? '',
+        hours: r?.activity_value != null ? String(r.activity_value) : '',
+        co2e: r?.co2e_total ?? null,
+        saveStatus: 'idle' as SaveStatus,
+      };
+    })
+  );
+  const rowsRef = useRef(rows);
+  useEffect(() => { rowsRef.current = rows; }, [rows]);
+  const timers = useRef<(ReturnType<typeof setTimeout> | null)[]>(MONTHS.map(() => null));
 
-  function onChange(month: number, val: string) {
-    const next = { ...lvRef.current, [month]: val };
-    lvRef.current = next;
-    setLv(next);
-    if (tmr.current) clearTimeout(tmr.current);
-    tmr.current = setTimeout(async () => {
-      const v = lvRef.current[month];
-      const num = v === '' ? null : parseFloat(v);
-      if (v !== '' && (num === null || isNaN(num!))) return;
-      setStatus('saving');
-      try {
-        const res = await fetch('/api/records/autosave', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ factory_id: factory.id, emission_source_id: source.id, year, month, activity_value: num, activity_unit: source.default_unit }),
-        });
-        if (!res.ok) throw new Error();
-        setStatus('saved');
-        setTimeout(() => setStatus('idle'), 2000);
-      } catch { setStatus('error'); }
-    }, 1000);
+  function updateRow(idx: number, field: 'days' | 'workers' | 'hours', value: string) {
+    setRows((p) => { const n = [...p]; n[idx] = { ...n[idx], [field]: value }; return n; });
+    if (timers.current[idx]) clearTimeout(timers.current[idx]!);
+    timers.current[idx] = setTimeout(() => saveRow(idx), 1000);
   }
 
-  const total = Object.values(lv).reduce((s, v) => s + (parseFloat(v) || 0), 0);
-  const co2eTotal = records.reduce((s, r) => s + (r.co2e_total ?? 0), 0);
+  async function saveRow(idx: number) {
+    const row = rowsRef.current[idx];
+    const month = MONTHS[idx];
+    const hoursNum = row.hours !== '' ? parseFloat(row.hours) : null;
+    if (row.hours !== '' && (hoursNum === null || isNaN(hoursNum))) return;
+    setRows((p) => { const n = [...p]; n[idx] = { ...n[idx], saveStatus: 'saving' }; return n; });
+    const payload = {
+      factory_id: factory.id, emission_source_id: source.id, year, month,
+      activity_value: hoursNum, activity_unit: 'hr',
+      meter_number: row.days || null, sub_location: row.workers || null,
+    };
+    try {
+      if (row.id) {
+        const res = await fetch(`/api/records/${row.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setRows((p) => { const n = [...p]; n[idx] = { ...n[idx], co2e: data.data?.co2e_total ?? n[idx].co2e, saveStatus: 'saved' }; return n; });
+      } else {
+        const res = await fetch('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setRows((p) => { const n = [...p]; n[idx] = { ...n[idx], id: data.data.id, co2e: data.data?.co2e_total ?? null, saveStatus: 'saved' }; return n; });
+      }
+      setTimeout(() => setRows((p) => { const n = [...p]; if (n[idx].saveStatus === 'saved') n[idx] = { ...n[idx], saveStatus: 'idle' }; return n; }), 2000);
+    } catch {
+      setRows((p) => { const n = [...p]; n[idx] = { ...n[idx], saveStatus: 'error' }; return n; });
+    }
+  }
+
+  const totalDays = rows.reduce((s, r) => s + (parseFloat(r.days) || 0), 0);
+  const totalHours = rows.reduce((s, r) => s + (parseFloat(r.hours) || 0), 0);
+  const monthsWithWorkers = rows.filter((r) => r.workers !== '' && !isNaN(parseFloat(r.workers)));
+  const avgWorkers = monthsWithWorkers.length > 0
+    ? monthsWithWorkers.reduce((s, r) => s + parseFloat(r.workers), 0) / monthsWithWorkers.length
+    : 0;
+  const totalCo2e = rows.reduce((s, r) => s + (r.co2e ?? 0), 0);
+  const aveHour = totalDays > 0 && avgWorkers > 0 ? totalHours / avgWorkers / totalDays : 0;
+  const proportion = aveHour / 24;
 
   return (
     <div className="mb-6">
@@ -163,35 +225,47 @@ function MonthlyFugitiveSection({
           {source.name_zh}
           <span className="ml-2 text-xs font-mono text-gray-400">{source.source_code}</span>
         </h4>
-        {status !== 'idle' && (
-          <span className={`text-xs ${status === 'saving' ? 'text-yellow-500' : status === 'saved' ? 'text-green-600' : 'text-red-500'}`}>
-            {status === 'saving' ? '⏳ 儲存中' : status === 'saved' ? '✅ 已儲存' : '❌ 失敗'}
-          </span>
-        )}
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-md">
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full text-sm">
           <thead>
             <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
-              <th className="px-4 py-2 text-left w-16">月份</th>
-              <th className="px-4 py-2 text-right">用量 ({source.default_unit})</th>
-              <th className="px-4 py-2 text-right w-28">CO₂e (t)</th>
+              <th className="px-3 py-2 text-left w-16">月份</th>
+              <th className="px-3 py-2 text-right w-28">上班天數</th>
+              <th className="px-3 py-2 text-right w-28">上班人數</th>
+              <th className="px-3 py-2 text-right w-28">上班總時數</th>
+              <th className="px-3 py-2 text-right w-28">CO₂e (t)</th>
+              <th className="px-3 py-2 text-center w-8">狀</th>
             </tr>
           </thead>
           <tbody>
-            {MONTHS.map((m) => {
-              const rec = records.find((r) => r.month === m);
-              const val = lv[m] ?? (rec?.activity_value != null ? String(rec.activity_value) : '');
+            {MONTHS.map((m, idx) => {
+              const row = rows[idx];
               return (
-                <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                  <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
-                  <td className="px-4 py-1.5">
-                    <input type="number" min="0" step="0.01" placeholder="輸入數量" value={val}
-                      onChange={(e) => onChange(m, e.target.value)}
-                      className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
+                <tr key={m} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <td className="px-3 py-1.5 font-medium text-gray-700">{m} 月</td>
+                  <td className="px-2 py-1.5">
+                    <input type="number" min="0" step="1" placeholder="天" value={row.days}
+                      onChange={(e) => updateRow(idx, 'days', e.target.value)}
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </td>
-                  <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono">
-                    {rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—'}
+                  <td className="px-2 py-1.5">
+                    <input type="number" min="0" step="1" placeholder="人" value={row.workers}
+                      onChange={(e) => updateRow(idx, 'workers', e.target.value)}
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input type="number" min="0" step="0.1" placeholder="hr" value={row.hours}
+                      onChange={(e) => updateRow(idx, 'hours', e.target.value)}
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </td>
+                  <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
+                    {row.co2e != null ? row.co2e.toFixed(4) : '—'}
+                  </td>
+                  <td className="px-2 py-1.5 text-center text-xs">
+                    {row.saveStatus === 'saving' && '⏳'}
+                    {row.saveStatus === 'saved' && '✓'}
+                    {row.saveStatus === 'error' && '❌'}
                   </td>
                 </tr>
               );
@@ -199,17 +273,23 @@ function MonthlyFugitiveSection({
           </tbody>
           <tfoot>
             <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold">
-              <td className="px-4 py-2 text-gray-700">合計</td>
-              <td className="px-4 py-2 text-right font-mono text-gray-700">
-                {total.toLocaleString(undefined, { maximumFractionDigits: 2 })} {source.default_unit}
-              </td>
-              <td className="px-4 py-2 text-right font-mono text-gray-700">
-                {co2eTotal > 0 ? co2eTotal.toFixed(4) + ' t' : '—'}
-              </td>
+              <td className="px-3 py-2 text-gray-700">年度合計</td>
+              <td className="px-3 py-2 text-right font-mono text-gray-700">{totalDays > 0 ? totalDays.toLocaleString() + ' 天' : '—'}</td>
+              <td className="px-3 py-2 text-right font-mono text-gray-700">{avgWorkers > 0 ? avgWorkers.toFixed(1) + ' 人均' : '—'}</td>
+              <td className="px-3 py-2 text-right font-mono text-gray-700">{totalHours > 0 ? totalHours.toLocaleString() + ' hr' : '—'}</td>
+              <td className="px-3 py-2 text-right font-mono text-gray-700">{totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}</td>
+              <td />
             </tr>
           </tfoot>
         </table>
       </div>
+      {totalDays > 0 && avgWorkers > 0 && totalHours > 0 && (
+        <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-xs text-gray-600 space-y-1">
+          <div><span className="font-medium">AVE Hour</span> = {totalHours.toFixed(1)} hr ÷ {avgWorkers.toFixed(1)} 人 ÷ {totalDays} 天 = <span className="font-mono font-semibold">{aveHour.toFixed(4)}</span> hr/人/天</div>
+          <div><span className="font-medium">日比例</span> = {aveHour.toFixed(4)} ÷ 24 = <span className="font-mono font-semibold">{proportion.toFixed(6)}</span></div>
+          <div className="text-gray-400 pt-1">CO₂e = 日比例 × {avgWorkers.toFixed(1)} 人 × {totalDays} 天 × BOD × Bo × MCF × CH₄ GWP</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -430,14 +510,23 @@ function EventFugitiveSection({
   year: number;
   records: ActivityRecord[];
 }) {
+  const isSF6 = source.source_code === '1-4D-1';
+
   const [rows, setRows] = useState<EventRow[]>(() =>
-    records.map((r) => ({
-      tempKey: r.id, id: r.id, month: r.month,
-      date_from: r.date_from ?? '', sub_location: r.sub_location ?? '',
-      activity_value: r.activity_value != null ? String(r.activity_value) : '',
-      notes: r.notes ?? '', co2e_total: r.co2e_total,
-      is_reviewed: r.is_reviewed ?? false, saveStatus: 'idle' as SaveStatus,
-    }))
+    records.map((r) => {
+      const unitCnt = r.meter_number ?? '';
+      const unitNum = parseFloat(unitCnt);
+      const actVal = isSF6 && unitNum > 0 && r.activity_value != null
+        ? String(parseFloat(String(r.activity_value)) / unitNum)
+        : r.activity_value != null ? String(r.activity_value) : '';
+      return {
+        tempKey: r.id, id: r.id, month: r.month,
+        date_from: r.date_from ?? '', sub_location: r.sub_location ?? '',
+        activity_value: actVal, unit_count: unitCnt,
+        notes: r.notes ?? '', co2e_total: r.co2e_total,
+        is_reviewed: r.is_reviewed ?? false, saveStatus: 'idle' as SaveStatus,
+      };
+    })
   );
   const rowsRef = useRef(rows);
   useEffect(() => { rowsRef.current = rows; }, [rows]);
@@ -445,7 +534,7 @@ function EventFugitiveSection({
 
   function addRow() {
     const tempKey = `new-${Date.now()}`;
-    setRows((p) => [...p, { tempKey, id: null, month: new Date().getMonth() + 1, date_from: '', sub_location: '', activity_value: '', notes: '', co2e_total: null, is_reviewed: false, saveStatus: 'idle' }]);
+    setRows((p) => [...p, { tempKey, id: null, month: new Date().getMonth() + 1, date_from: '', sub_location: '', activity_value: '', unit_count: '', notes: '', co2e_total: null, is_reviewed: false, saveStatus: 'idle' }]);
   }
 
   async function toggleReview(tempKey: string) {
@@ -469,13 +558,18 @@ function EventFugitiveSection({
     const row = rowsRef.current.find((r) => r.tempKey === tempKey);
     if (!row) return;
     setRows((p) => p.map((r) => r.tempKey === tempKey ? { ...r, saveStatus: 'saving' } : r));
-    const numVal = row.activity_value !== '' ? parseFloat(row.activity_value) : null;
-    const payload = {
+    const fillPerUnit = row.activity_value !== '' ? parseFloat(row.activity_value) : null;
+    const unitCnt = row.unit_count !== '' ? parseFloat(row.unit_count) : null;
+    const totalVal = isSF6 && fillPerUnit != null && !isNaN(fillPerUnit) && unitCnt != null && !isNaN(unitCnt)
+      ? fillPerUnit * unitCnt
+      : fillPerUnit != null && !isNaN(fillPerUnit) ? fillPerUnit : null;
+    const payload: Record<string, unknown> = {
       factory_id: factory.id, emission_source_id: source.id, year, month: row.month,
-      activity_value: numVal != null && !isNaN(numVal) ? numVal : null,
+      activity_value: totalVal,
       activity_unit: source.default_unit,
       sub_location: row.sub_location || null, date_from: row.date_from || null, notes: row.notes || null,
     };
+    if (isSF6) payload.meter_number = row.unit_count || null;
     try {
       if (row.id) {
         const res = await fetch(`/api/records/${row.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -502,7 +596,9 @@ function EventFugitiveSection({
 
   const locPlaceholder = source.source_code.startsWith('1-4A') ? '設備 / 冷媒型號' : '設備名稱';
 
-  const totalVol = rows.reduce((s, r) => s + (parseFloat(r.activity_value) || 0), 0);
+  const totalVol = isSF6
+    ? rows.reduce((s, r) => s + (parseFloat(r.unit_count) || 0) * (parseFloat(r.activity_value) || 0), 0)
+    : rows.reduce((s, r) => s + (parseFloat(r.activity_value) || 0), 0);
   const totalCo2e = rows.reduce((s, r) => s + (r.co2e_total ?? 0), 0);
 
   return (
@@ -529,7 +625,8 @@ function EventFugitiveSection({
                 <th className="px-3 py-2.5 text-left w-20">月份</th>
                 <th className="px-3 py-2.5 text-left w-28">日期</th>
                 <th className="px-3 py-2.5 text-left">{locPlaceholder}</th>
-                <th className="px-3 py-2.5 text-right w-28">用量 ({source.default_unit})</th>
+                {isSF6 && <th className="px-3 py-2.5 text-right w-20">台數</th>}
+                <th className="px-3 py-2.5 text-right w-28">{isSF6 ? `每台填充 (${source.default_unit})` : `用量 (${source.default_unit})`}</th>
                 <th className="px-3 py-2.5 text-left w-28">備註</th>
                 <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
@@ -557,6 +654,14 @@ function EventFugitiveSection({
                       onChange={(e) => updateRow(row.tempKey, 'sub_location', e.target.value)}
                       className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </td>
+                  {isSF6 && (
+                    <td className="px-2 py-1.5">
+                      <input type="number" min="0" step="1" placeholder="台"
+                        value={row.unit_count}
+                        onChange={(e) => updateRow(row.tempKey, 'unit_count', e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </td>
+                  )}
                   <td className="px-2 py-1.5">
                     <input type="number" min="0" step="0.001" placeholder={source.default_unit} value={row.activity_value}
                       onChange={(e) => updateRow(row.tempKey, 'activity_value', e.target.value)}
@@ -592,7 +697,7 @@ function EventFugitiveSection({
             </tbody>
             <tfoot>
               <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
-                <td colSpan={3} className="px-3 py-2 text-gray-700">合計</td>
+                <td colSpan={isSF6 ? 4 : 3} className="px-3 py-2 text-gray-700">合計</td>
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalVol.toLocaleString(undefined, { maximumFractionDigits: 3 })} {source.default_unit}
                 </td>
@@ -607,5 +712,13 @@ function EventFugitiveSection({
         </div>
       )}
     </div>
+  );
+}
+
+export default function FugitiveTab(props: TabProps) {
+  return (
+    <FugitiveErrorBoundary>
+      <FugitiveTabInner {...props} />
+    </FugitiveErrorBoundary>
   );
 }
