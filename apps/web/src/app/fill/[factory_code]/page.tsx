@@ -40,6 +40,9 @@ export interface ActivityRecord {
   activity_unit: string;
   notes: string | null;
   co2e_total: number | null;
+  co2e_location: number | null;
+  co2e_market: number | null;
+  co2e_biomass_co2: number | null;
   is_reviewed: boolean;
   sub_location: string | null;
   meter_number: string | null;
@@ -136,8 +139,9 @@ export default async function FillPage({
 
   const recordsResult = await query(
     `SELECT ar.id, ar.emission_source_id, es.source_code, ar.year, ar.month,
-            ar.activity_value::float, ar.activity_unit, ar.notes, ar.co2e_total::float, ar.is_reviewed,
-            ar.sub_location, ar.meter_number,
+            ar.activity_value::float, ar.activity_unit, ar.notes,
+            ar.co2e_total::float, ar.co2e_location::float, ar.co2e_market::float, ar.co2e_biomass_co2::float,
+            ar.is_reviewed, ar.sub_location, ar.meter_number,
             ar.date_from::text AS date_from, ar.date_to::text AS date_to
      FROM activity_records ar
      JOIN emission_sources es ON ar.emission_source_id = es.id
@@ -165,6 +169,13 @@ export default async function FillPage({
   );
   const assignedFactors: AssignedFactor[] = factorsResult.rows;
 
+  const recResult = await query(
+    `SELECT COALESCE(SUM(rec_kwh::float), 0) / 1000 AS rec_mwh
+     FROM rec_certificates WHERE factory_id = $1 AND year = $2`,
+    [factory.id, currentYear],
+  );
+  const recMwh = Number(recResult.rows[0]?.rec_mwh) || 0;
+
   return (
     <FillPageClient
       factory={factory}
@@ -175,6 +186,7 @@ export default async function FillPage({
       initialSelectedIds={initialSelectedIds}
       initialWasteConfig={initialWasteConfig}
       assignedFactors={assignedFactors}
+      recMwh={recMwh}
     />
   );
 }

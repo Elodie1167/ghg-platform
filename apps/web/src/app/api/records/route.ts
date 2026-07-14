@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { calcCo2e } from '@/lib/co2e-calc';
 
 // ── FastAPI 計算服務 URL ───────────────────────────────────────────
 // Docker 網路內：http://agents:8000；本地開發：http://localhost:8000
@@ -200,32 +201,26 @@ export async function POST(req: NextRequest) {
 
     const newId: string = insertResult.rows[0].id;
 
-    // Step 2：呼叫 FastAPI 計算 CO₂e（activity_value 為 null 時跳過）
+    // Step 2：計算 CO₂e（FastAPI 優先，失敗時 TypeScript 備援）
     let calc: CalcResult | null = null;
     if (activity_value != null) {
       const srcRow = await query(
-        `SELECT es.scope, es.is_biomass, es.source_code, f.country_code
+        `SELECT es.scope, es.is_biomass, es.source_code, es.substance, f.country_code
          FROM emission_sources es, factories f
          WHERE es.id = $1 AND f.id = $2`,
         [emission_source_id, factory_id],
       );
       if (srcRow.rows.length) {
-        const { scope, is_biomass, source_code: srcCode, country_code } = srcRow.rows[0];
+        const { scope, is_biomass, source_code: srcCode, substance, country_code } = srcRow.rows[0];
         const bio_fraction = meter_number ? parseFloat(meter_number) : 0;
-        calc = await callCalculate({
-          emission_source_id,
-          factory_id,
-          country_code,
-          year,
-          month,
-          activity_value,
-          activity_unit,
-          scope,
-          is_biomass,
-          source_code: srcCode ?? '',
-          activity_record_id: newId,
+        const fastApiPayload = {
+          emission_source_id, factory_id, country_code, year, month,
+          activity_value, activity_unit, scope, is_biomass,
+          source_code: srcCode ?? '', activity_record_id: newId,
           bio_fraction: isNaN(bio_fraction) ? 0 : bio_fraction,
-        });
+        };
+        calc = await callCalculate(fastApiPayload)
+          ?? await calcCo2e({ ...fastApiPayload, substance: substance ?? null });
       }
     }
 
