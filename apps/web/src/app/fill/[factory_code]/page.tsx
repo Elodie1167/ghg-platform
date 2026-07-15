@@ -86,6 +86,8 @@ export interface AssignedFactor {
   ncv_unit: string | null;
   density: number | null;
   density_unit: string | null;
+  gwp_ch4: number | null;
+  gwp_n2o: number | null;
 }
 
 export default async function FillPage({
@@ -164,6 +166,7 @@ export default async function FillPage({
             ef.factor_co2_bio, ef.factor_ch4_bio, ef.factor_n2o_bio,
             ef.grid_emission_factor, ef.market_residual_factor, ef.scope3_factor,
             ef.source_reference, ef.ncv, ef.ncv_unit, ef.density, ef.density_unit,
+            ef.gwp_ch4::float AS gwp_ch4, ef.gwp_n2o::float AS gwp_n2o,
             es.source_code
      FROM emission_factors ef
      JOIN emission_sources es ON es.id = ef.emission_source_id

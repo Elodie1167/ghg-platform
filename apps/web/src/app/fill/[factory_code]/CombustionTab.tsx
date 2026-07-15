@@ -18,6 +18,10 @@ interface EventRow {
   meter_number: string;
   notes: string;
   co2e_total: number | null;
+  co2_t: number | null;
+  ch4_t: number | null;
+  n2o_t: number | null;
+  hfc_t: number | null;
   is_reviewed: boolean;
   saveStatus: SaveStatus;
 }
@@ -279,6 +283,19 @@ function MonthlySection({
 
   const co2eTotal = records.filter((r) => r.co2e_total != null).reduce((s, r) => s + (r.co2e_total ?? 0), 0);
 
+  function computeGas(totalKg: number, factor: AssignedFactor): { co2_t: number; ch4_t: number; n2o_t: number; co2e_t: number } | null {
+    const GWP_CH4 = factor.gwp_ch4 ?? 27.9;
+    const GWP_N2O = factor.gwp_n2o ?? 273.0;
+    const ncv = factor.ncv ?? 0;
+    if (ncv <= 0 || totalKg <= 0) return null;
+    const energy_tj = (totalKg * ncv) / 1_000_000;
+    const co2_t = parseFloat((energy_tj * (factor.factor_co2 ?? 0) / 1000).toFixed(4));
+    const ch4_t = parseFloat((energy_tj * (factor.factor_ch4 ?? 0) / 1000).toFixed(4));
+    const n2o_t = parseFloat((energy_tj * (factor.factor_n2o ?? 0) / 1000).toFixed(4));
+    const co2e_t = parseFloat((co2_t + ch4_t * GWP_CH4 + n2o_t * GWP_N2O).toFixed(4));
+    return { co2_t, ch4_t, n2o_t, co2e_t };
+  }
+
   if (isLPG) {
     const totalKg = MONTHS.reduce((s, m) => {
       const row = lpgData[m] ?? { barrels: '', kgPerBarrel: '' };
@@ -307,6 +324,9 @@ function MonthlySection({
                 <th className="px-4 py-2 text-right w-28">採購桶數</th>
                 <th className="px-4 py-2 text-right w-28">一桶 (kg)</th>
                 <th className="px-4 py-2 text-right w-28">合計 kg（自動）</th>
+                <th className="px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CO₂ (t)</th>
+                <th className="px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CH₄ (t)</th>
+                <th className="px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>N₂O (t)</th>
                 <th className="px-4 py-2 text-right w-28">CO₂e (t)</th>
                 <th className="px-4 py-2 text-center w-10">查核</th>
               </tr>
@@ -320,6 +340,7 @@ function MonthlySection({
                 const b = parseFloat(row.barrels) || 0;
                 const k = parseFloat(row.kgPerBarrel) || 0;
                 const computedKg = b > 0 && k > 0 ? (b * k).toFixed(2) : '—';
+                const gasResult = assignedFactor ? computeGas(b * k, assignedFactor) : null;
                 return (
                   <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                     <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
@@ -336,8 +357,17 @@ function MonthlySection({
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
                     </td>
                     <td className="px-4 py-1.5 text-right font-mono text-gray-600 text-xs">{computedKg}</td>
+                    <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                      {gasResult?.co2_t?.toFixed(4) ?? '—'}
+                    </td>
+                    <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                      {gasResult?.ch4_t?.toFixed(4) ?? '—'}
+                    </td>
+                    <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                      {gasResult?.n2o_t?.toFixed(4) ?? '—'}
+                    </td>
                     <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono">
-                      {rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—'}
+                      {gasResult?.co2e_t?.toFixed(4) ?? (rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—')}
                     </td>
                     <td className="px-2 py-1.5 text-center">
                       <button onClick={() => toggleReview(m)} disabled={!hasId}
@@ -357,6 +387,9 @@ function MonthlySection({
                 <td className="px-4 py-2 text-right font-mono text-gray-700">
                   {totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
                 </td>
+                <td />
+                <td />
+                <td />
                 <td className="px-4 py-2 text-right font-mono text-gray-700">
                   {co2eTotal > 0 ? co2eTotal.toFixed(4) + ' t' : '—'}
                 </td>
@@ -392,6 +425,9 @@ function MonthlySection({
             <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
               <th className="px-4 py-2 text-left w-16">月份</th>
               <th className="px-4 py-2 text-right">重量 ({source.default_unit})</th>
+              <th className="px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CO₂ (t)</th>
+              <th className="px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CH₄ (t)</th>
+              <th className="px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>N₂O (t)</th>
               <th className="px-4 py-2 text-right w-28">CO₂e (t)</th>
               <th className="px-4 py-2 text-center w-10">查核</th>
             </tr>
@@ -402,6 +438,7 @@ function MonthlySection({
               const val = lv[m] ?? (rec?.activity_value != null ? String(rec.activity_value) : '');
               const hasId = !!recordIds[m];
               const isRev = reviewed[m] ?? false;
+              const gasResult = assignedFactor ? computeGas(parseFloat(val) || 0, assignedFactor) : null;
               return (
                 <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                   <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
@@ -412,8 +449,17 @@ function MonthlySection({
                       className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
                   </td>
+                  <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                    {gasResult?.co2_t?.toFixed(4) ?? '—'}
+                  </td>
+                  <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                    {gasResult?.ch4_t?.toFixed(4) ?? '—'}
+                  </td>
+                  <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                    {gasResult?.n2o_t?.toFixed(4) ?? '—'}
+                  </td>
                   <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono">
-                    {rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—'}
+                    {gasResult?.co2e_t?.toFixed(4) ?? (rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—')}
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     <button onClick={() => toggleReview(m)} disabled={!hasId}
@@ -432,6 +478,9 @@ function MonthlySection({
               <td className="px-4 py-2 text-right font-mono text-gray-700">
                 {total.toLocaleString(undefined, { maximumFractionDigits: 2 })} {source.default_unit}
               </td>
+              <td />
+              <td />
+              <td />
               <td className="px-4 py-2 text-right font-mono text-gray-700">
                 {co2eTotal > 0 ? co2eTotal.toFixed(4) + ' t' : '—'}
               </td>
@@ -468,6 +517,10 @@ function EventSection({
       meter_number: r.meter_number ?? '',
       notes: r.notes ?? '',
       co2e_total: r.co2e_total,
+      co2_t: r.co2_t ?? null,
+      ch4_t: r.ch4_t ?? null,
+      n2o_t: r.n2o_t ?? null,
+      hfc_t: r.hfc_t ?? null,
       is_reviewed: r.is_reviewed ?? false,
       saveStatus: 'idle' as SaveStatus,
     }))
@@ -483,7 +536,8 @@ function EventSection({
       tempKey, id: null,
       month: new Date().getMonth() + 1,
       date_from: '', sub_location: '', activity_value: '', meter_number: '', notes: '',
-      co2e_total: null, is_reviewed: false, saveStatus: 'idle',
+      co2e_total: null, co2_t: null, ch4_t: null, n2o_t: null, hfc_t: null,
+      is_reviewed: false, saveStatus: 'idle',
     }]);
   }
 
@@ -592,6 +646,9 @@ function EventSection({
                 {hasBioFactor && <th className="px-3 py-2.5 text-right w-24">生質占比 %</th>}
                 <th className="px-3 py-2.5 text-left w-28">備註</th>
                 <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
+                <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CO₂ (t)</th>
+                <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CH₄ (t)</th>
+                <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>N₂O (t)</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
                 <th className="px-3 py-2.5 text-center w-8">狀</th>
                 <th className="px-3 py-2.5 w-8" />
@@ -645,6 +702,15 @@ function EventSection({
                   <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
                     {row.co2e_total != null ? row.co2e_total.toFixed(4) : '—'}
                   </td>
+                  <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                    {row.co2_t?.toFixed(4) ?? '—'}
+                  </td>
+                  <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                    {row.ch4_t?.toFixed(4) ?? '—'}
+                  </td>
+                  <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                    {row.n2o_t?.toFixed(4) ?? '—'}
+                  </td>
                   <td className="px-2 py-1.5 text-center">
                     <button onClick={() => toggleReview(row.tempKey)} disabled={!row.id}
                       title={row.is_reviewed ? '已查核（點擊取消）' : '點擊標記查核完成'}
@@ -676,6 +742,9 @@ function EventSection({
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
                 </td>
+                <td />
+                <td />
+                <td />
                 <td colSpan={3} />
               </tr>
             </tfoot>

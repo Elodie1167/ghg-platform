@@ -15,6 +15,10 @@ interface EventRow {
   meter_number: string;
   notes: string;
   co2e_total: number | null;
+  co2_t: number | null;
+  ch4_t: number | null;
+  n2o_t: number | null;
+  hfc_t: number | null;
   is_reviewed: boolean;
   saveStatus: SaveStatus;
 }
@@ -127,6 +131,10 @@ function FuelSection({
       meter_number: r.meter_number ?? '',
       notes: r.notes ?? '',
       co2e_total: r.co2e_total,
+      co2_t: r.co2_t ?? null,
+      ch4_t: r.ch4_t ?? null,
+      n2o_t: r.n2o_t ?? null,
+      hfc_t: r.hfc_t ?? null,
       is_reviewed: r.is_reviewed ?? false,
       saveStatus: 'idle' as SaveStatus,
     }))
@@ -145,7 +153,8 @@ function FuelSection({
       tempKey, id: null,
       month: new Date().getMonth() + 1,
       date_from: '', sub_location: '', activity_value: '', meter_number: '', notes: '',
-      co2e_total: null, is_reviewed: false, saveStatus: 'idle',
+      co2e_total: null, co2_t: null, ch4_t: null, n2o_t: null, hfc_t: null,
+      is_reviewed: false, saveStatus: 'idle',
     }]);
   }
 
@@ -265,6 +274,9 @@ function FuelSection({
                 {hasBioFactor && <th className="px-3 py-2.5 text-right w-24">生質占比 %</th>}
                 <th className="px-3 py-2.5 text-left w-32">備註（費用等）</th>
                 <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
+                <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CO₂ (t)</th>
+                <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CH₄ (t)</th>
+                <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>N₂O (t)</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
                 <th className="px-3 py-2.5 text-center w-8">狀</th>
                 <th className="px-3 py-2.5 w-8" />
@@ -317,6 +329,15 @@ function FuelSection({
                   <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
                     {row.co2e_total != null ? row.co2e_total.toFixed(4) : '—'}
                   </td>
+                  <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                    {row.co2_t?.toFixed(4) ?? '—'}
+                  </td>
+                  <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                    {row.ch4_t?.toFixed(4) ?? '—'}
+                  </td>
+                  <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                    {row.n2o_t?.toFixed(4) ?? '—'}
+                  </td>
                   <td className="px-2 py-1.5 text-center">
                     <button
                       onClick={() => toggleReview(row.tempKey)}
@@ -351,6 +372,9 @@ function FuelSection({
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
                 </td>
+                <td />
+                <td />
+                <td />
                 <td colSpan={3} />
               </tr>
             </tfoot>

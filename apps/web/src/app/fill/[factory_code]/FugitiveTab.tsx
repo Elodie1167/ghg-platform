@@ -42,6 +42,7 @@ interface EventRow {
   unit_count: string;
   notes: string;
   co2e_total: number | null;
+  hfc_t: number | null;
   is_reviewed: boolean;
   saveStatus: SaveStatus;
 }
@@ -529,6 +530,7 @@ function EventFugitiveSection({
         date_from: r.date_from ?? '', sub_location: r.sub_location ?? '',
         activity_value: actVal, unit_count: unitCnt,
         notes: r.notes ?? '', co2e_total: r.co2e_total,
+        hfc_t: r.hfc_t ?? null,
         is_reviewed: r.is_reviewed ?? false, saveStatus: 'idle' as SaveStatus,
       };
     })
@@ -539,7 +541,7 @@ function EventFugitiveSection({
 
   function addRow() {
     const tempKey = `new-${Date.now()}`;
-    setRows((p) => [...p, { tempKey, id: null, month: new Date().getMonth() + 1, date_from: '', sub_location: '', activity_value: '', unit_count: '', notes: '', co2e_total: null, is_reviewed: false, saveStatus: 'idle' }]);
+    setRows((p) => [...p, { tempKey, id: null, month: new Date().getMonth() + 1, date_from: '', sub_location: '', activity_value: '', unit_count: '', notes: '', co2e_total: null, hfc_t: null, is_reviewed: false, saveStatus: 'idle' }]);
   }
 
   async function toggleReview(tempKey: string) {
@@ -635,6 +637,7 @@ function EventFugitiveSection({
                 <th className="px-3 py-2.5 text-right w-28">{isSF6 ? `每台填充 (${source.default_unit})` : `用量 (${source.default_unit})`}</th>
                 <th className="px-3 py-2.5 text-left w-28">備註</th>
                 <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
+                <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>HFCs (t)</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
                 <th className="px-3 py-2.5 text-center w-8">狀</th>
                 <th className="px-3 py-2.5 w-8" />
@@ -681,6 +684,9 @@ function EventFugitiveSection({
                   <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
                     {row.co2e_total != null ? row.co2e_total.toFixed(4) : '—'}
                   </td>
+                  <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                    {row.hfc_t?.toFixed(4) ?? '—'}
+                  </td>
                   <td className="px-2 py-1.5 text-center">
                     <button onClick={() => toggleReview(row.tempKey)} disabled={!row.id}
                       title={row.is_reviewed ? '已查核（點擊取消）' : '點擊標記查核完成'}
@@ -711,6 +717,7 @@ function EventFugitiveSection({
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
                 </td>
+                <td />
                 <td colSpan={3} />
               </tr>
             </tfoot>

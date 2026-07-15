@@ -189,6 +189,7 @@ export default async function SummaryPage({
        WHERE ar.year = $1
          AND ar.activity_value IS NOT NULL
          AND ar.activity_value > 0
+         AND ar.is_reviewed = TRUE
        GROUP BY f.factory_code`,
       [year],
     ),
