@@ -4,7 +4,9 @@ import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
 
 // ── FastAPI 計算服務 URL ───────────────────────────────────────────
-const FASTAPI_URL = process.env.FASTAPI_URL ?? 'http://localhost:8000';
+// 未設定時（例如 Vercel serverless）留空，直接走 TypeScript 備援，
+// 避免對不存在的 localhost:8000 發出 8 秒逾時請求。
+const FASTAPI_URL = process.env.FASTAPI_URL ?? '';
 
 // ── POST body schema ──────────────────────────────────────────────
 const AutosaveSchema = z.object({
@@ -31,7 +33,8 @@ interface CalcResult {
   hfc_t?: number | null;
 }
 
-async function callCalculateAsync(payload: {
+// 計算參數（同時滿足 FastAPI 與 TypeScript 備援 calcCo2e 的欄位需求）
+interface CalcParams {
   emission_source_id: string;
   factory_id: string;
   country_code: string;
@@ -41,10 +44,14 @@ async function callCalculateAsync(payload: {
   activity_unit: string;
   scope: number;
   is_biomass: boolean;
+  source_code: string;
+  substance: string | null;
   activity_record_id: string;
-  source_code?: string;
   bio_fraction?: number;
-}): Promise<CalcResult | null> {
+}
+
+async function callCalculateAsync(payload: CalcParams): Promise<CalcResult | null> {
+  if (!FASTAPI_URL) return null; // FastAPI 未設定 → 交給 TS 備援
   try {
     const res = await fetch(`${FASTAPI_URL}/calculate`, {
       method: 'POST',
@@ -60,10 +67,43 @@ async function callCalculateAsync(payload: {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// 同步計算並寫回 co2e_total 等欄位。
+//
+// 重要：必須在 HTTP 回應「之前」await 完成。先前的實作用未 await 的
+// Promise.then() 背景執行，在 serverless（Vercel）上函式一回應就被凍結，
+// 背景工作永遠跑不完 → co2e_total 從未寫入 → 彙總表全空。
+//
+// 回傳計算出的 co2e_total（供前端立即顯示）；計算失敗回傳 null，
+// 但不影響 activity_value 的儲存（已於先前的 INSERT/UPDATE 落地）。
+// ─────────────────────────────────────────────────────────────────
+async function computeAndStore(recordId: string, calcParams: CalcParams): Promise<number | null> {
+  try {
+    const calc = (await callCalculateAsync(calcParams)) ?? (await calcCo2e(calcParams));
+    if (!calc) return null;
+    await query(
+      `UPDATE activity_records
+       SET co2e_location = $1, co2e_market = $2, co2e_total = $3,
+           co2e_biomass_co2 = $4, emission_factor_id = $5,
+           co2_t = $6, ch4_t = $7, n2o_t = $8, hfc_t = $9,
+           updated_at = NOW()
+       WHERE id = $10`,
+      [calc.co2e_location, calc.co2e_market, calc.co2e_total,
+       calc.co2e_biomass_co2, calc.emission_factor_id,
+       calc.co2_t ?? null, calc.ch4_t ?? null, calc.n2o_t ?? null, calc.hfc_t ?? null,
+       recordId],
+    );
+    return calc.co2e_total;
+  } catch (err) {
+    console.error('[autosave computeAndStore]', err);
+    return null; // 計算失敗不影響已儲存的活動數據
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
 // POST /api/records/autosave
 // 公開端點（白名單於 middleware），供填報頁自動儲存呼叫
 // 邏輯：若 (factory_id, emission_source_id, year, month) 已存在 → UPDATE
-//       否則 INSERT；非同步呼叫 FastAPI 計算（失敗不影響儲存）
+//       否則 INSERT；接著同步計算 CO₂e 並寫回後才回應
 // ─────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -101,7 +141,7 @@ export async function POST(req: NextRequest) {
     : (notes ?? null);
 
   try {
-    // 查詢排放源 & 廠區附加資訊（FastAPI 必填欄位）
+    // 查詢排放源 & 廠區附加資訊（計算必填欄位）
     const metaRow = await query(
       `SELECT es.scope, es.is_biomass, es.source_code, es.substance, f.country_code
        FROM emission_sources es, factories f
@@ -120,10 +160,11 @@ export async function POST(req: NextRequest) {
       [factory_id, emission_source_id, year, month],
     );
 
+    const isUpdate = !!(existing.rowCount && existing.rowCount > 0);
     let recordId: string;
+    let updatedAt: string;
 
-    if (existing.rowCount && existing.rowCount > 0) {
-      // UPDATE 現有記錄
+    if (isUpdate) {
       const updateResult = await query(
         `UPDATE activity_records
          SET activity_value = $1,
@@ -132,107 +173,47 @@ export async function POST(req: NextRequest) {
              import_source  = 'manual',
              updated_at     = NOW()
          WHERE id = $4
-         RETURNING id, co2e_total, updated_at`,
+         RETURNING id, updated_at`,
         [activity_value, activity_unit, finalNotes, existing.rows[0].id],
       );
       recordId = updateResult.rows[0].id;
-
-      // 非同步計算 CO₂e（FastAPI 優先，失敗時使用 TypeScript 備援）
-      if (activity_value !== null && activity_value > 0) {
-        const calcParams = {
-          emission_source_id, factory_id,
-          country_code: meta.country_code,
-          year, month, activity_value, activity_unit,
-          scope: meta.scope, is_biomass: meta.is_biomass,
-          source_code: meta.source_code ?? '',
-          substance: meta.substance ?? null,
-          activity_record_id: recordId,
-        };
-        Promise.resolve()
-          .then(async () => {
-            const calc = await callCalculateAsync(calcParams)
-              ?? await calcCo2e(calcParams);
-            if (calc) {
-              await query(
-                `UPDATE activity_records
-                 SET co2e_location = $1, co2e_market = $2, co2e_total = $3,
-                     co2e_biomass_co2 = $4, emission_factor_id = $5,
-                     co2_t = $6, ch4_t = $7, n2o_t = $8, hfc_t = $9,
-                     updated_at = NOW()
-                 WHERE id = $10`,
-                [calc.co2e_location, calc.co2e_market, calc.co2e_total,
-                 calc.co2e_biomass_co2, calc.emission_factor_id,
-                 calc.co2_t ?? null, calc.ch4_t ?? null, calc.n2o_t ?? null, calc.hfc_t ?? null,
-                 recordId],
-              );
-            }
-          })
-          .catch(() => { /* 靜默失敗 */ });
-      }
-
-      const row = updateResult.rows[0];
-      return NextResponse.json({
-        data: { id: row.id, co2e_total: row.co2e_total, updated_at: row.updated_at },
-        error: null,
-        action: 'updated',
-      });
+      updatedAt = updateResult.rows[0].updated_at;
     } else {
-      // INSERT 新記錄
       const insertResult = await query(
         `INSERT INTO activity_records
            (factory_id, emission_source_id, year, month,
             activity_value, activity_unit, notes,
             import_source, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'manual', NOW(), NOW())
-         RETURNING id, co2e_total, updated_at`,
+         RETURNING id, updated_at`,
         [factory_id, emission_source_id, year, month, activity_value, activity_unit, finalNotes],
       );
-
       recordId = insertResult.rows[0].id;
-
-      // 非同步計算 CO₂e（FastAPI 優先，失敗時使用 TypeScript 備援）
-      if (activity_value !== null && activity_value > 0) {
-        const calcParams = {
-          emission_source_id, factory_id,
-          country_code: meta.country_code,
-          year, month, activity_value, activity_unit,
-          scope: meta.scope, is_biomass: meta.is_biomass,
-          source_code: meta.source_code ?? '',
-          substance: meta.substance ?? null,
-          activity_record_id: recordId,
-        };
-        Promise.resolve()
-          .then(async () => {
-            const calc = await callCalculateAsync(calcParams)
-              ?? await calcCo2e(calcParams);
-            if (calc) {
-              await query(
-                `UPDATE activity_records
-                 SET co2e_location = $1, co2e_market = $2, co2e_total = $3,
-                     co2e_biomass_co2 = $4, emission_factor_id = $5,
-                     co2_t = $6, ch4_t = $7, n2o_t = $8, hfc_t = $9,
-                     updated_at = NOW()
-                 WHERE id = $10`,
-                [calc.co2e_location, calc.co2e_market, calc.co2e_total,
-                 calc.co2e_biomass_co2, calc.emission_factor_id,
-                 calc.co2_t ?? null, calc.ch4_t ?? null, calc.n2o_t ?? null, calc.hfc_t ?? null,
-                 recordId],
-              );
-            }
-          })
-          .catch(() => { /* 靜默失敗 */ });
-      }
-
-      const row = insertResult.rows[0];
-      return NextResponse.json(
-        {
-          data: { id: row.id, co2e_total: row.co2e_total, updated_at: row.updated_at },
-          error: null,
-          action: 'inserted',
-        },
-        { status: 201 },
-      );
+      updatedAt = insertResult.rows[0].updated_at;
     }
+
+    // 2. 同步計算 CO₂e 並寫回（必須在回應前完成，見 computeAndStore 說明）
+    let co2eTotal: number | null = null;
+    if (activity_value !== null && activity_value > 0) {
+      co2eTotal = await computeAndStore(recordId, {
+        emission_source_id, factory_id,
+        country_code: meta.country_code,
+        year, month, activity_value, activity_unit,
+        scope: meta.scope, is_biomass: meta.is_biomass,
+        source_code: meta.source_code ?? '',
+        substance: meta.substance ?? null,
+        activity_record_id: recordId,
+      });
+    }
+
+    return NextResponse.json(
+      {
+        data: { id: recordId, co2e_total: co2eTotal, updated_at: updatedAt },
+        error: null,
+        action: isUpdate ? 'updated' : 'inserted',
+      },
+      { status: isUpdate ? 200 : 201 },
+    );
   } catch (err) {
     console.error('[POST /api/records/autosave]', err);
     return NextResponse.json(

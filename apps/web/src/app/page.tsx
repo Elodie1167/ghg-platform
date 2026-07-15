@@ -13,14 +13,15 @@ interface Factory {
 const COUNTRY_LABELS: Record<string, string> = {
   TWN: '台灣',
   CHN: '中國',
-  NVN: '越南',
+  NVN: '北越',
+  SVN: '南越',
   CAB: '柬埔寨',
   SLV: '薩爾瓦多',
   BGD: '孟加拉',
   IND: '印尼',
 };
 
-const COUNTRY_ORDER = ['TWN', 'CHN', 'NVN', 'CAB', 'SLV', 'BGD', 'IND'];
+const COUNTRY_ORDER = ['TWN', 'CHN', 'NVN', 'SVN', 'CAB', 'SLV', 'BGD', 'IND'];
 
 export default async function Home() {
   const result = await query(
