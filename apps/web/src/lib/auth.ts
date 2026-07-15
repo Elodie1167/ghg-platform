@@ -10,6 +10,7 @@ import Credentials from 'next-auth/providers/credentials';
  * 注意：硬寫的帳密僅供本地開發，部署前必須移除並改用 Azure AD。
  */
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  trustHost: true,
   providers: [
     Credentials({
       name: 'Credentials',

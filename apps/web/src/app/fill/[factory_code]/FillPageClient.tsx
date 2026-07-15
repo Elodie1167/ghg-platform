@@ -1223,13 +1223,17 @@ export default function FillPageClient({
           body: JSON.stringify({ factory_id: factory.id, year }),
         });
         const data = await res.json();
-        setRecalcMsg(data.message ?? '完成');
-        await fetchLatest();
+        if (!res.ok) {
+          setRecalcMsg(`錯誤 ${res.status}：${data.error ?? '計算失敗'}`);
+        } else {
+          setRecalcMsg(data.message ?? '完成');
+          await fetchLatest();
+        }
       } catch {
         setRecalcMsg('計算失敗，請稍後再試');
       } finally {
         setLoading(false);
-        setTimeout(() => setRecalcMsg(''), 5000);
+        setTimeout(() => setRecalcMsg(''), 8000);
       }
     }
 
@@ -1245,8 +1249,10 @@ export default function FillPageClient({
       hasPending: boolean;
     };
 
+    const reviewedRecords = records.filter((r) => r.is_reviewed);
+
     const sourceMap = new Map<string, SourceRow>();
-    for (const r of records) {
+    for (const r of reviewedRecords) {
       const src = sourceById[r.emission_source_id];
       if (!src) continue;
       if (!sourceMap.has(r.emission_source_id)) {
@@ -1294,7 +1300,7 @@ export default function FillPageClient({
 
     function scopeCo2eTotal(scope: number): number {
       if (scope === 2) {
-        return records.filter((r) => sourceById[r.emission_source_id]?.scope === 2)
+        return reviewedRecords.filter((r) => sourceById[r.emission_source_id]?.scope === 2)
           .reduce((s, r) => s + (Number(r.co2e_location) || Number(r.co2e_total) || 0), 0);
       }
       return activeRows.filter((r) => r.source.scope === scope).reduce((s, r) => s + r.annual_co2e, 0);
@@ -1305,17 +1311,18 @@ export default function FillPageClient({
     const s3Total = scopeCo2eTotal(3);
     const grandTotal = s1Total + s2LocTotal + s3Total;
 
-    const s2MarketTotal = records
+    const s2MarketTotal = reviewedRecords
       .filter((r) => sourceById[r.emission_source_id]?.scope === 2)
       .reduce((s, r) => s + (Number(r.co2e_market) || 0), 0);
-    const biomassTotal = records.reduce((s, r) => s + (Number(r.co2e_biomass_co2) || 0), 0);
+    const biomassTotal = reviewedRecords.reduce((s, r) => s + (Number(r.co2e_biomass_co2) || 0), 0);
     const s2Deducted = s2LocTotal - s2MarketTotal;
     const s1s2Loc = s1Total + s2LocTotal;
     const s1s2Mkt = s1Total + s2MarketTotal;
     const s1s2s3Loc = s1Total + s2LocTotal + s3Total;
     const s1s2s3Mkt = s1Total + s2MarketTotal + s3Total;
 
-    const nullCount = records.filter((r) => r.activity_value != null && r.activity_value > 0 && r.co2e_total == null).length;
+    // nullCount: reviewed records that are pending calculation
+    const nullCount = reviewedRecords.filter((r) => r.activity_value != null && r.activity_value > 0 && r.co2e_total == null).length;
 
     function fmtG(v: number | null): string {
       if (v == null) return '—';

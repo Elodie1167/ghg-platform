@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'factory_id 和 year 為必填' }, { status: 400 });
   }
 
-  // 查出該廠該年有 activity_value 且 co2e_total 未填 或 co2_t 未填 的記錄
+  // 查出該廠該年有 activity_value 且 co2e_total 未填 或 co2_t 未填 的記錄（僅已查核）
   const pending = await query(
     `SELECT ar.id, ar.emission_source_id, ar.activity_value::float, ar.activity_unit,
             es.scope, es.is_biomass, es.source_code, es.substance,
@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
      JOIN emission_sources es ON ar.emission_source_id = es.id
      JOIN factories f ON ar.factory_id = f.id
      WHERE ar.factory_id = $1 AND ar.year = $2
+       AND ar.is_reviewed = true
        AND ar.activity_value IS NOT NULL AND ar.activity_value > 0
        AND (ar.co2e_total IS NULL OR ar.co2_t IS NULL)`,
     [factory_id, year],
@@ -75,6 +76,6 @@ export async function POST(req: NextRequest) {
     total: pending.rows.length,
     succeeded,
     failed,
-    message: `批次計算完成：${succeeded} 筆成功，${failed} 筆無係數資料`,
+    message: `批次計算完成（已查核資料）：${succeeded} 筆成功，${failed} 筆無係數資料`,
   });
 }
