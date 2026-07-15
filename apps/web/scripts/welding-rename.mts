@@ -18,11 +18,12 @@ for (const raw of readFileSync(envPath, 'utf8').split('\n')) {
 const COMMIT = process.argv.includes('--commit');
 const { query } = await import('@/lib/db');
 
-// 找出所有焊條相關排放源（1-3 製程 或 名稱含「焊條」）
+// 只清理主要焊條排放源 1-3A-1（依使用者決定：只留一個乾淨的「焊條」，
+// 1-3A-2 E7018 未使用，維持原名不動以免變成重複選項）
 const rows = await query(
   `SELECT id, source_code, name_zh, name_en
    FROM emission_sources
-   WHERE source_code LIKE '1-3%' OR name_zh LIKE '焊條%' OR name_en ILIKE 'weld%'
+   WHERE source_code = '1-3A-1'
    ORDER BY source_code`,
 );
 
