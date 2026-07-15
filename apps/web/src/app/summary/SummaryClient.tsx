@@ -1,13 +1,20 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import type { FactoryMeta, SourceMeta, MatrixCell, ScopeAgg, RecAgg } from './page';
+import type { FactoryMeta, SourceMeta, MatrixCell, ScopeAgg, RecAgg, GasAgg } from './page';
 
 const CAT_PREFIX: Record<string, string> = {
   '1-1': '固定燃燒', '1-2': '移動燃燒', '1-3': '製程排放', '1-4': '逸散排放',
   '2-1': '外購電力',
   '3-1': '採購商品與服務', '3-3': '燃料及能源相關', '3-4': '上游運輸',
   '3-5': '廢棄物處理', '3-6': '商務旅行', '3-7': '員工通勤', '3-9': '下游運輸',
+};
+
+// These categories are collapsed to a single merged row
+const MERGED_CAT: Record<string, string> = {
+  '1-1': '鍋爐類',
+  '1-3': '焊條',
+  '3-5': '廢棄物處理',
 };
 
 const SCOPE_NAMES: Record<number, string> = {
@@ -36,12 +43,7 @@ const YEARS = [2023, 2024, 2025, 2026, 2027];
 const COL_W = 72;
 
 export default function SummaryClient({
-  year,
-  factories,
-  sources,
-  cells,
-  scopeAggs,
-  recAggs,
+  year, factories, sources, cells, scopeAggs, recAggs, gasAggs,
 }: {
   year: number;
   factories: FactoryMeta[];
@@ -49,6 +51,7 @@ export default function SummaryClient({
   cells: MatrixCell[];
   scopeAggs: ScopeAgg[];
   recAggs: RecAgg[];
+  gasAggs: GasAgg[];
 }) {
   const router = useRouter();
 
@@ -59,20 +62,20 @@ export default function SummaryClient({
     matrix[c.factory_code][c.source_code] = c.co2e;
   }
 
-  // ── scope aggregates: factory_code → scope → {location, market, biomass} ──
+  // ── scope aggregates: factory_code → scope → {loc, mkt, bio} ──
   const scopeMatrix: Record<string, Record<number, { loc: number; mkt: number; bio: number }>> = {};
   for (const a of scopeAggs) {
     if (!scopeMatrix[a.factory_code]) scopeMatrix[a.factory_code] = {};
     scopeMatrix[a.factory_code][a.scope] = {
-      loc: a.co2e_location,
-      mkt: a.co2e_market,
-      bio: a.co2e_biomass,
+      loc: a.co2e_location, mkt: a.co2e_market, bio: a.co2e_biomass,
     };
   }
 
-  // ── rec: factory_code → MWh ──
+  // ── rec & gas maps ──
   const recMap: Record<string, number> = {};
   for (const r of recAggs) recMap[r.factory_code] = r.rec_mwh;
+  const gasMap: Record<string, GasAgg> = {};
+  for (const g of gasAggs) gasMap[g.factory_code] = g;
 
   // ── ordered factories ──
   const orderedFactories = [
@@ -116,13 +119,6 @@ export default function SummaryClient({
     }
   }
 
-  // scope 1+2 source codes
-  const s12Sources = scopeList
-    .filter((s) => s <= 2)
-    .flatMap((s) =>
-      [...(scopeGroups.get(s)?.values() ?? [])].flatMap((v) => v.map((x) => x.source_code)),
-    );
-
   // ── per-factory supplementary helpers ──
   const s1Total = (fc: string) => {
     const scodes = [...(scopeGroups.get(1)?.values() ?? [])].flatMap((v) =>
@@ -150,6 +146,10 @@ export default function SummaryClient({
   const grandBio = orderedFactories.reduce((s, f) => s + bioTotal(f.factory_code), 0);
   const grandRec = orderedFactories.reduce((s, f) => s + recMwh(f.factory_code), 0);
   const grandDeducted = grandS2Loc - grandS2Mkt;
+
+  // Total column count: 2 label + 1 集團合計 + N factories
+  const totalCols = orderedFactories.length + 3;
+  const tableMinWidth = `${300 + COL_W * (orderedFactories.length + 1)}px`;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -182,12 +182,14 @@ export default function SummaryClient({
       </header>
 
       <main className="px-4 py-6">
+        {/* ── CO₂e 彙整表 ── */}
         <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
           <table
             className="border-collapse text-xs bg-white"
-            style={{ minWidth: `${300 + COL_W * orderedFactories.length + 88}px` }}
+            style={{ minWidth: tableMinWidth }}
           >
             <thead>
+              {/* Row 1: country bands, 集團合計 FIRST */}
               <tr style={{ backgroundColor: HEADER_BG }}>
                 <th
                   colSpan={2}
@@ -195,6 +197,12 @@ export default function SummaryClient({
                   style={{ backgroundColor: HEADER_BG, minWidth: '300px' }}
                 >
                   排放源
+                </th>
+                <th
+                  className="px-2 py-2 text-center text-white font-bold border-l-2 border-white/40 whitespace-nowrap"
+                  style={{ minWidth: `${COL_W}px` }}
+                >
+                  集團合計
                 </th>
                 {countryBands.map((b) => (
                   <th
@@ -205,10 +213,8 @@ export default function SummaryClient({
                     {COUNTRY_LABELS[b.cc] ?? b.cc}
                   </th>
                 ))}
-                <th className="px-2 py-2 text-center text-white font-bold border-l-2 border-white/40 whitespace-nowrap">
-                  集團合計
-                </th>
               </tr>
+              {/* Row 2: factory codes, 集團合計 FIRST */}
               <tr className="bg-gray-100 border-b border-gray-200">
                 <th
                   className="sticky left-0 z-20 bg-gray-100 px-2 py-2 text-left text-gray-600 font-medium border-r border-gray-200 whitespace-nowrap"
@@ -221,6 +227,12 @@ export default function SummaryClient({
                   style={{ left: '80px', minWidth: '220px', width: '220px' }}
                 >
                   排放源名稱
+                </th>
+                <th
+                  className="px-2 py-2 text-center text-gray-800 font-bold border-l-2 border-gray-400 whitespace-nowrap"
+                  style={{ minWidth: `${COL_W}px` }}
+                >
+                  集團合計
                 </th>
                 {orderedFactories.map((f) => (
                   <th
@@ -247,17 +259,10 @@ export default function SummaryClient({
                     </div>
                   </th>
                 ))}
-                <th
-                  className="px-2 py-2 text-center text-gray-800 font-bold border-l-2 border-gray-400 whitespace-nowrap"
-                  style={{ minWidth: '88px' }}
-                >
-                  集團合計
-                </th>
               </tr>
             </thead>
 
             <tbody>
-              {/* ── scope sections ── */}
               {scopeList.map((scope) => {
                 const catMap = scopeGroups.get(scope)!;
                 const catKeys = [...catMap.keys()].sort();
@@ -284,7 +289,16 @@ export default function SummaryClient({
                 );
               })}
 
-              {/* ── S1+S2 合計（地域） ── */}
+              {/* S1 合計 */}
+              <GrandRow
+                label="S1 合計"
+                bg="#166534"
+                orderedFactories={orderedFactories}
+                getVal={s1Total}
+                grandTotal={grandS1}
+                fmt={fmt}
+              />
+              {/* S1 + S2 合計（地域） */}
               <GrandRow
                 label="S1 + S2 合計（地域）"
                 bg="#052e16"
@@ -293,11 +307,20 @@ export default function SummaryClient({
                 grandTotal={grandS1 + grandS2Loc}
                 fmt={fmt}
               />
+              {/* S1 + S2 合計（市場） */}
+              <GrandRow
+                label="S1 + S2 合計（市場）"
+                bg="#052e16"
+                orderedFactories={orderedFactories}
+                getVal={(fc) => s1Total(fc) + s2Mkt(fc)}
+                grandTotal={grandS1 + grandS2Mkt}
+                fmt={fmt}
+              />
 
               {/* ── supplementary section ── */}
               <tr>
                 <td
-                  colSpan={orderedFactories.length + 3}
+                  colSpan={totalCols}
                   className="py-1"
                   style={{ backgroundColor: '#f8fafc' }}
                 />
@@ -310,10 +333,10 @@ export default function SummaryClient({
                 >
                   補充揭露指標
                 </td>
+                <td className="border-l-2 border-white/30" />
                 {orderedFactories.map((f) => (
                   <td key={f.factory_code} className="border-l border-white/10" />
                 ))}
-                <td className="border-l-2 border-white/30" />
               </tr>
 
               <SupplRow
@@ -378,6 +401,17 @@ export default function SummaryClient({
                 bold
               />
               <SupplRow
+                label="S1 + S2 市場合計"
+                unit="tCO₂e"
+                orderedFactories={orderedFactories}
+                getVal={(fc) => s1Total(fc) + s2Mkt(fc)}
+                grandTotal={grandS1 + grandS2Mkt}
+                fmt={fmt}
+                bg="#f1f5f9"
+                textColor="#1e293b"
+                bold
+              />
+              <SupplRow
                 label="S1 + S2 + S3 地域合計"
                 unit="tCO₂e"
                 orderedFactories={orderedFactories}
@@ -406,6 +440,118 @@ export default function SummaryClient({
         <p className="text-xs text-gray-400 mt-3 px-1">
           單位：tCO₂e ｜ 4 位小數 ｜「—」表示 0 或無資料 ｜ 範疇三僅供參考 ｜ S2 地域 = co2e_location；S2 市場 = co2e_market
         </p>
+
+        {/* ── 分氣體排放量表 ── */}
+        <h2 className="text-base font-bold text-gray-800 mt-8 mb-3 px-1">
+          溫室氣體分氣體排放量（非 CO₂e）
+        </h2>
+        <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+          <table
+            className="border-collapse text-xs bg-white"
+            style={{ minWidth: tableMinWidth }}
+          >
+            <thead>
+              <tr style={{ backgroundColor: '#1e3a5f' }}>
+                <th
+                  className="px-3 py-2 text-left text-white font-semibold border-r border-white/20 whitespace-nowrap"
+                  style={{ minWidth: '200px' }}
+                >
+                  氣體種類
+                </th>
+                <th className="px-2 py-2 text-center text-white font-semibold border-r border-white/20 whitespace-nowrap">
+                  單位
+                </th>
+                {/* 集團合計 FIRST */}
+                <th
+                  className="px-2 py-2 text-center text-white font-bold border-l-2 border-white/40 whitespace-nowrap"
+                  style={{ minWidth: `${COL_W}px` }}
+                >
+                  集團合計
+                </th>
+                {orderedFactories.map((f) => (
+                  <th
+                    key={f.factory_code}
+                    className="px-1 py-2 text-center border-l border-white/20"
+                    style={{ width: `${COL_W}px`, minWidth: `${COL_W}px` }}
+                  >
+                    <div className="flex flex-col items-center gap-0.5">
+                      <span className="font-mono text-blue-200" style={{ fontSize: '9px' }}>
+                        {f.factory_code}
+                      </span>
+                      <span
+                        className="text-white font-medium"
+                        style={{
+                          fontSize: '10px',
+                          maxWidth: `${COL_W - 4}px`,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {f.name_zh}
+                      </span>
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(
+                [
+                  { key: 'co2_t', label: 'CO₂（含 S1 燃燒 + S2 電力）', unit: 'tCO₂', color: '#1e293b' },
+                  { key: 'ch4_t', label: 'CH₄（甲烷）', unit: 'tCH₄', color: '#166534' },
+                  { key: 'n2o_t', label: 'N₂O（氧化亞氮）', unit: 'tN₂O', color: '#7e22ce' },
+                  { key: 'sf6_t', label: 'SF₆（六氟化硫）', unit: 'tSF₆', color: '#b45309' },
+                  { key: 'hfc_t', label: 'HFCs（氫氟碳化物）', unit: 'tHFCs', color: '#b91c1c' },
+                ] as { key: keyof GasAgg; label: string; unit: string; color: string }[]
+              ).map(({ key, label, unit, color }, rowIdx) => {
+                const grandTotal = orderedFactories.reduce(
+                  (s, f) => s + ((gasMap[f.factory_code]?.[key] as number) ?? 0),
+                  0,
+                );
+                const bg = rowIdx % 2 === 0 ? '#ffffff' : '#f9fafb';
+                return (
+                  <tr key={key} style={{ backgroundColor: bg }}>
+                    <td
+                      className="px-3 py-1.5 font-medium text-xs border-r border-gray-200 whitespace-nowrap"
+                      style={{ color, backgroundColor: bg }}
+                    >
+                      {label}
+                    </td>
+                    <td
+                      className="px-2 py-1.5 text-center text-gray-500 text-xs border-r border-gray-200 whitespace-nowrap"
+                      style={{ backgroundColor: bg }}
+                    >
+                      {unit}
+                    </td>
+                    {/* 集團合計 FIRST */}
+                    <td
+                      className="px-2 py-1.5 text-right font-mono font-bold border-l-2 border-gray-300 tabular-nums"
+                      style={{ backgroundColor: bg, color: grandTotal === 0 ? '#d1d5db' : color }}
+                    >
+                      {fmt(grandTotal)}
+                    </td>
+                    {orderedFactories.map((f) => {
+                      const v = (gasMap[f.factory_code]?.[key] as number) ?? 0;
+                      return (
+                        <td
+                          key={f.factory_code}
+                          className="px-1 py-1.5 text-right font-mono border-l border-gray-100 tabular-nums"
+                          style={{ backgroundColor: bg, color: v === 0 ? '#d1d5db' : color }}
+                        >
+                          {fmt(v)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-gray-400 mt-2 px-1">
+          單位：各氣體實際重量（非 CO₂e）｜ CO₂ 含 S1 化石燃燒 + S2 電力 ｜ 冷媒逸散依物質分至 SF₆ 或 HFCs ｜ 4 位小數
+        </p>
       </main>
     </div>
   );
@@ -426,6 +572,7 @@ function ScopeRows({
   const scopeName = SCOPE_NAMES[scope] ?? `範疇 ${scope}`;
   const rows: React.ReactNode[] = [];
 
+  // Scope header
   rows.push(
     <tr key={`sh-${scope}`} style={{ backgroundColor: HEADER_BG }}>
       <td
@@ -444,6 +591,49 @@ function ScopeRows({
     const catName = CAT_PREFIX[catKey] ?? catKey;
     const catTotal = catCodes.reduce((s, sc) => s + rowTotal(sc), 0);
 
+    if (MERGED_CAT[catKey]) {
+      // Single merged row — no category header, no subtotal
+      const mergedName = MERGED_CAT[catKey];
+      const bg = '#f0fdf4';
+      rows.push(
+        <tr key={`merged-${catKey}`} style={{ backgroundColor: bg }}>
+          <td
+            className="sticky left-0 z-10 px-2 py-1.5 font-mono text-green-700 text-xs border-r border-gray-100 whitespace-nowrap"
+            style={{ backgroundColor: bg }}
+          >
+            {catKey}
+          </td>
+          <td
+            className="sticky z-10 px-2 py-1.5 text-green-800 font-semibold text-xs border-r border-gray-200 whitespace-nowrap"
+            style={{ left: '80px', backgroundColor: bg, minWidth: '220px' }}
+          >
+            {mergedName}
+          </td>
+          {/* Grand total FIRST */}
+          <td
+            className="px-2 py-1.5 text-right font-mono font-bold border-l-2 border-gray-300 tabular-nums"
+            style={{ backgroundColor: bg, color: catTotal === 0 ? '#d1d5db' : HEADER_BG }}
+          >
+            {fmt(catTotal)}
+          </td>
+          {orderedFactories.map((f) => {
+            const v = colSum(f.factory_code, catCodes);
+            return (
+              <td
+                key={f.factory_code}
+                className="px-1 py-1.5 text-right font-mono border-l border-gray-100 tabular-nums"
+                style={{ backgroundColor: bg, color: v === 0 ? '#d1d5db' : '#111827' }}
+              >
+                {fmt(v)}
+              </td>
+            );
+          })}
+        </tr>,
+      );
+      continue;
+    }
+
+    // Category header (non-merged)
     rows.push(
       <tr key={`ch-${catKey}`} style={{ backgroundColor: '#f0fdf4' }}>
         <td
@@ -453,13 +643,19 @@ function ScopeRows({
         >
           {catKey}　{catName}
         </td>
+        {/* Grand total col (empty in category header) */}
+        <td className="border-l-2 border-gray-300" style={{ backgroundColor: '#f0fdf4' }} />
         {orderedFactories.map((f) => (
-          <td key={f.factory_code} className="border-l border-gray-200 py-1" style={{ width: `${COL_W}px` }} />
+          <td
+            key={f.factory_code}
+            className="border-l border-gray-200 py-1"
+            style={{ width: `${COL_W}px`, backgroundColor: '#f0fdf4' }}
+          />
         ))}
-        <td className="border-l-2 border-gray-300" />
       </tr>,
     );
 
+    // Individual source rows
     catSources.forEach((src, idx) => {
       const total = rowTotal(src.source_code);
       const bg = idx % 2 === 0 ? '#ffffff' : '#f9fafb';
@@ -477,6 +673,13 @@ function ScopeRows({
           >
             {src.name_zh}
           </td>
+          {/* Grand total FIRST */}
+          <td
+            className="px-2 py-1.5 text-right font-mono font-semibold border-l-2 border-gray-300 tabular-nums"
+            style={{ backgroundColor: bg, color: total === 0 ? '#d1d5db' : HEADER_BG }}
+          >
+            {fmt(total)}
+          </td>
           {orderedFactories.map((f) => {
             const v = val(f.factory_code, src.source_code);
             return (
@@ -489,24 +692,29 @@ function ScopeRows({
               </td>
             );
           })}
-          <td
-            className="px-2 py-1.5 text-right font-mono font-semibold border-l-2 border-gray-300 tabular-nums"
-            style={{ backgroundColor: bg, color: total === 0 ? '#d1d5db' : HEADER_BG }}
-          >
-            {fmt(total)}
-          </td>
         </tr>,
       );
     });
 
+    // Category subtotal
     rows.push(
-      <tr key={`cs-${catKey}`} style={{ backgroundColor: '#dcfce7', borderTop: '1px solid #bbf7d0' }}>
+      <tr
+        key={`cs-${catKey}`}
+        style={{ backgroundColor: '#dcfce7', borderTop: '1px solid #bbf7d0' }}
+      >
         <td
           colSpan={2}
           className="sticky left-0 z-10 px-3 py-1.5 text-green-800 font-bold text-xs border-r border-green-200 whitespace-nowrap"
           style={{ backgroundColor: '#dcfce7' }}
         >
           {catKey} 小計
+        </td>
+        {/* Grand total FIRST */}
+        <td
+          className="px-2 py-1.5 text-right font-mono font-bold border-l-2 border-green-400 tabular-nums"
+          style={{ backgroundColor: '#dcfce7', color: catTotal === 0 ? '#86efac' : '#166534' }}
+        >
+          {fmt(catTotal)}
         </td>
         {orderedFactories.map((f) => {
           const sub = colSum(f.factory_code, catCodes);
@@ -520,16 +728,11 @@ function ScopeRows({
             </td>
           );
         })}
-        <td
-          className="px-2 py-1.5 text-right font-mono font-bold border-l-2 border-green-400 tabular-nums"
-          style={{ backgroundColor: '#dcfce7', color: catTotal === 0 ? '#86efac' : '#166534' }}
-        >
-          {fmt(catTotal)}
-        </td>
       </tr>,
     );
   }
 
+  // Scope total row
   rows.push(
     <tr key={`st-${scope}`} style={{ backgroundColor: HEADER_BG }}>
       <td
@@ -538,6 +741,16 @@ function ScopeRows({
         style={{ backgroundColor: HEADER_BG }}
       >
         {scopeName} 合計
+      </td>
+      {/* Grand total FIRST */}
+      <td
+        className="px-2 py-2 text-right font-mono font-bold border-l-2 border-white/40 tabular-nums"
+        style={{
+          backgroundColor: HEADER_BG,
+          color: scopeTotal === 0 ? 'rgba(255,255,255,0.25)' : 'white',
+        }}
+      >
+        {fmt(scopeTotal)}
       </td>
       {orderedFactories.map((f) => {
         const sub = colSum(f.factory_code, allScopeSrc);
@@ -551,15 +764,6 @@ function ScopeRows({
           </td>
         );
       })}
-      <td
-        className="px-2 py-2 text-right font-mono font-bold border-l-2 border-white/40 tabular-nums"
-        style={{
-          backgroundColor: HEADER_BG,
-          color: scopeTotal === 0 ? 'rgba(255,255,255,0.25)' : 'white',
-        }}
-      >
-        {fmt(scopeTotal)}
-      </td>
     </tr>,
   );
 
@@ -583,6 +787,13 @@ function GrandRow({
       >
         {label}
       </td>
+      {/* Grand total FIRST */}
+      <td
+        className="px-2 py-2.5 text-right font-mono font-bold border-l-2 border-white/40 tabular-nums text-white"
+        style={{ backgroundColor: bg }}
+      >
+        {fmt(grandTotal)}
+      </td>
       {orderedFactories.map((f) => {
         const v = getVal(f.factory_code);
         return (
@@ -595,12 +806,6 @@ function GrandRow({
           </td>
         );
       })}
-      <td
-        className="px-2 py-2.5 text-right font-mono font-bold border-l-2 border-white/40 tabular-nums text-white"
-        style={{ backgroundColor: bg }}
-      >
-        {fmt(grandTotal)}
-      </td>
     </tr>
   );
 }
@@ -625,6 +830,13 @@ function SupplRow({
         {label}
         <span className="ml-1 font-normal text-gray-400">({unit})</span>
       </td>
+      {/* Grand total FIRST */}
+      <td
+        className={`px-2 py-1.5 text-right font-mono border-l-2 border-gray-300 tabular-nums ${weight}`}
+        style={{ backgroundColor: bg, color: grandTotal === 0 ? '#d1d5db' : textColor }}
+      >
+        {fmt(grandTotal)}
+      </td>
       {orderedFactories.map((f) => {
         const v = getVal(f.factory_code);
         return (
@@ -637,12 +849,6 @@ function SupplRow({
           </td>
         );
       })}
-      <td
-        className={`px-2 py-1.5 text-right font-mono border-l-2 border-gray-300 tabular-nums ${weight}`}
-        style={{ backgroundColor: bg, color: grandTotal === 0 ? '#d1d5db' : textColor }}
-      >
-        {fmt(grandTotal)}
-      </td>
     </tr>
   );
 }
