@@ -23,6 +23,26 @@ interface EventRow {
   saveStatus: SaveStatus;
 }
 
+function computeGas(kg: number, factor: AssignedFactor) {
+  const GWP_CH4 = factor.gwp_ch4 ?? 27.9;
+  const GWP_N2O = factor.gwp_n2o ?? 273.0;
+  const ncv = factor.ncv ?? 0;
+  if (kg <= 0) return null;
+  let co2_t: number, ch4_t: number, n2o_t: number;
+  if (ncv > 0) {
+    const tj = (kg * ncv) / 1_000_000;
+    co2_t = parseFloat((tj * (factor.factor_co2 ?? 0) / 1000).toFixed(4));
+    ch4_t = parseFloat((tj * (factor.factor_ch4 ?? 0) / 1000).toFixed(4));
+    n2o_t = parseFloat((tj * (factor.factor_n2o ?? 0) / 1000).toFixed(4));
+  } else {
+    co2_t = parseFloat((kg * (factor.factor_co2 ?? 0) / 1000).toFixed(4));
+    ch4_t = parseFloat((kg * (factor.factor_ch4 ?? 0) / 1000).toFixed(4));
+    n2o_t = parseFloat((kg * (factor.factor_n2o ?? 0) / 1000).toFixed(4));
+  }
+  const co2e_t = parseFloat((co2_t + ch4_t * GWP_CH4 + n2o_t * GWP_N2O).toFixed(4));
+  return { co2_t, ch4_t, n2o_t, co2e_t };
+}
+
 const FUEL_SOURCE_CODES = ['1-2A-1', '1-2A-2', '1-2A-4', '1-2A-5', '1-2A-6'];
 const CAR_CODES = ['1-2A-1', '1-2A-2', '1-2A-6'];
 const FORKLIFT_CODES = ['1-2A-4', '1-2A-5'];
@@ -283,7 +303,11 @@ function FuelSection({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, idx) => (
+              {rows.map((row, idx) => {
+                const gasResult = assignedFactor
+                  ? computeGas(parseFloat(row.activity_value) || 0, assignedFactor)
+                  : null;
+                return (
                 <tr key={row.tempKey} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                   <td className="px-2 py-1.5">
                     <select value={row.month}
@@ -327,16 +351,16 @@ function FuelSection({
                     />
                   </td>
                   <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
-                    {row.co2e_total != null ? row.co2e_total.toFixed(4) : '—'}
+                    {gasResult?.co2e_t?.toFixed(4) ?? (row.co2e_total != null ? row.co2e_total.toFixed(4) : '—')}
                   </td>
                   <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
-                    {row.co2_t?.toFixed(4) ?? '—'}
+                    {(gasResult?.co2_t ?? row.co2_t)?.toFixed(4) ?? '—'}
                   </td>
                   <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
-                    {row.ch4_t?.toFixed(4) ?? '—'}
+                    {(gasResult?.ch4_t ?? row.ch4_t)?.toFixed(4) ?? '—'}
                   </td>
                   <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
-                    {row.n2o_t?.toFixed(4) ?? '—'}
+                    {(gasResult?.n2o_t ?? row.n2o_t)?.toFixed(4) ?? '—'}
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     <button
@@ -359,7 +383,7 @@ function FuelSection({
                       className={`text-lg leading-none transition ${row.is_reviewed ? 'text-gray-100 cursor-not-allowed' : 'text-gray-300 hover:text-red-500'}`}>×</button>
                   </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
             <tfoot>
               <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">

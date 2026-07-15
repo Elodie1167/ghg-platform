@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import type { FactoryMeta, SourceMeta, MatrixCell, ScopeAgg, RecAgg, GasAgg } from './page';
+import type { FactoryMeta, SourceMeta, MatrixCell, ScopeAgg, RecAgg, GasAgg, ScopeGasAgg } from './page';
 
 const CAT_PREFIX: Record<string, string> = {
   '1-1': '固定燃燒', '1-2': '移動燃燒', '1-3': '製程排放', '1-4': '逸散排放',
@@ -43,7 +43,7 @@ const YEARS = [2023, 2024, 2025, 2026, 2027];
 const COL_W = 72;
 
 export default function SummaryClient({
-  year, factories, sources, cells, scopeAggs, recAggs, gasAggs,
+  year, factories, sources, cells, scopeAggs, recAggs, gasAggs, scopeGasAggs,
 }: {
   year: number;
   factories: FactoryMeta[];
@@ -52,6 +52,7 @@ export default function SummaryClient({
   scopeAggs: ScopeAgg[];
   recAggs: RecAgg[];
   gasAggs: GasAgg[];
+  scopeGasAggs: ScopeGasAgg[];
 }) {
   const router = useRouter();
 
@@ -76,6 +77,8 @@ export default function SummaryClient({
   for (const r of recAggs) recMap[r.factory_code] = r.rec_mwh;
   const gasMap: Record<string, GasAgg> = {};
   for (const g of gasAggs) gasMap[g.factory_code] = g;
+  const scopeGasMap: Record<number, ScopeGasAgg> = {};
+  for (const g of scopeGasAggs) scopeGasMap[g.scope] = g;
 
   // ── ordered factories ──
   const orderedFactories = [
@@ -433,54 +436,29 @@ export default function SummaryClient({
           單位：tCO₂e ｜ 4 位小數 ｜「—」表示 0 或無資料 ｜ 範疇三僅供參考 ｜ S2 地域 = co2e_location；S2 市場 = co2e_market
         </p>
 
-        {/* ── 分氣體排放量表 ── */}
+        {/* ── 分氣體排放量表（按 S1/S2/S3 分列）── */}
         <h2 className="text-base font-bold text-gray-800 mt-8 mb-3 px-1">
           溫室氣體分氣體排放量（非 CO₂e）
         </h2>
         <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
-          <table
-            className="border-collapse text-xs bg-white"
-            style={{ minWidth: tableMinWidth }}
-          >
+          <table className="border-collapse text-xs bg-white">
             <thead>
               <tr style={{ backgroundColor: '#1e3a5f' }}>
-                <th
-                  className="px-3 py-2 text-left text-white font-semibold border-r border-white/20 whitespace-nowrap"
-                  style={{ minWidth: '200px' }}
-                >
+                <th className="px-3 py-2 text-left text-white font-semibold border-r border-white/20 whitespace-nowrap" style={{ minWidth: '200px' }}>
                   氣體種類
                 </th>
                 <th className="px-2 py-2 text-center text-white font-semibold border-r border-white/20 whitespace-nowrap">
                   單位
                 </th>
-                {/* 集團合計 FIRST */}
-                <th
-                  className="px-2 py-2 text-center text-white font-bold border-l-2 border-white/40 whitespace-nowrap"
-                  style={{ minWidth: `${COL_W}px` }}
-                >
+                <th className="px-2 py-2 text-center text-white font-bold border-l-2 border-white/40 whitespace-nowrap" style={{ minWidth: `${COL_W}px` }}>
                   集團合計
                 </th>
-                {orderedFactories.map((f) => (
-                  <th
-                    key={f.factory_code}
-                    className="px-1 py-2 text-center border-l border-white/20"
-                    style={{ width: `${COL_W}px`, minWidth: `${COL_W}px` }}
-                  >
+                {[1, 2, 3].map((s) => (
+                  <th key={s} className="px-2 py-2 text-center text-white font-semibold border-l border-white/20 whitespace-nowrap" style={{ minWidth: `${COL_W}px` }}>
                     <div className="flex flex-col items-center gap-0.5">
-                      <span className="font-mono text-blue-200" style={{ fontSize: '9px' }}>
-                        {f.factory_code}
-                      </span>
-                      <span
-                        className="text-white font-medium"
-                        style={{
-                          fontSize: '10px',
-                          maxWidth: `${COL_W - 4}px`,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {f.name_zh}
+                      <span>S{s}</span>
+                      <span className="text-white/60 font-normal" style={{ fontSize: '9px' }}>
+                        {s === 1 ? '直接排放' : s === 2 ? '電力' : '價值鏈'}
                       </span>
                     </div>
                   </th>
@@ -490,47 +468,30 @@ export default function SummaryClient({
             <tbody>
               {(
                 [
-                  { key: 'co2_t', label: 'CO₂（含 S1 燃燒 + S2 電力）', unit: 'tCO₂', color: '#1e293b' },
-                  { key: 'ch4_t', label: 'CH₄（甲烷）', unit: 'tCH₄', color: '#166534' },
-                  { key: 'n2o_t', label: 'N₂O（氧化亞氮）', unit: 'tN₂O', color: '#7e22ce' },
-                  { key: 'sf6_t', label: 'SF₆（六氟化硫）', unit: 'tSF₆', color: '#b45309' },
-                  { key: 'hfc_t', label: 'HFCs（氫氟碳化物）', unit: 'tHFCs', color: '#b91c1c' },
-                ] as { key: keyof GasAgg; label: string; unit: string; color: string }[]
+                  { key: 'co2_t' as keyof ScopeGasAgg, label: 'CO₂', unit: 'tCO₂', color: '#1e293b' },
+                  { key: 'ch4_t' as keyof ScopeGasAgg, label: 'CH₄（甲烷）', unit: 'tCH₄', color: '#166534' },
+                  { key: 'n2o_t' as keyof ScopeGasAgg, label: 'N₂O（氧化亞氮）', unit: 'tN₂O', color: '#7e22ce' },
+                  { key: 'sf6_t' as keyof ScopeGasAgg, label: 'SF₆（六氟化硫）', unit: 'tSF₆', color: '#b45309' },
+                  { key: 'hfc_t' as keyof ScopeGasAgg, label: 'HFCs（氫氟碳化物）', unit: 'tHFCs', color: '#b91c1c' },
+                ]
               ).map(({ key, label, unit, color }, rowIdx) => {
-                const grandTotal = orderedFactories.reduce(
-                  (s, f) => s + ((gasMap[f.factory_code]?.[key] as number) ?? 0),
-                  0,
-                );
+                const grandTotal = [1, 2, 3].reduce((s, sc) => s + ((scopeGasMap[sc]?.[key] as number) ?? 0), 0);
                 const bg = rowIdx % 2 === 0 ? '#ffffff' : '#f9fafb';
                 return (
                   <tr key={key} style={{ backgroundColor: bg }}>
-                    <td
-                      className="px-3 py-1.5 font-medium text-xs border-r border-gray-200 whitespace-nowrap"
-                      style={{ color, backgroundColor: bg }}
-                    >
+                    <td className="px-3 py-1.5 font-medium text-xs border-r border-gray-200 whitespace-nowrap" style={{ color, backgroundColor: bg }}>
                       {label}
                     </td>
-                    <td
-                      className="px-2 py-1.5 text-center text-gray-500 text-xs border-r border-gray-200 whitespace-nowrap"
-                      style={{ backgroundColor: bg }}
-                    >
+                    <td className="px-2 py-1.5 text-center text-gray-500 text-xs border-r border-gray-200 whitespace-nowrap" style={{ backgroundColor: bg }}>
                       {unit}
                     </td>
-                    {/* 集團合計 FIRST */}
-                    <td
-                      className="px-2 py-1.5 text-right font-mono font-bold border-l-2 border-gray-300 tabular-nums"
-                      style={{ backgroundColor: bg, color: grandTotal === 0 ? '#d1d5db' : color }}
-                    >
+                    <td className="px-2 py-1.5 text-right font-mono font-bold border-l-2 border-gray-300 tabular-nums" style={{ backgroundColor: bg, color: grandTotal === 0 ? '#d1d5db' : color }}>
                       {fmt(grandTotal)}
                     </td>
-                    {orderedFactories.map((f) => {
-                      const v = (gasMap[f.factory_code]?.[key] as number) ?? 0;
+                    {[1, 2, 3].map((sc) => {
+                      const v = (scopeGasMap[sc]?.[key] as number) ?? 0;
                       return (
-                        <td
-                          key={f.factory_code}
-                          className="px-1 py-1.5 text-right font-mono border-l border-gray-100 tabular-nums"
-                          style={{ backgroundColor: bg, color: v === 0 ? '#d1d5db' : color }}
-                        >
+                        <td key={sc} className="px-2 py-1.5 text-right font-mono border-l border-gray-100 tabular-nums" style={{ backgroundColor: bg, color: v === 0 ? '#d1d5db' : color }}>
                           {fmt(v)}
                         </td>
                       );
@@ -542,7 +503,7 @@ export default function SummaryClient({
           </table>
         </div>
         <p className="text-xs text-gray-400 mt-2 px-1">
-          單位：各氣體實際重量（非 CO₂e）｜ CO₂ 含 S1 化石燃燒 + S2 電力 ｜ 冷媒逸散依物質分至 SF₆ 或 HFCs ｜ 4 位小數
+          各氣體實際重量（非 CO₂e 換算）｜ S1 CO₂ 含化石燃燒，S2 CO₂ 含電力，S3 無個別氣體分解 ｜ 僅計入已查核資料 ｜ 4 位小數
         </p>
 
         {/* ── 各工廠氣體彙總表 ── */}
@@ -554,8 +515,8 @@ export default function SummaryClient({
             <thead>
               <tr style={{ backgroundColor: '#1e3a5f' }}>
                 <th
-                  className="px-3 py-2 text-left text-white font-semibold border-r border-white/20 whitespace-nowrap"
-                  style={{ minWidth: '160px' }}
+                  className="px-3 py-2 text-left text-white font-semibold border-r border-white/20 whitespace-nowrap sticky left-0 z-10"
+                  style={{ minWidth: '160px', backgroundColor: '#1e3a5f' }}
                 >
                   工廠
                 </th>
@@ -601,7 +562,7 @@ export default function SummaryClient({
                 const totalCo2e = orderedFactories.reduce((s, f) => s + s1Total(f.factory_code) + s2Loc(f.factory_code), 0);
                 return (
                   <tr style={{ backgroundColor: '#f0f9ff' }}>
-                    <td className="px-3 py-1.5 font-bold text-xs border-r border-gray-200 whitespace-nowrap text-[#1e3a5f]">
+                    <td className="px-3 py-1.5 font-bold text-xs border-r border-gray-200 whitespace-nowrap text-[#1e3a5f] sticky left-0 z-10" style={{ backgroundColor: '#f0f9ff' }}>
                       集團合計
                     </td>
                     <td className="px-2 py-1.5 text-right font-mono font-bold tabular-nums border-r border-gray-200" style={{ color: totalCo2 === 0 ? '#d1d5db' : '#1e293b' }}>{fmt(totalCo2)}</td>
@@ -625,7 +586,7 @@ export default function SummaryClient({
                 const bg   = idx % 2 === 0 ? '#ffffff' : '#f9fafb';
                 return (
                   <tr key={fc} style={{ backgroundColor: bg }}>
-                    <td className="px-3 py-1.5 border-r border-gray-200 whitespace-nowrap" style={{ backgroundColor: bg }}>
+                    <td className="px-3 py-1.5 border-r border-gray-200 whitespace-nowrap sticky left-0 z-10" style={{ backgroundColor: bg }}>
                       <div className="flex flex-col">
                         <span className="font-mono text-blue-500" style={{ fontSize: '9px' }}>{fc}</span>
                         <span className="text-xs font-medium text-gray-700">{f.name_zh}</span>

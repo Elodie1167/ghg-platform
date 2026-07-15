@@ -100,6 +100,27 @@ export default function CombustionTab({
   );
 }
 
+// ─── 活動數據 → 各氣體排放量（共用）────────────────────────────────
+function computeGas(kg: number, factor: AssignedFactor) {
+  const GWP_CH4 = factor.gwp_ch4 ?? 27.9;
+  const GWP_N2O = factor.gwp_n2o ?? 273.0;
+  const ncv = factor.ncv ?? 0;
+  if (kg <= 0) return null;
+  let co2_t: number, ch4_t: number, n2o_t: number;
+  if (ncv > 0) {
+    const tj = (kg * ncv) / 1_000_000;
+    co2_t = parseFloat((tj * (factor.factor_co2 ?? 0) / 1000).toFixed(4));
+    ch4_t = parseFloat((tj * (factor.factor_ch4 ?? 0) / 1000).toFixed(4));
+    n2o_t = parseFloat((tj * (factor.factor_n2o ?? 0) / 1000).toFixed(4));
+  } else {
+    co2_t = parseFloat((kg * (factor.factor_co2 ?? 0) / 1000).toFixed(4));
+    ch4_t = parseFloat((kg * (factor.factor_ch4 ?? 0) / 1000).toFixed(4));
+    n2o_t = parseFloat((kg * (factor.factor_n2o ?? 0) / 1000).toFixed(4));
+  }
+  const co2e_t = parseFloat((co2_t + ch4_t * GWP_CH4 + n2o_t * GWP_N2O).toFixed(4));
+  return { co2_t, ch4_t, n2o_t, co2e_t };
+}
+
 // ─── 係數顯示面板 ────────────────────────────────────────────────
 function FactorPanel({ factor }: { factor: AssignedFactor }) {
   const [open, setOpen] = useState(false);
@@ -282,19 +303,6 @@ function MonthlySection({
   }
 
   const co2eTotal = records.filter((r) => r.co2e_total != null).reduce((s, r) => s + (r.co2e_total ?? 0), 0);
-
-  function computeGas(totalKg: number, factor: AssignedFactor): { co2_t: number; ch4_t: number; n2o_t: number; co2e_t: number } | null {
-    const GWP_CH4 = factor.gwp_ch4 ?? 27.9;
-    const GWP_N2O = factor.gwp_n2o ?? 273.0;
-    const ncv = factor.ncv ?? 0;
-    if (ncv <= 0 || totalKg <= 0) return null;
-    const energy_tj = (totalKg * ncv) / 1_000_000;
-    const co2_t = parseFloat((energy_tj * (factor.factor_co2 ?? 0) / 1000).toFixed(4));
-    const ch4_t = parseFloat((energy_tj * (factor.factor_ch4 ?? 0) / 1000).toFixed(4));
-    const n2o_t = parseFloat((energy_tj * (factor.factor_n2o ?? 0) / 1000).toFixed(4));
-    const co2e_t = parseFloat((co2_t + ch4_t * GWP_CH4 + n2o_t * GWP_N2O).toFixed(4));
-    return { co2_t, ch4_t, n2o_t, co2e_t };
-  }
 
   if (isLPG) {
     const totalKg = MONTHS.reduce((s, m) => {
@@ -655,7 +663,11 @@ function EventSection({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, idx) => (
+              {rows.map((row, idx) => {
+                const gasResult = assignedFactor
+                  ? computeGas(parseFloat(row.activity_value) || 0, assignedFactor)
+                  : null;
+                return (
                 <tr key={row.tempKey} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                   <td className="px-2 py-1.5">
                     <select value={row.month}
@@ -700,16 +712,16 @@ function EventSection({
                     />
                   </td>
                   <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
-                    {row.co2e_total != null ? row.co2e_total.toFixed(4) : '—'}
+                    {gasResult?.co2e_t?.toFixed(4) ?? (row.co2e_total != null ? row.co2e_total.toFixed(4) : '—')}
                   </td>
                   <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
-                    {row.co2_t?.toFixed(4) ?? '—'}
+                    {(gasResult?.co2_t ?? row.co2_t)?.toFixed(4) ?? '—'}
                   </td>
                   <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
-                    {row.ch4_t?.toFixed(4) ?? '—'}
+                    {(gasResult?.ch4_t ?? row.ch4_t)?.toFixed(4) ?? '—'}
                   </td>
                   <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
-                    {row.n2o_t?.toFixed(4) ?? '—'}
+                    {(gasResult?.n2o_t ?? row.n2o_t)?.toFixed(4) ?? '—'}
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     <button onClick={() => toggleReview(row.tempKey)} disabled={!row.id}
@@ -729,7 +741,7 @@ function EventSection({
                       className={`text-lg leading-none transition ${row.is_reviewed ? 'text-gray-100 cursor-not-allowed' : 'text-gray-300 hover:text-red-500'}`}>×</button>
                   </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
             <tfoot>
               <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
