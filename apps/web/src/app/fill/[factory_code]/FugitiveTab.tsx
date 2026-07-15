@@ -61,7 +61,7 @@ interface ExtRow {
 }
 
 function FugitiveTabInner({
-  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab,
+  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab, onReviewToggle,
 }: TabProps) {
   const sources = emissionSources
     .filter((s) => s.source_code.startsWith('1-4') && selectedSourceIds.has(s.id))
@@ -116,6 +116,7 @@ function FugitiveTabInner({
               factory={factory}
               year={year}
               records={existingRecords.filter((r) => r.emission_source_id === src.id)}
+              onReviewToggle={onReviewToggle}
             />
           ))}
         </div>
@@ -131,6 +132,7 @@ function FugitiveTabInner({
               factory={factory}
               year={year}
               records={existingRecords.filter((r) => r.emission_source_id === src.id)}
+              onReviewToggle={onReviewToggle}
             />
           ))}
         </div>
@@ -296,12 +298,13 @@ function SepticSection({
 
 // ─── 滅火器專用（1-4C）：新購瓶數 + 填充瓶數 + 一瓶kg ────────────────────
 function ExtinguisherSection({
-  source, factory, year, records,
+  source, factory, year, records, onReviewToggle,
 }: {
   source: EmissionSource;
   factory: TabProps['factory'];
   year: number;
   records: ActivityRecord[];
+  onReviewToggle?: (id: string, newVal: boolean) => void;
 }) {
   const [rows, setRows] = useState<ExtRow[]>(() =>
     records.map((r) => ({
@@ -332,6 +335,7 @@ function ExtinguisherSection({
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_reviewed: newVal }),
     });
+    if (onReviewToggle && row.id) onReviewToggle(row.id, newVal);
   }
 
   function updateRow(tempKey: string, field: keyof ExtRow, value: string | number) {
@@ -503,12 +507,13 @@ function ExtinguisherSection({
 }
 
 function EventFugitiveSection({
-  source, factory, year, records,
+  source, factory, year, records, onReviewToggle,
 }: {
   source: EmissionSource;
   factory: TabProps['factory'];
   year: number;
   records: ActivityRecord[];
+  onReviewToggle?: (id: string, newVal: boolean) => void;
 }) {
   const isSF6 = source.source_code === '1-4D-1';
 
@@ -546,6 +551,7 @@ function EventFugitiveSection({
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_reviewed: newVal }),
     });
+    if (onReviewToggle && row.id) onReviewToggle(row.id, newVal);
   }
 
   function updateRow(tempKey: string, field: keyof EventRow, value: string | number) {

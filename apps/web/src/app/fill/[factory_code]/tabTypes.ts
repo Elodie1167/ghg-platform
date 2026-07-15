@@ -10,6 +10,7 @@ export interface TabProps {
   existingRecords: ActivityRecord[];
   setActiveTab: (tab: string) => void;
   assignedFactors?: AssignedFactor[];
+  onReviewToggle?: (id: string, newVal: boolean) => void;
 }
 
 export const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);

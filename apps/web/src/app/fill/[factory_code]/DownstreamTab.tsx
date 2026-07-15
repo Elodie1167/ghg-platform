@@ -29,7 +29,7 @@ function lsKey(factoryId: string, year: number, suffix: string) {
 }
 
 export default function DownstreamTab({
-  factory, year, emissionSources, existingRecords,
+  factory, year, emissionSources, existingRecords, onReviewToggle,
 }: TabProps) {
   const allSources = emissionSources
     .filter((s) => ALL_TRANSPORT_CODES.includes(s.source_code as typeof ALL_TRANSPORT_CODES[number]))
@@ -164,6 +164,7 @@ export default function DownstreamTab({
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_reviewed: newVal }),
     });
+    if (onReviewToggle && cell.id) onReviewToggle(cell.id, newVal);
   }
 
   const grandTotal = visibleSources.reduce(

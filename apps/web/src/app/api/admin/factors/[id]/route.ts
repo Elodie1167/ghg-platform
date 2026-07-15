@@ -50,6 +50,8 @@ const UpdateFactorSchema = z.object({
   density: numOrNull.optional(),
   density_unit: z.string().max(20).nullable().optional(),
   ncv_notes: z.string().nullable().optional(),
+  gwp_ch4: numOrNull.optional(),
+  gwp_n2o: numOrNull.optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

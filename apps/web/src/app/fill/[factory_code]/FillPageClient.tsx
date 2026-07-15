@@ -168,6 +168,21 @@ export default function FillPageClient({
     }
     return totals;
   });
+  const [reviewedOverrides, setReviewedOverrides] = useState<Map<string, boolean>>(() => {
+    const m = new Map<string, boolean>();
+    for (const r of existingRecords) m.set(r.id, r.is_reviewed);
+    return m;
+  });
+
+  function handleReviewToggle(id: string, newVal: boolean) {
+    setReviewedOverrides((prev) => new Map(prev).set(id, newVal));
+  }
+
+  const enrichedRecords: ActivityRecord[] = existingRecords.map((r) => ({
+    ...r,
+    is_reviewed: reviewedOverrides.get(r.id) ?? r.is_reviewed,
+  }));
+
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localValuesRef = useRef(localValues);
   const elecSource = emissionSources.find((s) => s.source_code === ELEC_SOURCE_CODE);
@@ -617,6 +632,7 @@ export default function FillPageClient({
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_reviewed: newVal }),
       });
+      handleReviewToggle(row.id, newVal);
     }
 
     const totalKwh = rows.reduce((s, r) => s + (parseFloat(r.activity_value) || 0), 0);
@@ -1665,16 +1681,16 @@ export default function FillPageClient({
       case 'basic':      return <BasicTab />;
       case 'elec':       return <ElecTab />;
       case 'waste':      return <WasteTab />;
-      case 'fuel':       return <FuelTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} assignedFactors={assignedFactors} />;
-      case 'combustion': return <CombustionTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} assignedFactors={assignedFactors} />;
-      case 'fugitive':   return <FugitiveTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
+      case 'fuel':       return <FuelTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} assignedFactors={assignedFactors} onReviewToggle={handleReviewToggle} />;
+      case 'combustion': return <CombustionTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} assignedFactors={assignedFactors} onReviewToggle={handleReviewToggle} />;
+      case 'fugitive':   return <FugitiveTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
       case 'process':    return <ProcessTab />;
-      case 'purchase':   return <PurchaseTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} upstreamTons={upstreamTons} />;
+      case 'purchase':   return <PurchaseTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} upstreamTons={upstreamTons} onReviewToggle={handleReviewToggle} />;
       case 'energy':     return <StubTab label="能源相關 3.3" tabId="energy" />;
       case 'upstream':   return null;  // always-mounted outside TabContent
-      case 'downstream': return <DownstreamTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
-      case 'travel':     return <TravelTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
-      case 'commute':    return <CommuteTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={existingRecords} setActiveTab={(t) => setActiveTab(t as TabId)} />;
+      case 'downstream': return <DownstreamTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
+      case 'travel':     return <TravelTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
+      case 'commute':    return <CommuteTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
       case 'summary':    return <SummaryTab />;
     }
   }
@@ -1764,9 +1780,10 @@ export default function FillPageClient({
       <div style={{ display: activeTab === 'upstream' ? undefined : 'none' }}
         className="max-w-7xl mx-auto px-4 py-6">
         <UpstreamTab factory={factory} year={year} emissionSources={emissionSources}
-          selectedSourceIds={selectedSourceIds} existingRecords={existingRecords}
+          selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords}
           setActiveTab={(t) => setActiveTab(t as TabId)}
-          onTonsChange={(tons) => setUpstreamTons(tons)} />
+          onTonsChange={(tons) => setUpstreamTons(tons)}
+          onReviewToggle={handleReviewToggle} />
         {activeTab === 'upstream' && <FactorPanel />}
       </div>
 

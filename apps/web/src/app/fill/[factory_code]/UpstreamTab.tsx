@@ -53,7 +53,7 @@ interface UpstreamTabProps extends TabProps {
 }
 
 export default function UpstreamTab({
-  factory, year, emissionSources, existingRecords, onTonsChange,
+  factory, year, emissionSources, existingRecords, onTonsChange, onReviewToggle,
 }: UpstreamTabProps) {
   const transportSources = emissionSources
     .filter((s) => TRANSPORT_CODES.includes(s.source_code as typeof TRANSPORT_CODES[number]))
@@ -192,6 +192,7 @@ export default function UpstreamTab({
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_reviewed: newVal }),
     });
+    if (onReviewToggle && cell.id) onReviewToggle(cell.id, newVal);
   }
 
   // Totals per item across all supply types and transport modes

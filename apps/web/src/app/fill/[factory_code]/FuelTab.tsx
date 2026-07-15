@@ -24,7 +24,7 @@ const CAR_CODES = ['1-2A-1', '1-2A-2', '1-2A-6'];
 const FORKLIFT_CODES = ['1-2A-4', '1-2A-5'];
 
 export default function FuelTab({
-  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab, assignedFactors,
+  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab, assignedFactors, onReviewToggle,
 }: TabProps) {
   const fuelSources = emissionSources
     .filter((s) => FUEL_SOURCE_CODES.includes(s.source_code) && selectedSourceIds.has(s.id))
@@ -61,6 +61,7 @@ export default function FuelTab({
           locationLabel={CAR_CODES.includes(src.source_code) ? '車牌號碼' : '設備名稱'}
           isForklift={FORKLIFT_CODES.includes(src.source_code)}
           assignedFactor={assignedFactors?.find((f) => f.emission_source_id === src.id)}
+          onReviewToggle={onReviewToggle}
         />
       ))}
     </div>
@@ -102,7 +103,7 @@ function VehicleCountBadge({
 }
 
 function FuelSection({
-  source, factory, year, records, locationLabel, isForklift, assignedFactor,
+  source, factory, year, records, locationLabel, isForklift, assignedFactor, onReviewToggle,
 }: {
   source: EmissionSource;
   factory: TabProps['factory'];
@@ -111,6 +112,7 @@ function FuelSection({
   locationLabel: string;
   isForklift: boolean;
   assignedFactor?: AssignedFactor;
+  onReviewToggle?: (id: string, newVal: boolean) => void;
 }) {
   const hasBioFactor = source.is_biomass;
 
@@ -156,6 +158,7 @@ function FuelSection({
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_reviewed: newVal }),
     });
+    if (onReviewToggle && row.id) onReviewToggle(row.id, newVal);
   }
 
   function updateRow(tempKey: string, field: keyof EventRow, value: string | number) {

@@ -48,7 +48,8 @@ export async function calcCo2e(params: {
     `SELECT ef.id, ef.factor_co2::float, ef.factor_ch4::float, ef.factor_n2o::float,
             ef.factor_substance::float, ef.grid_emission_factor::float,
             ef.market_residual_factor::float, ef.scope3_factor::float,
-            ef.ncv::float, ef.ncv_unit, ef.density::float
+            ef.ncv::float, ef.ncv_unit, ef.density::float,
+            ef.gwp_ch4::float, ef.gwp_n2o::float
      FROM emission_factors ef
      JOIN emission_factor_assignments efa ON efa.emission_factor_id = ef.id
      WHERE efa.factory_id = $1 AND ef.emission_source_id = $2 AND ef.year <= $3
@@ -61,8 +62,10 @@ export async function calcCo2e(params: {
     factor_n2o: number | null; factor_substance: number | null;
     grid_emission_factor: number | null; market_residual_factor: number | null;
     scope3_factor: number | null; ncv: number | null; ncv_unit: string | null;
-    density: number | null;
+    density: number | null; gwp_ch4: number | null; gwp_n2o: number | null;
   };
+  const factorGwpCH4 = f.gwp_ch4 ?? GWP_CH4;
+  const factorGwpN2O = f.gwp_n2o ?? GWP_N2O;
 
   const value = params.activity_value * (UNIT_CONV[params.activity_unit] ?? 1);
 
@@ -98,7 +101,7 @@ export async function calcCo2e(params: {
   if (params.source_code === '1-4B-1') {
     const ch4_kg = (value / 24) * (f.factor_co2 ?? 0.04) * (f.factor_ch4 ?? 0.6) * (f.factor_substance ?? 0.5);
     return {
-      co2e_total: r4(ch4_kg * GWP_CH4 / 1000), co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
+      co2e_total: r4(ch4_kg * factorGwpCH4 / 1000), co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
       emission_factor_id: f.id, warnings: [],
       co2_t: null, ch4_t: r4(ch4_kg / 1000), n2o_t: null, hfc_t: null,
     };
@@ -123,7 +126,7 @@ export async function calcCo2e(params: {
     if (params.is_biomass && bioFrac > 0) {
       const bioCo2 = bioTj * (f.factor_co2 ?? 0);
       return {
-        co2e_total: r4((co2_kg + ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000),
+        co2e_total: r4((co2_kg + ch4_kg * factorGwpCH4 + n2o_kg * factorGwpN2O) / 1000),
         co2e_location: null, co2e_market: null,
         co2e_biomass_co2: r4(bioCo2 / 1000),
         emission_factor_id: f.id, warnings: [],
@@ -147,10 +150,10 @@ export async function calcCo2e(params: {
     }
   }
 
-  const co2e = r4((co2_kg + ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000 + t_substance);
+  const co2e = r4((co2_kg + ch4_kg * factorGwpCH4 + n2o_kg * factorGwpN2O) / 1000 + t_substance);
   if (params.is_biomass) {
     return {
-      co2e_total: r4((ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000),
+      co2e_total: r4((ch4_kg * factorGwpCH4 + n2o_kg * factorGwpN2O) / 1000),
       co2e_location: null, co2e_market: null,
       co2e_biomass_co2: r4(co2_kg / 1000),
       emission_factor_id: f.id, warnings: [],

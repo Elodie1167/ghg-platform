@@ -34,6 +34,8 @@ interface FactorDetail {
   density: number | null;
   density_unit: string | null;
   ncv_notes: string | null;
+  gwp_ch4: number | null;
+  gwp_n2o: number | null;
   assigned_factory_ids: string[];
 }
 
@@ -124,6 +126,8 @@ export default function FactorDetailClient({ factor, factories }: Props) {
     density: factor.density,
     density_unit: factor.density_unit,
     ncv_notes: factor.ncv_notes,
+    gwp_ch4: factor.gwp_ch4,
+    gwp_n2o: factor.gwp_n2o,
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -137,13 +141,11 @@ export default function FactorDetailClient({ factor, factories }: Props) {
   const [previewUnit, setPreviewUnit] = useState('kg');
   const [previewBioFrac, setPreviewBioFrac] = useState('0');
 
-  // GWP values (editable, defaults to AR6)
+  // GWP values — CO2 is always 1 (local only); CH4/N2O are stored in DB via edit state
   const [gwpCO2, setGwpCO2] = useState(String(GWP_CO2_DEFAULT));
-  const [gwpCH4, setGwpCH4] = useState(String(GWP_CH4_DEFAULT));
-  const [gwpN2O, setGwpN2O] = useState(String(GWP_N2O_DEFAULT));
   const GWP_CO2 = parseFloat(gwpCO2) || GWP_CO2_DEFAULT;
-  const GWP_CH4 = parseFloat(gwpCH4) || GWP_CH4_DEFAULT;
-  const GWP_N2O = parseFloat(gwpN2O) || GWP_N2O_DEFAULT;
+  const GWP_CH4 = (edit.gwp_ch4 != null ? edit.gwp_ch4 : GWP_CH4_DEFAULT);
+  const GWP_N2O = (edit.gwp_n2o != null ? edit.gwp_n2o : GWP_N2O_DEFAULT);
 
   const isSeptic = factor.source_code === '1-4B-1';
   const isRefrigerant = !isSeptic && (factor.category?.includes('冷媒') || factor.source_code.startsWith('1-4'));
@@ -370,7 +372,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
             <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-semibold text-blue-800">GWP 全球暖化潛勢（可調整）</span>
-                <button onClick={() => { setGwpCO2(String(GWP_CO2_DEFAULT)); setGwpCH4(String(GWP_CH4_DEFAULT)); setGwpN2O(String(GWP_N2O_DEFAULT)); }}
+                <button onClick={() => { setGwpCO2(String(GWP_CO2_DEFAULT)); setEdit((e) => ({ ...e, gwp_ch4: GWP_CH4_DEFAULT, gwp_n2o: GWP_N2O_DEFAULT })); }}
                   className="text-xs text-blue-500 hover:text-blue-700 underline">重設為 AR6</button>
               </div>
               <div className={`grid gap-3 ${isSeptic ? 'grid-cols-1 max-w-xs' : 'grid-cols-3'}`}>
@@ -383,13 +385,13 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                 )}
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">GWP CH₄</label>
-                  <input type="number" step="any" value={gwpCH4} onChange={(e) => setGwpCH4(e.target.value)}
+                  <input type="number" step="any" value={edit.gwp_ch4 ?? GWP_CH4_DEFAULT} onChange={(e) => setEdit((prev) => ({ ...prev, gwp_ch4: parseFloat(e.target.value) || GWP_CH4_DEFAULT }))}
                     className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
                 </div>
                 {!isSeptic && (
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">GWP N₂O</label>
-                    <input type="number" step="any" value={gwpN2O} onChange={(e) => setGwpN2O(e.target.value)}
+                    <input type="number" step="any" value={edit.gwp_n2o ?? GWP_N2O_DEFAULT} onChange={(e) => setEdit((prev) => ({ ...prev, gwp_n2o: parseFloat(e.target.value) || GWP_N2O_DEFAULT }))}
                       className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm font-mono bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
                   </div>
                 )}

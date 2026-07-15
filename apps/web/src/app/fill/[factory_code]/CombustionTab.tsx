@@ -25,7 +25,7 @@ interface EventRow {
 interface LpgRow { barrels: string; kgPerBarrel: string; }
 
 export default function CombustionTab({
-  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab, assignedFactors,
+  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab, assignedFactors, onReviewToggle,
 }: TabProps) {
   const sources = emissionSources
     .filter((s) => s.source_code.startsWith('1-1') && selectedSourceIds.has(s.id))
@@ -87,6 +87,7 @@ export default function CombustionTab({
               year={year}
               records={existingRecords.filter((r) => r.emission_source_id === src.id)}
               assignedFactor={assignedFactors?.find((f) => f.emission_source_id === src.id)}
+              onReviewToggle={onReviewToggle}
             />
           ))}
         </div>
@@ -143,13 +144,14 @@ function FactorPanel({ factor }: { factor: AssignedFactor }) {
 
 // ─── 月度表格（LPG 帳單、廢布月度重量）───────────────────────────────
 function MonthlySection({
-  source, factory, year, records, assignedFactor,
+  source, factory, year, records, assignedFactor, onReviewToggle,
 }: {
   source: EmissionSource;
   factory: TabProps['factory'];
   year: number;
   records: ActivityRecord[];
   assignedFactor?: AssignedFactor;
+  onReviewToggle?: (id: string, newVal: boolean) => void;
 }) {
   const isLPG = source.source_code === '1-1A-3';
 
@@ -272,6 +274,7 @@ function MonthlySection({
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_reviewed: newVal }),
     });
+    if (onReviewToggle) onReviewToggle(id, newVal);
   }
 
   const co2eTotal = records.filter((r) => r.co2e_total != null).reduce((s, r) => s + (r.co2e_total ?? 0), 0);
@@ -443,13 +446,14 @@ function MonthlySection({
 
 // ─── 逐筆事件列（發電機、消防演練、鍋爐等）─────────────────────────────
 function EventSection({
-  source, factory, year, records, assignedFactor,
+  source, factory, year, records, assignedFactor, onReviewToggle,
 }: {
   source: EmissionSource;
   factory: TabProps['factory'];
   year: number;
   records: ActivityRecord[];
   assignedFactor?: AssignedFactor;
+  onReviewToggle?: (id: string, newVal: boolean) => void;
 }) {
   const hasBioFactor = source.is_biomass;
 
@@ -492,6 +496,7 @@ function EventSection({
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_reviewed: newVal }),
     });
+    if (onReviewToggle && row.id) onReviewToggle(row.id, newVal);
   }
 
   function updateRow(tempKey: string, field: keyof EventRow, value: string | number) {

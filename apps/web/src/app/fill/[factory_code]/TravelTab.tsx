@@ -24,7 +24,7 @@ interface EventRow {
 }
 
 export default function TravelTab({
-  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab,
+  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab, onReviewToggle,
 }: TabProps) {
   const sources = emissionSources
     .filter((s) => TRAVEL_CODES.includes(s.source_code) && selectedSourceIds.has(s.id))
@@ -56,6 +56,7 @@ export default function TravelTab({
           factory={factory}
           year={year}
           records={existingRecords.filter((r) => r.emission_source_id === src.id)}
+          onReviewToggle={onReviewToggle}
         />
       ))}
     </div>
@@ -63,12 +64,13 @@ export default function TravelTab({
 }
 
 function TravelSection({
-  source, factory, year, records,
+  source, factory, year, records, onReviewToggle,
 }: {
   source: EmissionSource;
   factory: TabProps['factory'];
   year: number;
   records: ActivityRecord[];
+  onReviewToggle?: (id: string, newVal: boolean) => void;
 }) {
   const isHotel = source.source_code === HOTEL_CODE;
 
@@ -106,6 +108,7 @@ function TravelSection({
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_reviewed: newVal }),
     });
+    if (onReviewToggle && row.id) onReviewToggle(row.id, newVal);
   }
 
   function updateRow(tempKey: string, field: keyof EventRow, value: string | number) {
