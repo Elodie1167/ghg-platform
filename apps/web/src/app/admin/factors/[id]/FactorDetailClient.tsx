@@ -149,6 +149,8 @@ export default function FactorDetailClient({ factor, factories }: Props) {
 
   const isSeptic = factor.source_code === '1-4B-1';
   const isRefrigerant = !isSeptic && (factor.category?.includes('冷媒') || factor.source_code.startsWith('1-4'));
+  const isWelding = factor.source_code.startsWith('1-3'); // 焊條：已外算碳含量，只需 CO₂ 係數
+  const isScope3 = factor.scope === 3;                    // 範疇三：只需排放係數 + GWP
 
   async function handleSave() {
     setSaving(true);
@@ -272,8 +274,8 @@ export default function FactorDetailClient({ factor, factories }: Props) {
 
       <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
-        {/* Section 1: 熱值與密度換算（S1/S3 燃燒類顯示；S2 和冷媒/化糞池不需要） */}
-        {factor.scope !== 2 && !isRefrigerant && !isSeptic && <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        {/* Section 1: 熱值與密度換算（僅 S1 燃燒類；S2/S3、冷媒、化糞池、焊條不需要） */}
+        {factor.scope === 1 && !isRefrigerant && !isSeptic && !isWelding && <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-100">
             <h2 className="font-semibold text-gray-800 text-sm">熱值與密度換算</h2>
             <p className="text-xs text-gray-400 mt-0.5">固態／液態燃料需填入 NCV，液態需填密度以進行體積→重量換算</p>
@@ -343,6 +345,16 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                 <p className="text-xs text-blue-700 mb-3">冷媒逸散：填入 GWP 係數（tCO₂-eq/kg），計算引擎以 <code>活動量 × 係數</code> 計算。</p>
                 <NumField label="GWP 係數" value={n(edit.factor_substance)} onChange={(v) => setEdit((e) => ({ ...e, factor_substance: p(v) }))} unit="tCO₂-eq/kg" />
               </div>
+            ) : isWelding ? (
+              <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
+                <p className="text-xs text-amber-700 mb-3">焊條：碳含量已於填報前換算，係數僅需 CO₂ 係數（通常為 <code>1</code>），計算引擎以 <code>活動量 × CO₂係數 ÷ 1000</code> 得 tCO₂。</p>
+                <NumField label="CO₂ 係數" value={n(edit.factor_co2)} onChange={(v) => setEdit((e) => ({ ...e, factor_co2: p(v) }))} unit="kg CO₂/kg" hint="通常填 1" />
+              </div>
+            ) : isScope3 ? (
+              <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
+                <p className="text-xs text-indigo-700 mb-3">範疇三：填入排放係數，計算引擎以 <code>活動量 × 排放係數 ÷ 1000</code> 得 tCO₂e。</p>
+                <NumField label="排放係數" value={n(edit.scope3_factor)} onChange={(v) => setEdit((e) => ({ ...e, scope3_factor: p(v) }))} unit="kg CO₂e/單位" hint="如 kgCO₂e/tonne-km、kgCO₂e/kg" />
+              </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <NumField label="EF CO₂" value={n(edit.factor_co2)} onChange={(v) => setEdit((e) => ({ ...e, factor_co2: p(v) }))} unit="kg CO₂/TJ" />
@@ -351,8 +363,8 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                 <NumField label="物質/HFCs 係數" value={n(edit.factor_substance)} onChange={(v) => setEdit((e) => ({ ...e, factor_substance: p(v) }))} unit="tCO₂-eq/unit" />
               </div>
             )}
-            {/* 生質燃料分段係數（僅 S1 非冷媒/非化糞池顯示） */}
-            {factor.scope === 1 && !isRefrigerant && !isSeptic && (
+            {/* 生質燃料分段係數（僅 S1 燃燒類；焊條/冷媒/化糞池不顯示） */}
+            {factor.scope === 1 && !isRefrigerant && !isSeptic && !isWelding && (
               <div className="p-4 bg-green-50 rounded-lg border border-green-100">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xs font-semibold text-green-800">🌿 生質部分係數（適用混合生質燃料，如 B20/B40）</span>
@@ -368,8 +380,8 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               </div>
             )}
 
-            {/* GWP 全球暖化潛勢 */}
-            <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+            {/* GWP 全球暖化潛勢（焊條不需要，CO₂ GWP 固定為 1） */}
+            {!isWelding && <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-semibold text-blue-800">GWP 全球暖化潛勢（可調整）</span>
                 <button onClick={() => { setGwpCO2(String(GWP_CO2_DEFAULT)); setEdit((e) => ({ ...e, gwp_ch4: GWP_CH4_DEFAULT, gwp_n2o: GWP_N2O_DEFAULT })); }}
@@ -412,7 +424,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                   </div>
                 );
               })()}
-            </div>
+            </div>}
 
             {factor.scope === 2 && (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-2 border-t border-gray-100">
@@ -587,7 +599,35 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               );
             })()}
 
-            {!isSeptic && edit.ncv == null && edit.grid_emission_factor == null && (
+            {/* 焊條：活動量 × CO₂ 係數 ÷ 1000 */}
+            {isWelding && edit.factor_co2 != null && (
+              <div className="space-y-2 font-mono text-xs">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{previewActivity} {previewUnit}</span>
+                  <span className="text-gray-400">× CO₂ {edit.factor_co2} ÷ 1000</span>
+                  <span className="text-gray-400">=</span>
+                  <span className="bg-green-50 text-green-800 px-2 py-1 rounded font-semibold">
+                    {(actVal * (edit.factor_co2 ?? 0) / 1000).toFixed(6)} tCO₂
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* 範疇三：活動量 × 排放係數 ÷ 1000 */}
+            {isScope3 && edit.scope3_factor != null && (
+              <div className="space-y-2 font-mono text-xs">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{previewActivity} {previewUnit}</span>
+                  <span className="text-gray-400">× 排放係數 {edit.scope3_factor} ÷ 1000</span>
+                  <span className="text-gray-400">=</span>
+                  <span className="bg-green-50 text-green-800 px-2 py-1 rounded font-semibold">
+                    {(actVal * (edit.scope3_factor ?? 0) / 1000).toFixed(6)} tCO₂e
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {!isSeptic && !isWelding && !isScope3 && edit.ncv == null && edit.grid_emission_factor == null && (
               <p className="text-xs text-gray-400 italic">請先填入 NCV（燃燒排放）或電網係數（電力）後，預覽才會顯示計算過程。</p>
             )}
           </div>

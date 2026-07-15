@@ -162,10 +162,15 @@ export default async function FillPage({
   const factorsResult = await query(
     `SELECT DISTINCT ON (ef.emission_source_id)
             ef.id, ef.emission_source_id, ef.year,
-            ef.factor_co2, ef.factor_ch4, ef.factor_n2o, ef.factor_substance,
-            ef.factor_co2_bio, ef.factor_ch4_bio, ef.factor_n2o_bio,
-            ef.grid_emission_factor, ef.market_residual_factor, ef.scope3_factor,
-            ef.source_reference, ef.ncv, ef.ncv_unit, ef.density, ef.density_unit,
+            ef.factor_co2::float AS factor_co2, ef.factor_ch4::float AS factor_ch4,
+            ef.factor_n2o::float AS factor_n2o, ef.factor_substance::float AS factor_substance,
+            ef.factor_co2_bio::float AS factor_co2_bio, ef.factor_ch4_bio::float AS factor_ch4_bio,
+            ef.factor_n2o_bio::float AS factor_n2o_bio,
+            ef.grid_emission_factor::float AS grid_emission_factor,
+            ef.market_residual_factor::float AS market_residual_factor,
+            ef.scope3_factor::float AS scope3_factor,
+            ef.source_reference, ef.ncv::float AS ncv, ef.ncv_unit,
+            ef.density::float AS density, ef.density_unit,
             ef.gwp_ch4::float AS gwp_ch4, ef.gwp_n2o::float AS gwp_n2o,
             es.source_code
      FROM emission_factors ef

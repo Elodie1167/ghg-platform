@@ -1520,8 +1520,10 @@ export default function FillPageClient({
     if (tabFactors.length === 0) return null;
 
     function fmtNum(v: number | null, digits = 6): string {
-      if (v === null) return '—';
-      return v.toFixed(digits);
+      if (v === null || v === undefined) return '—';
+      const n = Number(v); // 防禦：NUMERIC 可能以字串回傳，避免 .toFixed 例外
+      if (Number.isNaN(n)) return '—';
+      return n.toFixed(digits);
     }
 
     // ─── 逸散 tab：客製化係數預覽 ────────────────────────────

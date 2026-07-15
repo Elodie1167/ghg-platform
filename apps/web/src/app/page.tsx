@@ -21,7 +21,7 @@ const COUNTRY_LABELS: Record<string, string> = {
   IND: '印尼',
 };
 
-const COUNTRY_ORDER = ['TWN', 'CHN', 'NVN', 'SVN', 'CAB', 'SLV', 'BGD', 'IND'];
+const COUNTRY_ORDER = ['BGD', 'CAB', 'CHN', 'IND', 'NVN', 'SVN', 'SLV', 'TWN'];
 
 export default async function Home() {
   const result = await query(
@@ -56,6 +56,12 @@ export default async function Home() {
             </p>
           </div>
           <div className="flex items-center gap-4">
+            <Link
+              href="/admin/factors"
+              className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
+            >
+              係數設定 →
+            </Link>
             <Link
               href="/summary"
               className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
@@ -102,11 +108,8 @@ export default async function Home() {
                     <div className="font-semibold text-gray-900 text-sm leading-snug">
                       {f.name_zh}
                     </div>
-                    {f.name_en && (
+                    {f.name_en && f.name_en !== f.name_zh && (
                       <div className="text-xs text-gray-400 mt-0.5 truncate">{f.name_en}</div>
-                    )}
-                    {f.region && (
-                      <div className="text-xs text-green-600 mt-2 font-medium">{f.region}</div>
                     )}
                     <div className="mt-3 text-xs text-gray-300 group-hover:text-green-500 transition flex items-center gap-1">
                       <span>開始填報</span>

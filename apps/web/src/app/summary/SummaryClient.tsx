@@ -186,24 +186,25 @@ export default function SummaryClient({
 
       <main className="px-4 py-6">
         {/* ── CO₂e 彙整表 ── */}
-        <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+        {/* overflow-auto + max-h 讓表格在有界容器內捲動，sticky 表頭/左欄才有作用 */}
+        <div className="overflow-auto max-h-[80vh] rounded-xl border border-gray-200 shadow-sm">
           <table
             className="border-collapse text-xs bg-white"
             style={{ minWidth: tableMinWidth }}
           >
             <thead>
-              {/* Row 1: country bands, 集團合計 FIRST */}
+              {/* Row 1: country bands, 集團合計 FIRST（sticky top:0）*/}
               <tr style={{ backgroundColor: HEADER_BG }}>
                 <th
                   colSpan={2}
-                  className="sticky left-0 z-20 px-3 py-2 text-left text-white font-semibold border-r border-white/20"
-                  style={{ backgroundColor: HEADER_BG, minWidth: '300px' }}
+                  className="sticky left-0 top-0 z-30 px-3 py-2 text-left text-white font-semibold border-r border-white/20"
+                  style={{ backgroundColor: HEADER_BG, minWidth: '300px', height: '36px' }}
                 >
                   排放源
                 </th>
                 <th
-                  className="px-2 py-2 text-center text-white font-bold border-l-2 border-white/40 whitespace-nowrap"
-                  style={{ minWidth: `${COL_W}px` }}
+                  className="sticky top-0 z-20 px-2 py-2 text-center text-white font-bold border-l-2 border-white/40 whitespace-nowrap"
+                  style={{ backgroundColor: HEADER_BG, minWidth: `${COL_W}px` }}
                 >
                   集團合計
                 </th>
@@ -211,37 +212,38 @@ export default function SummaryClient({
                   <th
                     key={b.cc}
                     colSpan={b.count}
-                    className="px-2 py-2 text-center text-white font-semibold border-l border-white/20 whitespace-nowrap"
+                    className="sticky top-0 z-20 px-2 py-2 text-center text-white font-semibold border-l border-white/20 whitespace-nowrap"
+                    style={{ backgroundColor: HEADER_BG }}
                   >
                     {COUNTRY_LABELS[b.cc] ?? b.cc}
                   </th>
                 ))}
               </tr>
-              {/* Row 2: factory codes, 集團合計 FIRST */}
-              <tr className="bg-gray-100 border-b border-gray-200">
+              {/* Row 2: factory codes, 集團合計 FIRST（sticky top:36px 疊在 Row1 下方）*/}
+              <tr className="border-b border-gray-200">
                 <th
-                  className="sticky left-0 z-20 bg-gray-100 px-2 py-2 text-left text-gray-600 font-medium border-r border-gray-200 whitespace-nowrap"
-                  style={{ width: '80px', minWidth: '80px' }}
+                  className="sticky left-0 z-30 px-2 py-2 text-left text-gray-600 font-medium border-r border-gray-200 whitespace-nowrap"
+                  style={{ backgroundColor: '#f3f4f6', top: '36px', width: '80px', minWidth: '80px' }}
                 >
                   代碼
                 </th>
                 <th
-                  className="sticky z-20 bg-gray-100 px-2 py-2 text-left text-gray-600 font-medium border-r border-gray-300"
-                  style={{ left: '80px', minWidth: '220px', width: '220px' }}
+                  className="sticky z-30 px-2 py-2 text-left text-gray-600 font-medium border-r border-gray-300"
+                  style={{ backgroundColor: '#f3f4f6', top: '36px', left: '80px', minWidth: '220px', width: '220px' }}
                 >
                   排放源名稱
                 </th>
                 <th
-                  className="px-2 py-2 text-center text-gray-800 font-bold border-l-2 border-gray-400 whitespace-nowrap"
-                  style={{ minWidth: `${COL_W}px` }}
+                  className="sticky top-[36px] z-20 px-2 py-2 text-center text-gray-800 font-bold border-l-2 border-gray-400 whitespace-nowrap"
+                  style={{ backgroundColor: '#f3f4f6', top: '36px', minWidth: `${COL_W}px` }}
                 >
                   集團合計
                 </th>
                 {orderedFactories.map((f) => (
                   <th
                     key={f.factory_code}
-                    className="px-1 py-2 text-center border-l border-gray-200"
-                    style={{ width: `${COL_W}px`, minWidth: `${COL_W}px` }}
+                    className="sticky z-20 px-1 py-2 text-center border-l border-gray-200"
+                    style={{ backgroundColor: '#f3f4f6', top: '36px', width: `${COL_W}px`, minWidth: `${COL_W}px` }}
                   >
                     <div className="flex flex-col items-center gap-0.5">
                       <span className="font-mono text-gray-400" style={{ fontSize: '9px' }}>
