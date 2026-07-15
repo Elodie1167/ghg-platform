@@ -25,6 +25,10 @@ interface CalcResult {
   co2e_biomass_co2: number | null;
   emission_factor_id: string | null;
   warnings: string[];
+  co2_t?: number | null;
+  ch4_t?: number | null;
+  n2o_t?: number | null;
+  hfc_t?: number | null;
 }
 
 async function callCalculateAsync(payload: {
@@ -152,10 +156,14 @@ export async function POST(req: NextRequest) {
               await query(
                 `UPDATE activity_records
                  SET co2e_location = $1, co2e_market = $2, co2e_total = $3,
-                     co2e_biomass_co2 = $4, emission_factor_id = $5, updated_at = NOW()
-                 WHERE id = $6`,
+                     co2e_biomass_co2 = $4, emission_factor_id = $5,
+                     co2_t = $6, ch4_t = $7, n2o_t = $8, hfc_t = $9,
+                     updated_at = NOW()
+                 WHERE id = $10`,
                 [calc.co2e_location, calc.co2e_market, calc.co2e_total,
-                 calc.co2e_biomass_co2, calc.emission_factor_id, recordId],
+                 calc.co2e_biomass_co2, calc.emission_factor_id,
+                 calc.co2_t ?? null, calc.ch4_t ?? null, calc.n2o_t ?? null, calc.hfc_t ?? null,
+                 recordId],
               );
             }
           })
@@ -201,10 +209,14 @@ export async function POST(req: NextRequest) {
               await query(
                 `UPDATE activity_records
                  SET co2e_location = $1, co2e_market = $2, co2e_total = $3,
-                     co2e_biomass_co2 = $4, emission_factor_id = $5, updated_at = NOW()
-                 WHERE id = $6`,
+                     co2e_biomass_co2 = $4, emission_factor_id = $5,
+                     co2_t = $6, ch4_t = $7, n2o_t = $8, hfc_t = $9,
+                     updated_at = NOW()
+                 WHERE id = $10`,
                 [calc.co2e_location, calc.co2e_market, calc.co2e_total,
-                 calc.co2e_biomass_co2, calc.emission_factor_id, recordId],
+                 calc.co2e_biomass_co2, calc.emission_factor_id,
+                 calc.co2_t ?? null, calc.ch4_t ?? null, calc.n2o_t ?? null, calc.hfc_t ?? null,
+                 recordId],
               );
             }
           })

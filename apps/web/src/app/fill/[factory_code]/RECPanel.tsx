@@ -8,7 +8,7 @@ interface RecRow {
   tempKey: string;
   id: string | null;
   month: number;
-  rec_kwh: string;
+  rec_mwh: string;  // MWh for display; ×1000 when saving to DB as rec_kwh
   generation_type: string;
   certificate_no: string;
   notes: string;
@@ -45,7 +45,7 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
             tempKey: r.id,
             id: r.id,
             month: r.month,
-            rec_kwh: String(r.rec_kwh),
+            rec_mwh: String(r.rec_kwh / 1000),
             generation_type: r.generation_type ?? '',
             certificate_no: r.certificate_no ?? '',
             notes: r.notes ?? '',
@@ -61,7 +61,7 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
     setRows((prev) => [...prev, {
       tempKey, id: null,
       month: new Date().getMonth() + 1,
-      rec_kwh: '', generation_type: '太陽能',
+      rec_mwh: '', generation_type: '太陽能',
       certificate_no: '', notes: '',
       saveStatus: 'idle',
     }]);
@@ -76,8 +76,8 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
   async function saveRow(tempKey: string) {
     const row = rowsRef.current.find((r) => r.tempKey === tempKey);
     if (!row) return;
-    const kwh = parseFloat(row.rec_kwh);
-    if (isNaN(kwh) || kwh <= 0) return; // don't save empty rows
+    const mwh = parseFloat(row.rec_mwh);
+    if (isNaN(mwh) || mwh <= 0) return;
 
     setRows((prev) => prev.map((r) => r.tempKey === tempKey ? { ...r, saveStatus: 'saving' } : r));
 
@@ -85,7 +85,7 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
       factory_id: factoryId,
       year,
       month: row.month,
-      rec_kwh: kwh,
+      rec_kwh: mwh * 1000,
       generation_type: row.generation_type || null,
       certificate_no: row.certificate_no || null,
       notes: row.notes || null,
@@ -131,8 +131,8 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
   }
 
   // ── calculations ──
-  const totalRecKwh = rows.reduce((s, r) => s + (parseFloat(r.rec_kwh) || 0), 0);
-  const totalRecMwh = totalRecKwh / 1000;
+  const totalRecMwh = rows.reduce((s, r) => s + (parseFloat(r.rec_mwh) || 0), 0);
+  const totalRecKwh = totalRecMwh * 1000;
 
   const s2Loc  = gridFactor != null ? totalElecKwh * gridFactor : null;
   const s2Mkt  = (gridFactor != null && s2Loc != null)
@@ -182,8 +182,7 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
               <tr className="bg-blue-700 text-white text-xs">
                 <th className="px-3 py-2 text-left w-20">月份</th>
                 <th className="px-3 py-2 text-left w-28">發電類型</th>
-                <th className="px-3 py-2 text-right w-32">購入量 (kWh)</th>
-                <th className="px-3 py-2 text-right w-28">MWh</th>
+                <th className="px-3 py-2 text-right w-32">購入量 (MWh)</th>
                 <th className="px-3 py-2 text-left">憑證號碼</th>
                 <th className="px-3 py-2 text-left">備註</th>
                 <th className="px-3 py-2 text-center w-12">狀態</th>
@@ -191,9 +190,7 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, idx) => {
-                const kwh = parseFloat(row.rec_kwh) || 0;
-                return (
+              {rows.map((row, idx) => (
                   <tr key={row.tempKey} className={idx % 2 === 0 ? 'bg-white' : 'bg-blue-50/30'}>
                     <td className="px-2 py-1.5">
                       <select
@@ -215,14 +212,11 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
                     </td>
                     <td className="px-2 py-1.5">
                       <input
-                        type="number" min="0" step="100" placeholder="kWh"
-                        value={row.rec_kwh}
-                        onChange={(e) => updateRow(row.tempKey, 'rec_kwh', e.target.value)}
+                        type="number" min="0" step="0.01" placeholder="MWh"
+                        value={row.rec_mwh}
+                        onChange={(e) => updateRow(row.tempKey, 'rec_mwh', e.target.value)}
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                       />
-                    </td>
-                    <td className="px-3 py-1.5 text-right text-xs font-mono text-gray-500">
-                      {kwh > 0 ? (kwh / 1000).toFixed(2) : '—'}
                     </td>
                     <td className="px-2 py-1.5">
                       <input
@@ -256,15 +250,11 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
                       </button>
                     </td>
                   </tr>
-                );
-              })}
+              ))}
             </tbody>
             <tfoot>
               <tr className="bg-blue-50 font-semibold text-xs border-t border-blue-200">
                 <td colSpan={2} className="px-3 py-2 text-blue-800">合計</td>
-                <td className="px-3 py-2 text-right font-mono text-blue-800">
-                  {totalRecKwh.toLocaleString()} kWh
-                </td>
                 <td className="px-3 py-2 text-right font-mono text-blue-800">
                   {totalRecMwh.toFixed(2)} MWh
                 </td>

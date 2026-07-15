@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'factory_id 和 year 為必填' }, { status: 400 });
   }
 
-  // 查出該廠該年有 activity_value 但 co2e_total = null 的記錄
+  // 查出該廠該年有 activity_value 且 co2e_total 未填 或 co2_t 未填 的記錄
   const pending = await query(
     `SELECT ar.id, ar.emission_source_id, ar.activity_value::float, ar.activity_unit,
             es.scope, es.is_biomass, es.source_code, es.substance,
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
      JOIN factories f ON ar.factory_id = f.id
      WHERE ar.factory_id = $1 AND ar.year = $2
        AND ar.activity_value IS NOT NULL AND ar.activity_value > 0
-       AND ar.co2e_total IS NULL`,
+       AND (ar.co2e_total IS NULL OR ar.co2_t IS NULL)`,
     [factory_id, year],
   );
 
@@ -56,10 +56,14 @@ export async function POST(req: NextRequest) {
       await query(
         `UPDATE activity_records
          SET co2e_location = $1, co2e_market = $2, co2e_total = $3,
-             co2e_biomass_co2 = $4, emission_factor_id = $5, updated_at = NOW()
-         WHERE id = $6`,
+             co2e_biomass_co2 = $4, emission_factor_id = $5,
+             co2_t = $6, ch4_t = $7, n2o_t = $8, hfc_t = $9,
+             updated_at = NOW()
+         WHERE id = $10`,
         [calc.co2e_location, calc.co2e_market, calc.co2e_total,
-         calc.co2e_biomass_co2, calc.emission_factor_id, row.id],
+         calc.co2e_biomass_co2, calc.emission_factor_id,
+         calc.co2_t ?? null, calc.ch4_t ?? null, calc.n2o_t ?? null, calc.hfc_t ?? null,
+         row.id],
       );
       succeeded++;
     } else {

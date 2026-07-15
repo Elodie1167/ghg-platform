@@ -1233,15 +1233,16 @@ export default function FillPageClient({
       }
     }
 
-    // Build lookup: emission_source_id → source info
     const sourceById = Object.fromEntries(emissionSources.map((s) => [s.id, s]));
 
-    // Group records by source, compute monthly + annual
     type SourceRow = {
       source: EmissionSource;
-      months: (number | null)[];  // index 0-11
-      annual: number;
+      annual_co2e: number;
+      annual_co2_t: number | null;
+      annual_ch4_t: number | null;
+      annual_n2o_t: number | null;
       hasData: boolean;
+      hasPending: boolean;
     };
 
     const sourceMap = new Map<string, SourceRow>();
@@ -1251,26 +1252,30 @@ export default function FillPageClient({
       if (!sourceMap.has(r.emission_source_id)) {
         sourceMap.set(r.emission_source_id, {
           source: src,
-          months: Array(12).fill(null),
-          annual: 0,
+          annual_co2e: 0,
+          annual_co2_t: null,
+          annual_ch4_t: null,
+          annual_n2o_t: null,
           hasData: false,
+          hasPending: false,
         });
       }
       const row = sourceMap.get(r.emission_source_id)!;
-      const val = r.co2e_total != null ? Number(r.co2e_total) : null;
-      if (val != null && r.month >= 1 && r.month <= 12) {
-        row.months[r.month - 1] = (row.months[r.month - 1] ?? 0) + val;
-        row.annual += val;
+      const co2e = r.co2e_total != null ? Number(r.co2e_total) : null;
+      if (co2e != null) {
+        row.annual_co2e += co2e;
         row.hasData = true;
-      } else if (r.activity_value != null && r.co2e_total == null) {
-        row.hasData = true; // has data but CO₂e not yet computed
+      } else if (r.activity_value != null && r.activity_value > 0) {
+        row.hasData = true;
+        row.hasPending = true;
       }
+      if (r.co2_t != null) row.annual_co2_t = (row.annual_co2_t ?? 0) + Number(r.co2_t);
+      if (r.ch4_t != null) row.annual_ch4_t = (row.annual_ch4_t ?? 0) + Number(r.ch4_t);
+      if (r.n2o_t != null) row.annual_n2o_t = (row.annual_n2o_t ?? 0) + Number(r.n2o_t);
     }
 
-    // Keep only sources with data
     const activeRows = Array.from(sourceMap.values()).filter((r) => r.hasData);
 
-    // Group by scope → category
     const scopeGroups: { scope: number; label: string; cats: { cat: string; rows: SourceRow[] }[] }[] = [
       { scope: 1, label: 'Scope 1 直接排放', cats: [] },
       { scope: 2, label: 'Scope 2 間接排放（能源）', cats: [] },
@@ -1284,46 +1289,43 @@ export default function FillPageClient({
         if (!catMap.has(cat)) catMap.set(cat, []);
         catMap.get(cat)!.push(row);
       }
-      for (const [cat, rows] of catMap) {
-        sg.cats.push({ cat, rows });
-      }
+      for (const [cat, rows] of catMap) sg.cats.push({ cat, rows });
     }
 
-    // Compute scope totals (location-based for S2)
-    function scopeTotal(scope: number): number {
+    function scopeCo2eTotal(scope: number): number {
       if (scope === 2) {
-        // Use co2e_location for scope 2 rows
         return records.filter((r) => sourceById[r.emission_source_id]?.scope === 2)
           .reduce((s, r) => s + (Number(r.co2e_location) || Number(r.co2e_total) || 0), 0);
       }
-      return activeRows.filter((r) => r.source.scope === scope).reduce((s, r) => s + r.annual, 0);
+      return activeRows.filter((r) => r.source.scope === scope).reduce((s, r) => s + r.annual_co2e, 0);
     }
-    const s1Total = scopeTotal(1);
-    const s2LocTotal = scopeTotal(2);
-    const s3Total = scopeTotal(3);
+
+    const s1Total = scopeCo2eTotal(1);
+    const s2LocTotal = scopeCo2eTotal(2);
+    const s3Total = scopeCo2eTotal(3);
     const grandTotal = s1Total + s2LocTotal + s3Total;
 
-    // Supplementary values
     const s2MarketTotal = records
       .filter((r) => sourceById[r.emission_source_id]?.scope === 2)
       .reduce((s, r) => s + (Number(r.co2e_market) || 0), 0);
     const biomassTotal = records.reduce((s, r) => s + (Number(r.co2e_biomass_co2) || 0), 0);
+    const s2Deducted = s2LocTotal - s2MarketTotal;
     const s1s2Loc = s1Total + s2LocTotal;
+    const s1s2Mkt = s1Total + s2MarketTotal;
     const s1s2s3Loc = s1Total + s2LocTotal + s3Total;
     const s1s2s3Mkt = s1Total + s2MarketTotal + s3Total;
 
     const nullCount = records.filter((r) => r.activity_value != null && r.activity_value > 0 && r.co2e_total == null).length;
-    const MONTHS_LABEL = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
 
-    function fmt(v: number | null): string {
+    function fmtG(v: number | null): string {
       if (v == null) return '—';
-      if (v === 0) return '0';
-      return v.toFixed(4);
+      return v === 0 ? '0' : v.toFixed(4);
     }
+    function fmtN(v: number): string { return v === 0 ? '—' : v.toFixed(4); }
 
     return (
       <div className="w-full">
-        {/* Header bar */}
+        {/* Header */}
         <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
           <h2 className="text-lg font-semibold text-gray-800">
             碳排彙總 — {factory.name_zh} {year} 年
@@ -1352,7 +1354,7 @@ export default function FillPageClient({
 
         {nullCount > 0 && (
           <div className="mb-4 px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
-            ⚠️ 有 {nullCount} 筆已填報資料尚未完成 CO₂e 計算，請點選「重新整理」確認最新狀態。
+            ⚠️ 有 {nullCount} 筆已填報資料尚未完成 CO₂e 計算，請點選「批次計算 CO₂e」後再重新整理。
           </div>
         )}
 
@@ -1372,82 +1374,78 @@ export default function FillPageClient({
           ))}
         </div>
 
-        {/* Main matrix table */}
+        {/* Gas breakdown table */}
         {activeRows.length === 0 ? (
-          <div className="text-center py-16 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl">
+          <div className="text-center py-16 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl mb-6">
             尚無填報資料，請先在各排放源分頁輸入活動數據。
           </div>
         ) : (
           <div className="overflow-x-auto border border-gray-200 rounded-xl mb-6">
-            <table className="w-full text-xs border-collapse" style={{ minWidth: '900px' }}>
+            <table className="w-full text-xs border-collapse" style={{ minWidth: '640px' }}>
               <thead>
                 <tr className="bg-gray-800 text-white">
-                  <th className="sticky left-0 bg-gray-800 px-3 py-2 text-left w-36">排放源</th>
-                  <th className="px-2 py-2 text-left w-28">名稱</th>
-                  {MONTHS_LABEL.map((m) => (
-                    <th key={m} className="px-2 py-2 text-right w-16">{m}</th>
-                  ))}
-                  <th className="px-3 py-2 text-right w-20 font-bold">年合計</th>
+                  <th className="sticky left-0 bg-gray-800 px-3 py-2 text-left w-28">代碼</th>
+                  <th className="px-3 py-2 text-left">排放源名稱</th>
+                  <th className="px-3 py-2 text-right w-28">CO₂ (tCO₂)</th>
+                  <th className="px-3 py-2 text-right w-28">CH₄ (tCH₄)</th>
+                  <th className="px-3 py-2 text-right w-28">N₂O (tN₂O)</th>
+                  <th className="px-3 py-2 text-right w-28 font-bold">CO₂e (tCO₂e)</th>
                 </tr>
               </thead>
               <tbody>
                 {scopeGroups.map((sg) => {
                   if (sg.cats.length === 0) return null;
-                  const stotal = activeRows.filter((r) => r.source.scope === sg.scope).reduce((s, r) => s + r.annual, 0);
+                  const stCo2e = activeRows.filter((r) => r.source.scope === sg.scope)
+                    .reduce((s, r) => s + r.annual_co2e, 0);
+                  const stCo2 = activeRows.filter((r) => r.source.scope === sg.scope)
+                    .reduce<number | null>((s, r) => r.annual_co2_t != null ? (s ?? 0) + r.annual_co2_t : s, null);
+                  const stCh4 = activeRows.filter((r) => r.source.scope === sg.scope)
+                    .reduce<number | null>((s, r) => r.annual_ch4_t != null ? (s ?? 0) + r.annual_ch4_t : s, null);
+                  const stN2o = activeRows.filter((r) => r.source.scope === sg.scope)
+                    .reduce<number | null>((s, r) => r.annual_n2o_t != null ? (s ?? 0) + r.annual_n2o_t : s, null);
                   return (
                     <>
-                      {/* Scope header */}
                       <tr key={`scope-${sg.scope}`} className="bg-gray-100">
-                        <td colSpan={15} className="px-3 py-1.5 font-semibold text-gray-700 text-xs">
+                        <td colSpan={6} className="px-3 py-1.5 font-semibold text-gray-700 text-xs">
                           {sg.label}
                         </td>
                       </tr>
                       {sg.cats.flatMap(({ cat, rows }) => [
-                        /* Category header */
                         <tr key={`cat-${sg.scope}-${cat}`} className="bg-gray-50">
                           <td className="sticky left-0 bg-gray-50 px-3 py-1 text-gray-500 pl-6">{cat}</td>
-                          <td colSpan={14} />
+                          <td colSpan={5} />
                         </tr>,
-                        /* Source rows */
                         ...rows.map((row, idx) => (
                           <tr key={row.source.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
                             <td className="sticky left-0 bg-inherit px-3 py-1.5 font-mono text-gray-500 pl-8 text-xs">{row.source.source_code}</td>
-                            <td className="px-2 py-1.5 text-gray-700 max-w-[7rem] truncate" title={row.source.name_zh}>{row.source.name_zh}</td>
-                            {row.months.map((v, mi) => (
-                              <td key={mi} className={`px-2 py-1.5 text-right font-mono ${v != null && v > 0 ? 'text-gray-800' : 'text-gray-300'}`}>
-                                {fmt(v)}
-                              </td>
-                            ))}
+                            <td className="px-3 py-1.5 text-gray-700 truncate" title={row.source.name_zh}>{row.source.name_zh}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-gray-600">{fmtG(row.annual_co2_t)}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-gray-600">{fmtG(row.annual_ch4_t)}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-gray-600">{fmtG(row.annual_n2o_t)}</td>
                             <td className="px-3 py-1.5 text-right font-mono font-semibold text-gray-800">
-                              {row.hasData && row.annual === 0 ? <span className="text-amber-400">待計算</span> : fmt(row.annual)}
+                              {row.hasPending && row.annual_co2e === 0 ? <span className="text-amber-400">待計算</span> : fmtN(row.annual_co2e)}
                             </td>
                           </tr>
                         )),
                       ])}
-                      {/* Scope subtotal */}
                       <tr key={`stotal-${sg.scope}`} className="bg-gray-200 font-semibold">
-                        <td className="sticky left-0 bg-gray-200 px-3 py-1.5 text-gray-700 pl-4" colSpan={2}>
+                        <td colSpan={2} className="sticky left-0 bg-gray-200 px-3 py-1.5 text-gray-700 pl-4">
                           {sg.label} 小計
                         </td>
-                        {Array(12).fill(null).map((_, mi) => {
-                          const monthSum = activeRows.filter((r) => r.source.scope === sg.scope)
-                            .reduce((s, r) => s + (r.months[mi] ?? 0), 0);
-                          return <td key={mi} className="px-2 py-1.5 text-right font-mono">{monthSum > 0 ? monthSum.toFixed(4) : '—'}</td>;
-                        })}
-                        <td className="px-3 py-1.5 text-right font-mono font-bold">{stotal.toFixed(4)}</td>
+                        <td className="px-3 py-1.5 text-right font-mono">{fmtG(stCo2)}</td>
+                        <td className="px-3 py-1.5 text-right font-mono">{fmtG(stCh4)}</td>
+                        <td className="px-3 py-1.5 text-right font-mono">{fmtG(stN2o)}</td>
+                        <td className="px-3 py-1.5 text-right font-mono font-bold">{fmtN(stCo2e)}</td>
                       </tr>
                     </>
                   );
                 })}
-
-                {/* Grand total */}
                 <tr className="bg-gray-800 text-white font-bold">
-                  <td className="sticky left-0 bg-gray-800 px-3 py-2" colSpan={2}>全年碳排合計</td>
-                  {Array(12).fill(null).map((_, mi) => {
-                    const monthSum = activeRows.reduce((s, r) => s + (r.months[mi] ?? 0), 0);
-                    return <td key={mi} className="px-2 py-2 text-right font-mono">{monthSum > 0 ? monthSum.toFixed(4) : '—'}</td>;
-                  })}
-                  <td className="px-3 py-2 text-right font-mono">{grandTotal.toFixed(4)}</td>
+                  <td colSpan={2} className="sticky left-0 bg-gray-800 px-3 py-2">全年碳排合計</td>
+                  <td className="px-3 py-2 text-right font-mono">—</td>
+                  <td className="px-3 py-2 text-right font-mono">—</td>
+                  <td className="px-3 py-2 text-right font-mono">—</td>
+                  <td className="px-3 py-2 text-right font-mono">{fmtN(grandTotal)}</td>
                 </tr>
               </tbody>
             </table>
@@ -1460,19 +1458,21 @@ export default function FillPageClient({
           <table className="w-full text-sm border-collapse">
             <tbody>
               {[
-                { label: 'S2 地域-Based (Location)', val: s2LocTotal, note: '', highlight: false },
-                { label: 'S2 市場-Based (Market)', val: s2MarketTotal, note: '', highlight: false },
-                { label: 'Scope 2 實際抵扣量 (地域 − 市場)', val: s2LocTotal - s2MarketTotal, note: '', highlight: false },
-                { label: 'iREC 購入量 (MWh)', val: freshRecMwh, note: 'MWh', highlight: false },
-                { label: 'Biomass CO₂（獨立揭露，不計入總排）', val: biomassTotal, note: '', highlight: false },
-                { label: 'S1 + S2 地域', val: s1s2Loc, note: '', highlight: true },
-                { label: 'S1 + S2 + S3 地域', val: s1s2s3Loc, note: '', highlight: true },
-                { label: 'S1 + S2 + S3 市場', val: s1s2s3Mkt, note: '', highlight: true },
-              ].map(({ label, val, note, highlight }, i) => (
+                { label: '生質 CO₂ 排放量（Biomass CO₂）', val: biomassTotal, unit: 'tCO₂', highlight: false, indent: false },
+                { label: 'S2 市場（Market-Based）', val: s2MarketTotal, unit: 'tCO₂e', highlight: false, indent: false },
+                { label: '↳ iREC 購入量', val: freshRecMwh, unit: 'MWh', highlight: false, indent: true },
+                { label: '↳ S2 iREC 扣減量（地域 − 市場）', val: s2Deducted, unit: 'tCO₂e', highlight: false, indent: true },
+                { label: 'S1 + S2 地域合計', val: s1s2Loc, unit: 'tCO₂e', highlight: true, indent: false },
+                { label: 'S1 + S2 市場合計', val: s1s2Mkt, unit: 'tCO₂e', highlight: true, indent: false },
+                { label: 'S1 + S2 + S3 地域合計', val: s1s2s3Loc, unit: 'tCO₂e', highlight: true, indent: false },
+                { label: 'S1 + S2 + S3 市場合計', val: s1s2s3Mkt, unit: 'tCO₂e', highlight: true, indent: false },
+              ].map(({ label, val, unit, highlight, indent }, i) => (
                 <tr key={label} className={`${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b border-gray-100`}>
-                  <td className={`px-4 py-2 ${highlight ? 'font-semibold text-gray-800' : 'text-gray-600'}`}>{label}</td>
+                  <td className={`px-4 py-2 ${indent ? 'pl-8' : ''} ${highlight ? 'font-semibold text-gray-800' : 'text-gray-600'}`}>
+                    {label}
+                  </td>
                   <td className={`px-4 py-2 text-right font-mono ${highlight ? 'font-bold text-gray-900' : 'text-gray-700'}`}>
-                    {val.toFixed(4)} {note || 'tCO₂e'}
+                    {val.toFixed(4)} {unit}
                   </td>
                 </tr>
               ))}

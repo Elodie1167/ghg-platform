@@ -20,7 +20,7 @@ const MERGED_CAT: Record<string, string> = {
 const SCOPE_NAMES: Record<number, string> = {
   1: '範疇一 Scope 1',
   2: '範疇二 Scope 2',
-  3: '範疇三 Scope 3 【參考】',
+  3: '範疇三 Scope 3',
 };
 
 const FACTORY_ORDER = [
@@ -298,22 +298,22 @@ export default function SummaryClient({
                 grandTotal={grandS1}
                 fmt={fmt}
               />
-              {/* S1 + S2 合計（地域） */}
+              {/* S2 地域合計 */}
               <GrandRow
-                label="S1 + S2 合計（地域）"
-                bg="#052e16"
+                label="S2 地域合計"
+                bg="#155e75"
                 orderedFactories={orderedFactories}
-                getVal={(fc) => s1Total(fc) + s2Loc(fc)}
-                grandTotal={grandS1 + grandS2Loc}
+                getVal={s2Loc}
+                grandTotal={grandS2Loc}
                 fmt={fmt}
               />
-              {/* S1 + S2 合計（市場） */}
+              {/* S3 合計 */}
               <GrandRow
-                label="S1 + S2 合計（市場）"
-                bg="#052e16"
+                label="S3 合計"
+                bg="#3730a3"
                 orderedFactories={orderedFactories}
-                getVal={(fc) => s1Total(fc) + s2Mkt(fc)}
-                grandTotal={grandS1 + grandS2Mkt}
+                getVal={s3Total}
+                grandTotal={grandS3}
                 fmt={fmt}
               />
 
@@ -350,26 +350,6 @@ export default function SummaryClient({
                 textColor="#1e40af"
               />
               <SupplRow
-                label="iREC 購入量（Renewable Energy Certificates）"
-                unit="MWh"
-                orderedFactories={orderedFactories}
-                getVal={recMwh}
-                grandTotal={grandRec}
-                fmt={fmt2}
-                bg="#f0fdf4"
-                textColor="#166534"
-              />
-              <SupplRow
-                label="S2 地域（Location-Based）"
-                unit="tCO₂e"
-                orderedFactories={orderedFactories}
-                getVal={s2Loc}
-                grandTotal={grandS2Loc}
-                fmt={fmt}
-                bg="#f8fafc"
-                textColor="#0f172a"
-              />
-              <SupplRow
                 label="S2 市場（Market-Based）"
                 unit="tCO₂e"
                 orderedFactories={orderedFactories}
@@ -380,7 +360,18 @@ export default function SummaryClient({
                 textColor="#0f172a"
               />
               <SupplRow
-                label="Scope 2 iREC 扣減量（地域 − 市場）"
+                label="iREC 購入量（Renewable Energy Certificates）"
+                unit="MWh"
+                orderedFactories={orderedFactories}
+                getVal={recMwh}
+                grandTotal={grandRec}
+                fmt={fmt2}
+                bg="#f0fdf4"
+                textColor="#166534"
+                indent
+              />
+              <SupplRow
+                label="S2 iREC 扣減量（地域 − 市場）"
                 unit="tCO₂e"
                 orderedFactories={orderedFactories}
                 getVal={s2Deducted}
@@ -388,6 +379,7 @@ export default function SummaryClient({
                 fmt={fmt}
                 bg="#fef9c3"
                 textColor="#854d0e"
+                indent
               />
               <SupplRow
                 label="S1 + S2 地域合計"
@@ -813,20 +805,21 @@ function GrandRow({
 // ── Supplementary row ──────────────────────────────────────────────────────
 
 function SupplRow({
-  label, unit, orderedFactories, getVal, grandTotal, fmt, bg, textColor, bold = false,
+  label, unit, orderedFactories, getVal, grandTotal, fmt, bg, textColor, bold = false, indent = false,
 }: {
   label: string; unit: string; orderedFactories: FactoryMeta[];
   getVal: (fc: string) => number; grandTotal: number; fmt: (v: number) => string;
-  bg: string; textColor: string; bold?: boolean;
+  bg: string; textColor: string; bold?: boolean; indent?: boolean;
 }) {
   const weight = bold ? 'font-bold' : 'font-medium';
   return (
     <tr style={{ backgroundColor: bg }}>
       <td
         colSpan={2}
-        className={`sticky left-0 z-10 px-3 py-1.5 text-xs border-r border-gray-200 whitespace-nowrap ${weight}`}
+        className={`sticky left-0 z-10 ${indent ? 'pl-8 pr-3' : 'px-3'} py-1.5 text-xs border-r border-gray-200 whitespace-nowrap ${weight}`}
         style={{ backgroundColor: bg, color: textColor }}
       >
+        {indent && <span className="mr-1 opacity-30">↳</span>}
         {label}
         <span className="ml-1 font-normal text-gray-400">({unit})</span>
       </td>

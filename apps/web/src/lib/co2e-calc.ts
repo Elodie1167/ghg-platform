@@ -11,6 +11,10 @@ export interface CalcResult {
   co2e_biomass_co2: number | null;
   emission_factor_id: string;
   warnings: string[];
+  co2_t: number | null;
+  ch4_t: number | null;
+  n2o_t: number | null;
+  hfc_t: number | null;
 }
 
 const GWP_CH4 = 27.9;
@@ -74,17 +78,30 @@ export async function calcCo2e(params: {
     const co2e_market = params.country_code === 'CHN'
       ? r4(Math.max(0, (value - recKwh) * (f.market_residual_factor ?? 0)) / 1000)
       : r4(Math.max(0, (value - recKwh) * gridEf) / 1000);
-    return { co2e_total: co2e_location, co2e_location, co2e_market, co2e_biomass_co2: null, emission_factor_id: f.id, warnings: [] };
+    return {
+      co2e_total: co2e_location, co2e_location, co2e_market, co2e_biomass_co2: null,
+      emission_factor_id: f.id, warnings: [],
+      co2_t: co2e_location, ch4_t: null, n2o_t: null, hfc_t: null,
+    };
   }
 
   if (params.scope === 3) {
-    return { co2e_total: r4(value * (f.scope3_factor ?? 0) / 1000), co2e_location: null, co2e_market: null, co2e_biomass_co2: null, emission_factor_id: f.id, warnings: [] };
+    const co2e = r4(value * (f.scope3_factor ?? 0) / 1000);
+    return {
+      co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
+      emission_factor_id: f.id, warnings: [],
+      co2_t: co2e, ch4_t: null, n2o_t: null, hfc_t: null,
+    };
   }
 
   // Scope 1 — 化糞池
   if (params.source_code === '1-4B-1') {
     const ch4_kg = (value / 24) * (f.factor_co2 ?? 0.04) * (f.factor_ch4 ?? 0.6) * (f.factor_substance ?? 0.5);
-    return { co2e_total: r4(ch4_kg * GWP_CH4 / 1000), co2e_location: null, co2e_market: null, co2e_biomass_co2: null, emission_factor_id: f.id, warnings: [] };
+    return {
+      co2e_total: r4(ch4_kg * GWP_CH4 / 1000), co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
+      emission_factor_id: f.id, warnings: [],
+      co2_t: null, ch4_t: r4(ch4_kg / 1000), n2o_t: null, hfc_t: null,
+    };
   }
 
   // Scope 1 — 一般
@@ -110,6 +127,7 @@ export async function calcCo2e(params: {
         co2e_location: null, co2e_market: null,
         co2e_biomass_co2: r4(bioCo2 / 1000),
         emission_factor_id: f.id, warnings: [],
+        co2_t: r4(co2_kg / 1000), ch4_t: r4(ch4_kg / 1000), n2o_t: r4(n2o_kg / 1000), hfc_t: null,
       };
     }
   } else {
@@ -119,14 +137,29 @@ export async function calcCo2e(params: {
   }
 
   let t_substance = 0;
+  let hfc_t: number | null = null;
   if (params.substance && f.factor_substance != null) {
     const gwp = GWP_SUBSTANCE[params.substance];
-    if (gwp) t_substance = r4(value * f.factor_substance * gwp / 1000);
+    if (gwp) {
+      const mass_leaked_t = r4(value * f.factor_substance / 1000);
+      t_substance = r4(mass_leaked_t * gwp);
+      hfc_t = mass_leaked_t;
+    }
   }
 
   const co2e = r4((co2_kg + ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000 + t_substance);
   if (params.is_biomass) {
-    return { co2e_total: r4((ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000), co2e_location: null, co2e_market: null, co2e_biomass_co2: r4(co2_kg / 1000), emission_factor_id: f.id, warnings: [] };
+    return {
+      co2e_total: r4((ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000),
+      co2e_location: null, co2e_market: null,
+      co2e_biomass_co2: r4(co2_kg / 1000),
+      emission_factor_id: f.id, warnings: [],
+      co2_t: null, ch4_t: r4(ch4_kg / 1000), n2o_t: r4(n2o_kg / 1000), hfc_t: null,
+    };
   }
-  return { co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null, emission_factor_id: f.id, warnings: [] };
+  return {
+    co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
+    emission_factor_id: f.id, warnings: [],
+    co2_t: r4(co2_kg / 1000), ch4_t: r4(ch4_kg / 1000), n2o_t: r4(n2o_kg / 1000), hfc_t,
+  };
 }
