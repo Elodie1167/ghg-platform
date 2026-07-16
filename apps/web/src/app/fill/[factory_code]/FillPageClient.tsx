@@ -168,19 +168,21 @@ export default function FillPageClient({
     }
     return totals;
   });
-  const [reviewedOverrides, setReviewedOverrides] = useState<Map<string, boolean>>(() => {
-    const m = new Map<string, boolean>();
-    for (const r of existingRecords) m.set(r.id, r.is_reviewed);
-    return m;
-  });
+  // 查核狀態暫存用 ref（不用 state）：切換查核時「不」觸發父層重繪，
+  // 否則行內分頁元件（ElecTab / RECPanel 等）會整個 remount，剛輸入的
+  // 電力數值、iREC、勾選都會被清掉。各分頁勾選會由自身 local state 即時顯示；
+  // enrichedRecords 於下次 render（例如切換分頁）時讀取 ref 反映最新查核狀態。
+  const reviewedOverridesRef = useRef<Map<string, boolean>>(
+    new Map(existingRecords.map((r) => [r.id, r.is_reviewed])),
+  );
 
   function handleReviewToggle(id: string, newVal: boolean) {
-    setReviewedOverrides((prev) => new Map(prev).set(id, newVal));
+    reviewedOverridesRef.current.set(id, newVal);
   }
 
   const enrichedRecords: ActivityRecord[] = existingRecords.map((r) => ({
     ...r,
-    is_reviewed: reviewedOverrides.get(r.id) ?? r.is_reviewed,
+    is_reviewed: reviewedOverridesRef.current.get(r.id) ?? r.is_reviewed,
   }));
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
