@@ -7,9 +7,10 @@ const CreateRecSchema = z.object({
   year: z.number().int().min(2020).max(2100),
   month: z.number().int().min(1).max(12),
   rec_kwh: z.number().nonnegative(),
-  generation_type: z.string().max(50).optional(),
-  certificate_no: z.string().optional(),
-  notes: z.string().optional(),
+  // 前端對空欄位送 null，故需 nullable（否則 zod 報 Expected string, received null → 400）
+  generation_type: z.string().max(50).nullable().optional(),
+  certificate_no: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
 });
 
 /** GET /api/rec-certificates?factory_id=&year= */
