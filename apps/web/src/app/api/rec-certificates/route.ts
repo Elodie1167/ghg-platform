@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
 
 const CreateRecSchema = z.object({
@@ -15,9 +14,6 @@ const CreateRecSchema = z.object({
 
 /** GET /api/rec-certificates?factory_id=&year= */
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ data: null, error: 'Unauthorized' }, { status: 401 });
-
   const { searchParams } = req.nextUrl;
   const factory_id = searchParams.get('factory_id');
   const year = searchParams.get('year');
@@ -50,9 +46,6 @@ export async function GET(req: NextRequest) {
 
 /** POST /api/rec-certificates — 新增 REC */
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ data: null, error: 'Unauthorized' }, { status: 401 });
-
   let body: unknown;
   try { body = await req.json(); } catch {
     return NextResponse.json({ data: null, error: 'JSON 格式錯誤' }, { status: 400 });

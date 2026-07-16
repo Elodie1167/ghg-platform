@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
 
@@ -9,9 +8,6 @@ import { calcCo2e } from '@/lib/co2e-calc';
  * 批次補算指定廠/年的所有 co2e_total = null 記錄
  */
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
   let body: { factory_id?: string; year?: number };
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: 'JSON 格式錯誤' }, { status: 400 });

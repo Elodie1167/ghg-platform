@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
 
 const PatchSchema = z.object({
@@ -16,9 +15,6 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ data: null, error: 'Unauthorized' }, { status: 401 });
-
   const { id } = await params;
 
   let body: unknown;
@@ -72,9 +68,6 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await auth();
-  if (!session) return NextResponse.json({ data: null, error: 'Unauthorized' }, { status: 401 });
-
   const { id } = await params;
   try {
     const result = await query(
