@@ -6,6 +6,7 @@ import { HEADER_BG } from './tabTypes';
 import type { ActivityRecord } from './page';
 
 const FABRIC_CODE = '3-1-A';
+const WATER_CODE = '3-1-E'; // 外購水（採購水資源）
 
 const DERIVED_MAP: Record<string, string> = {
   '3-1-B': '線料',
@@ -51,6 +52,9 @@ export default function PurchaseTab({
   const derivedSources = emissionSources
     .filter((s) => s.source_code in DERIVED_MAP)
     .sort((a, b) => a.source_code.localeCompare(b.source_code));
+
+  // 外購水（3-1-E）：年度用水量 × 係數 → CO₂e
+  const waterSource = emissionSources.find((s) => s.source_code === WATER_CODE) ?? null;
 
   return (
     <div>
@@ -110,6 +114,139 @@ export default function PurchaseTab({
           </div>
         </div>
       )}
+
+      {waterSource && (
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+            外購水（年度用水量 × 係數）
+          </h3>
+          <WaterRow
+            sourceId={waterSource.id}
+            sourceName={waterSource.name_zh}
+            sourceCode={waterSource.source_code}
+            unit={waterSource.default_unit ?? 'm3'}
+            factory={factory}
+            year={year}
+            existingRec={existingRecords.find(
+              (r) => r.emission_source_id === waterSource.id && r.month === ANNUAL_MONTH
+            ) ?? null}
+          />
+          <p className="text-xs text-gray-400 mt-2">
+            填年度總用水量，CO₂e 由「外購水」係數自動計算。需先於
+            <a href="/admin/factors" className="underline mx-0.5">係數設定</a>
+            建立並指派 3-1-E 的排放係數（範疇三，kg CO₂e/m³）。
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WaterRow({
+  sourceId, sourceName, sourceCode, unit, factory, year, existingRec,
+}: {
+  sourceId: string;
+  sourceName: string;
+  sourceCode: string;
+  unit: string;
+  factory: TabProps['factory'];
+  year: number;
+  existingRec: ActivityRecord | null;
+}) {
+  const [row, setRow] = useState<AnnualRow>({
+    id: existingRec?.id ?? null,
+    value: existingRec?.activity_value != null ? String(existingRec.activity_value) : '',
+    notes: existingRec?.notes ?? '',
+    co2e: existingRec?.co2e_total ?? null,
+    status: 'idle',
+  });
+  const rowRef = useRef(row);
+  const tmr = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function onChange(field: 'value' | 'notes', val: string) {
+    const next = { ...rowRef.current, [field]: val };
+    rowRef.current = next;
+    setRow(next);
+    if (tmr.current) clearTimeout(tmr.current);
+    tmr.current = setTimeout(async () => {
+      const r = rowRef.current;
+      const numVal = r.value !== '' ? parseFloat(r.value) : null;
+      if (r.value !== '' && (numVal === null || isNaN(numVal))) return;
+      const saving = { ...rowRef.current, status: 'saving' as SaveStatus };
+      rowRef.current = saving; setRow(saving);
+      try {
+        const res = await fetch('/api/records/autosave', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            factory_id: factory.id, emission_source_id: sourceId, year, month: ANNUAL_MONTH,
+            activity_value: numVal, activity_unit: unit, notes: r.notes || null,
+          }),
+        });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const saved = {
+          ...rowRef.current,
+          id: data.data?.id ?? rowRef.current.id,
+          co2e: data.data?.co2e_total ?? null,
+          status: 'saved' as SaveStatus,
+        };
+        rowRef.current = saved; setRow(saved);
+        setTimeout(() => {
+          const reset = { ...rowRef.current, status: 'idle' as SaveStatus };
+          rowRef.current = reset; setRow(reset);
+        }, 2000);
+      } catch {
+        const err = { ...rowRef.current, status: 'error' as SaveStatus };
+        rowRef.current = err; setRow(err);
+      }
+    }, 1000);
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-2xl">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
+            <th className="px-4 py-2.5 text-left">採購品項</th>
+            <th className="px-4 py-2.5 text-right w-44">年度用水量 ({unit})</th>
+            <th className="px-4 py-2.5 text-right w-28">CO₂e (t)</th>
+            <th className="px-4 py-2.5 text-left w-40">備註</th>
+            <th className="px-4 py-2.5 text-center w-8">狀</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="bg-white">
+            <td className="px-4 py-2">
+              <div className="font-medium text-gray-800">{sourceName}</div>
+              <div className="text-xs font-mono text-gray-400">{sourceCode}</div>
+            </td>
+            <td className="px-4 py-2">
+              <input
+                type="number" min="0" step="0.01" placeholder={`年度總用水量 (${unit})`}
+                value={row.value}
+                onChange={(e) => onChange('value', e.target.value)}
+                className="w-full border border-gray-300 rounded px-2 py-1.5 text-right focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </td>
+            <td className="px-4 py-2 text-right font-mono text-gray-600 text-xs">
+              {row.co2e != null ? row.co2e.toFixed(4) : '—'}
+            </td>
+            <td className="px-4 py-2">
+              <input
+                type="text" placeholder="備註"
+                value={row.notes}
+                onChange={(e) => onChange('notes', e.target.value)}
+                className="w-full border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </td>
+            <td className="px-4 py-2 text-center text-xs">
+              {row.status === 'saving' && '⏳'}
+              {row.status === 'saved' && '✅'}
+              {row.status === 'error' && '❌'}
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }
