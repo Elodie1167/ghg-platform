@@ -20,7 +20,7 @@ interface Props {
   year: number;
   /** total electricity consumed (kWh) from bill rows */
   totalElecKwh: number;
-  /** grid emission factor (tCO₂e / kWh) */
+  /** grid emission factor (tCO₂e / MWh) */
   gridFactor: number | null;
 }
 
@@ -134,9 +134,10 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
   const totalRecMwh = rows.reduce((s, r) => s + (parseFloat(r.rec_mwh) || 0), 0);
   const totalRecKwh = totalRecMwh * 1000;
 
-  const s2Loc  = gridFactor != null ? totalElecKwh * gridFactor : null;
+  // 係數單位為 tCO₂e/MWh，活動數據為 kWh → 先 ÷1000 轉 MWh 再乘係數
+  const s2Loc  = gridFactor != null ? totalElecKwh / 1000 * gridFactor : null;
   const s2Mkt  = (gridFactor != null && s2Loc != null)
-    ? Math.max(0, (totalElecKwh - totalRecKwh) * gridFactor)
+    ? Math.max(0, (totalElecKwh - totalRecKwh) / 1000 * gridFactor)
     : null;
   const deducted = s2Loc != null && s2Mkt != null ? s2Loc - s2Mkt : null;
 
@@ -300,8 +301,9 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
         )}
         {gridFactor != null && (
           <p className="text-xs text-gray-400 mt-2">
-            電力係數：{gridFactor} tCO₂e/kWh ｜
-            S2 市場 = max(0, (用電量 − iREC 購入量) × 係數)
+            電力係數：{gridFactor} tCO₂e/MWh ｜
+            S2 地域 = 用電量(kWh) ÷ 1000 × 係數 ｜
+            S2 市場 = max(0, (用電量 − iREC 購入量) ÷ 1000 × 係數)
           </p>
         )}
       </div>

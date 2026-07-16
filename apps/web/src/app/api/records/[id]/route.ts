@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { calcCo2e } from '@/lib/co2e-calc';
 
-const FASTAPI_URL = process.env.FASTAPI_URL ?? 'http://localhost:8000';
+// 未設定時（Vercel serverless）留空，直接走 TypeScript 備援
+const FASTAPI_URL = process.env.FASTAPI_URL ?? '';
 
 interface CalcResult {
   co2e_location: number | null;
@@ -11,9 +13,14 @@ interface CalcResult {
   co2e_biomass_co2: number | null;
   emission_factor_id: string | null;
   warnings: string[];
+  co2_t?: number | null;
+  ch4_t?: number | null;
+  n2o_t?: number | null;
+  hfc_t?: number | null;
 }
 
 async function callCalculate(payload: Record<string, unknown>): Promise<CalcResult | null> {
+  if (!FASTAPI_URL) return null; // FastAPI 未設定 → 交給 TS 備援
   try {
     const res = await fetch(`${FASTAPI_URL}/calculate`, {
       method: 'POST',
@@ -164,10 +171,10 @@ export async function PUT(
         [updatedRow.emission_source_id, updatedRow.factory_id],
       );
       if (srcRow.rows.length) {
-        const { scope, is_biomass, source_code: srcCode, country_code } = srcRow.rows[0];
+        const { scope, is_biomass, source_code: srcCode, substance, country_code } = srcRow.rows[0];
         const bio_fraction_raw = updatedRow.meter_number ? parseFloat(updatedRow.meter_number) : 0;
         const bio_fraction = isNaN(bio_fraction_raw) ? 0 : bio_fraction_raw;
-        const calc = await callCalculate({
+        const calcParams = {
           emission_source_id: updatedRow.emission_source_id,
           factory_id: updatedRow.factory_id,
           country_code,
@@ -180,19 +187,28 @@ export async function PUT(
           source_code: srcCode ?? '',
           activity_record_id: id,
           bio_fraction,
-        });
+        };
+        // FastAPI 優先，未設定/失敗時走 TypeScript 備援（Vercel serverless 必要）
+        const calc = (await callCalculate(calcParams))
+          ?? (await calcCo2e({ ...calcParams, substance: substance ?? null }));
         if (calc) {
           await query(
             `UPDATE activity_records
              SET co2e_location = $1, co2e_market = $2, co2e_total = $3,
-                 co2e_biomass_co2 = $4, emission_factor_id = $5, updated_at = NOW()
-             WHERE id = $6`,
+                 co2e_biomass_co2 = $4, emission_factor_id = $5,
+                 co2_t = $6, ch4_t = $7, n2o_t = $8, hfc_t = $9, updated_at = NOW()
+             WHERE id = $10`,
             [calc.co2e_location, calc.co2e_market, calc.co2e_total,
-             calc.co2e_biomass_co2, calc.emission_factor_id, id],
+             calc.co2e_biomass_co2, calc.emission_factor_id,
+             calc.co2_t ?? null, calc.ch4_t ?? null, calc.n2o_t ?? null, calc.hfc_t ?? null, id],
           );
           updatedRow.co2e_total = calc.co2e_total;
           updatedRow.co2e_location = calc.co2e_location;
           updatedRow.co2e_market = calc.co2e_market;
+          updatedRow.co2_t = calc.co2_t ?? null;
+          updatedRow.ch4_t = calc.ch4_t ?? null;
+          updatedRow.n2o_t = calc.n2o_t ?? null;
+          updatedRow.hfc_t = calc.hfc_t ?? null;
         }
       }
     }

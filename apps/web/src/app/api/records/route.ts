@@ -4,8 +4,8 @@ import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
 
 // ── FastAPI 計算服務 URL ───────────────────────────────────────────
-// Docker 網路內：http://agents:8000；本地開發：http://localhost:8000
-const FASTAPI_URL = process.env.FASTAPI_URL ?? 'http://localhost:8000';
+// 未設定時（Vercel serverless）留空，直接走 TypeScript 備援
+const FASTAPI_URL = process.env.FASTAPI_URL ?? '';
 
 // ── POST body schema ──────────────────────────────────────────────
 const CreateRecordSchema = z.object({
@@ -30,6 +30,10 @@ interface CalcResult {
   co2e_biomass_co2: number | null;
   emission_factor_id: string | null;
   warnings: string[];
+  co2_t?: number | null;
+  ch4_t?: number | null;
+  n2o_t?: number | null;
+  hfc_t?: number | null;
 }
 
 /**
@@ -51,6 +55,7 @@ async function callCalculate(payload: {
   bio_fraction?: number;
   rec_kwh?: number;
 }): Promise<CalcResult | null> {
+  if (!FASTAPI_URL) return null; // FastAPI 未設定 → 交給 TS 備援
   try {
     const res = await fetch(`${FASTAPI_URL}/calculate`, {
       method: 'POST',
@@ -237,14 +242,22 @@ export async function POST(req: NextRequest) {
              co2e_total         = $3,
              co2e_biomass_co2   = $4,
              emission_factor_id = $5,
+             co2_t              = $6,
+             ch4_t              = $7,
+             n2o_t              = $8,
+             hfc_t              = $9,
              updated_at         = NOW()
-         WHERE id = $6`,
+         WHERE id = $10`,
         [
           calc.co2e_location,
           calc.co2e_market,
           calc.co2e_total,
           calc.co2e_biomass_co2,
           calc.emission_factor_id,
+          calc.co2_t ?? null,
+          calc.ch4_t ?? null,
+          calc.n2o_t ?? null,
+          calc.hfc_t ?? null,
           newId,
         ],
       );

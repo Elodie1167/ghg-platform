@@ -636,7 +636,11 @@ export default function FillPageClient({
     }
 
     const totalKwh = rows.reduce((s, r) => s + (parseFloat(r.activity_value) || 0), 0);
-    const totalCo2e = rows.reduce((s, r) => s + (r.co2e_total ?? 0), 0);
+    // 電力係數單位 tCO₂e/MWh：CO₂e = kWh ÷ 1000 × 係數（即時計算，不等伺服器）
+    const elecGridFactor = assignedFactors.find((f) => f.source_code === '2-1-A')?.grid_emission_factor ?? null;
+    const rowCo2e = (kwh: number): number | null =>
+      elecGridFactor != null && kwh > 0 ? parseFloat((kwh / 1000 * Number(elecGridFactor)).toFixed(4)) : null;
+    const totalCo2e = rowCo2e(totalKwh) ?? 0;
 
     return (
       <div>
@@ -727,7 +731,10 @@ export default function FillPageClient({
                         />
                       </td>
                       <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
-                        {row.co2e_total != null ? row.co2e_total.toFixed(4) : '—'}
+                        {(() => {
+                          const c = rowCo2e(parseFloat(row.activity_value) || 0);
+                          return c != null ? c.toFixed(4) : (row.co2e_total != null ? row.co2e_total.toFixed(4) : '—');
+                        })()}
                       </td>
                       <td className="px-2 py-1.5 text-center">
                         <button onClick={() => toggleReview(row.tempKey)}
@@ -772,7 +779,7 @@ export default function FillPageClient({
               </table>
             </div>
             <p className="text-xs text-gray-400 mt-2">
-              輸入停止 1 秒後自動儲存。CO₂e 計算引擎建置中，目前顯示 —。
+              輸入停止 1 秒後自動儲存。CO₂e = 用電量(kWh) ÷ 1000 × 電力係數(tCO₂e/MWh)，即時計算。
             </p>
           </>
         )}
