@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
 import { query } from '@/lib/db';
 
 /**
@@ -8,14 +7,6 @@ import { query } from '@/lib/db';
  * 回傳欄位：id, factory_code, name_zh, name_en, country_code, region, is_verified
  */
 export async function GET() {
-  const session = await auth();
-  if (!session) {
-    return NextResponse.json(
-      { data: null, error: 'Unauthorized' },
-      { status: 401 },
-    );
-  }
-
   try {
     const result = await query(
       `SELECT

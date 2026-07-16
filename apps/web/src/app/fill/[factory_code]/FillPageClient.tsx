@@ -104,7 +104,7 @@ export default function FillPageClient({
   factory,
   allFactories,
   emissionSources,
-  existingRecords,
+  existingRecords: initialRecords,
   year,
   initialSelectedIds,
   initialWasteConfig,
@@ -117,6 +117,24 @@ export default function FillPageClient({
   ) as Record<string, AssignedFactor>;
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>('basic');
+
+  // 記錄改用 state（初值為 SSR 快照）。切換分頁時從 DB 重新載入，
+  // 因為 TabContent 是行內元件、父層重繪即會 remount，分頁便會以最新資料重新初始化。
+  // 這樣本 session 新增/修改（已存進 DB）的列，切分頁往返後不會從畫面消失。
+  const [existingRecords, setExistingRecords] = useState<ActivityRecord[]>(initialRecords);
+
+  const refreshRecords = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/records?factory_id=${factory.id}&year=${year}`);
+      const { data } = await res.json();
+      if (Array.isArray(data)) setExistingRecords(data as ActivityRecord[]);
+    } catch { /* 靜默失敗，保留現有資料 */ }
+  }, [factory.id, year]);
+
+  // 每次切換分頁時從 DB 重新載入（含本 session 新增的列）
+  useEffect(() => {
+    refreshRecords();
+  }, [activeTab, refreshRecords]);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [importModalOpen, setImportModalOpen] = useState(false);
 
@@ -551,33 +569,6 @@ export default function FillPageClient({
     const rowsRef = useRef(rows);
     useEffect(() => { rowsRef.current = rows; }, [rows]);
     const rowTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-
-    // 進入分頁時從 DB 重新載入本廠電力列，避免顯示的是頁面載入當下的舊快照
-    // （切到別的分頁再回來時，本 session 已存進 DB 的列才不會從畫面上消失）
-    useEffect(() => {
-      let cancelled = false;
-      fetch(`/api/records?factory_id=${factory.id}&year=${year}&emission_source_id=${elecSource!.id}`)
-        .then((r) => r.json())
-        .then(({ data }) => {
-          if (cancelled || !Array.isArray(data)) return;
-          setRows(data.map((r: ActivityRecord) => ({
-            tempKey: r.id,
-            id: r.id,
-            month: r.month,
-            sub_location: r.sub_location ?? '',
-            activity_value: r.activity_value != null ? String(r.activity_value) : '',
-            date_from: r.date_from ? String(r.date_from).slice(0, 10) : '',
-            date_to: r.date_to ? String(r.date_to).slice(0, 10) : '',
-            meter_number: r.meter_number ?? '',
-            co2e_total: r.co2e_total,
-            is_reviewed: r.is_reviewed,
-            saveStatus: 'idle' as SaveStatus,
-          })));
-        })
-        .catch(() => { /* 靜默失敗，保留 SSR 初始列 */ });
-      return () => { cancelled = true; };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     function addRow() {
       const tempKey = `new-${Date.now()}`;
