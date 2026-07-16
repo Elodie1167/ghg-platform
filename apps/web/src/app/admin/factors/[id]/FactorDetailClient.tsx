@@ -353,7 +353,13 @@ export default function FactorDetailClient({ factor, factories }: Props) {
             ) : isScope3 ? (
               <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
                 <p className="text-xs text-indigo-700 mb-3">範疇三：填入排放係數，計算引擎以 <code>活動量 × 排放係數 ÷ 1000</code> 得 tCO₂e。</p>
-                <NumField label="排放係數" value={n(edit.scope3_factor)} onChange={(v) => setEdit((e) => ({ ...e, scope3_factor: p(v) }))} unit="kg CO₂e/單位" hint="如 kgCO₂e/tonne-km、kgCO₂e/kg" />
+                <NumField
+                  label="排放係數"
+                  value={n(edit.scope3_factor)}
+                  onChange={(v) => setEdit((e) => ({ ...e, scope3_factor: p(v) }))}
+                  unit={factor.source_code.startsWith('3-4') ? 'kg CO₂/t·km' : 'kg CO₂e/單位'}
+                  hint={factor.source_code.startsWith('3-4') ? '上游運輸：活動量單位 t·km（噸公里）' : '如 kgCO₂e/kg'}
+                />
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Factory, FactoryListItem, EmissionSource, ActivityRecord, WasteConfig, WasteMethodConfig, AssignedFactor } from './page';
-import { MONTHS } from './tabTypes';
+import { MONTHS, HEADER_BG } from './tabTypes';
 import ImportModal from './ImportModal';
 import FuelTab from './FuelTab';
 import CombustionTab from './CombustionTab';
@@ -1165,6 +1165,102 @@ export default function FillPageClient({
     );
   }
 
+  // ─── EnergyTab 3.3：電力 T&D 損失（唯讀，自動帶入已查核 S2 電力）──────
+  function EnergyTab() {
+    if (!elecSource) {
+      return <p className="text-gray-500 py-8 text-center">找不到電力排放源（代碼 2-1-A），無法計算 T&D 損失。</p>;
+    }
+    const elecId = elecSource.id;
+    // 只採計「已查核」的 S2 電力
+    const reviewed = enrichedRecords.filter(
+      (r) => r.emission_source_id === elecId && r.is_reviewed && r.activity_value != null && Number(r.activity_value) > 0,
+    );
+    const unreviewedCount = enrichedRecords.filter(
+      (r) => r.emission_source_id === elecId && !r.is_reviewed && r.activity_value != null && Number(r.activity_value) > 0,
+    ).length;
+
+    const byMonth: Record<number, number> = {};
+    for (const r of reviewed) byMonth[r.month] = (byMonth[r.month] ?? 0) + Number(r.activity_value);
+    const totalKwh = Object.values(byMonth).reduce((s, v) => s + v, 0);
+
+    // T&D 係數取自範疇三 3-3-A 係數（scope3_factor，單位 tCO₂/MWh）
+    const tdFactor = assignedFactors.find((f) => f.source_code === '3-3-A')?.scope3_factor ?? null;
+    const tdVal = tdFactor != null ? Number(tdFactor) : null;
+    // T&D tCO₂e = 電力(kWh) × 係數(tCO₂/MWh) ÷ 1000
+    const co2eOf = (kwh: number) => (tdVal != null ? kwh * tdVal / 1000 : null);
+    const totalCo2e = co2eOf(totalKwh);
+
+    return (
+      <div>
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-gray-800">燃料及能源相關 3.3 — 電力 T&amp;D 損失</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            本頁自動帶入「已查核」的範疇二電力數據，乘上 T&amp;D 損失係數計算，<strong>無需手動填寫</strong>。
+          </p>
+        </div>
+
+        {tdVal == null && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+            尚未指派 T&amp;D 損失係數給本廠。請至
+            <a href="/admin/factors" className="underline mx-1 font-medium">係數設定</a>
+            建立範疇三「3-3-A T&amp;D損失」係數（單位 tCO₂/MWh）並指派本廠後，本頁即自動計算。
+          </div>
+        )}
+        {unreviewedCount > 0 && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+            尚有 {unreviewedCount} 筆電力數據未查核，未納入下方計算。請先於「電力 S2」分頁完成查核。
+          </div>
+        )}
+
+        <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-2xl">
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
+                <th className="px-4 py-2 text-left w-20">月份</th>
+                <th className="px-4 py-2 text-right">已查核電力 (kWh)</th>
+                <th className="px-4 py-2 text-right">T&amp;D 損失 (tCO₂e)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MONTHS.map((m) => {
+                const kwh = byMonth[m] ?? 0;
+                const c = co2eOf(kwh);
+                return (
+                  <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                    <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
+                    <td className="px-4 py-1.5 text-right font-mono text-gray-600">
+                      {kwh > 0 ? kwh.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}
+                    </td>
+                    <td className="px-4 py-1.5 text-right font-mono text-gray-700">
+                      {c != null && kwh > 0 ? c.toFixed(4) : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold">
+                <td className="px-4 py-2 text-gray-700">合計</td>
+                <td className="px-4 py-2 text-right font-mono text-gray-700">
+                  {totalKwh.toLocaleString(undefined, { maximumFractionDigits: 2 })} kWh
+                </td>
+                <td className="px-4 py-2 text-right font-mono text-green-800">
+                  {totalCo2e != null ? totalCo2e.toFixed(4) + ' t' : '—'}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        {tdVal != null && (
+          <p className="text-xs text-gray-400 mt-2">
+            計算：已查核電力(kWh) × T&amp;D 係數 {tdVal} (tCO₂/MWh) ÷ 1000 = tCO₂e ｜ 數值為 AI 計算，需相關部門複核
+          </p>
+        )}
+      </div>
+    );
+  }
+
   // ─── StubTab ─────────────────────────────────────────────────
   function StubTab({ label, tabId }: { label: string; tabId: SourceGroupTabId }) {
     const grp = SOURCE_GROUPS.find((g) => g.tabId === tabId);
@@ -1688,7 +1784,7 @@ export default function FillPageClient({
       case 'fugitive':   return <FugitiveTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
       case 'process':    return <ProcessTab />;
       case 'purchase':   return <PurchaseTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} upstreamTons={upstreamTons} onReviewToggle={handleReviewToggle} />;
-      case 'energy':     return <StubTab label="能源相關 3.3" tabId="energy" />;
+      case 'energy':     return <EnergyTab />;
       case 'upstream':   return null;  // always-mounted outside TabContent
       case 'downstream': return <DownstreamTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
       case 'travel':     return <TravelTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
