@@ -14,6 +14,7 @@ import PurchaseTab from './PurchaseTab';
 import TravelTab from './TravelTab';
 import CommuteTab from './CommuteTab';
 import RECPanel from './RECPanel';
+import LineItemsModal from './LineItemsModal';
 
 const SOURCE_GROUPS = [
   { tabId: 'elec',        label: '電力來源',                 prefix: '2-'  },
@@ -569,6 +570,7 @@ export default function FillPageClient({
     const rowsRef = useRef(rows);
     useEffect(() => { rowsRef.current = rows; }, [rows]);
     const rowTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+    const [liRecord, setLiRecord] = useState<{ id: string; title: string } | null>(null);
 
     function addRow() {
       const tempKey = `new-${Date.now()}`;
@@ -751,10 +753,16 @@ export default function FillPageClient({
                         />
                       </td>
                       <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
-                        {(() => {
-                          const c = rowCo2e(parseFloat(row.activity_value) || 0);
-                          return c != null ? c.toFixed(4) : (row.co2e_total != null ? row.co2e_total.toFixed(4) : '—');
-                        })()}
+                        <div className="flex items-center justify-end gap-2">
+                          <span>{(() => {
+                            const c = rowCo2e(parseFloat(row.activity_value) || 0);
+                            return c != null ? c.toFixed(4) : (row.co2e_total != null ? row.co2e_total.toFixed(4) : '—');
+                          })()}</span>
+                          {row.id && (
+                            <button type="button" onClick={() => setLiRecord({ id: row.id!, title: `電力 ${row.month} 月` })}
+                              title="檢視/編輯單據明細" className="text-blue-500 hover:text-blue-700 text-[11px] underline">單據</button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-2 py-1.5 text-center">
                         <button onClick={() => toggleReview(row.tempKey)}
@@ -811,6 +819,14 @@ export default function FillPageClient({
             assignedFactors.find((f) => f.source_code === '2-1-A')?.grid_emission_factor ?? null
           }
         />
+        {liRecord && (
+          <LineItemsModal
+            recordId={liRecord.id}
+            title={liRecord.title}
+            unit="kWh"
+            onClose={() => setLiRecord(null)}
+          />
+        )}
       </div>
     );
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { query } from '@/lib/db';
+import { recomputeRecordFromLineItems } from '@/lib/line-items';
 
 // ─────────────────────────────────────────────────────────────────
 // 型別定義
@@ -137,6 +138,76 @@ function parseBusinessTravelSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
     }
   }
   return rows;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// 單據明細 Sheet（每一列 = 一張單據）
+// 欄位：A=月份 B=排放源代碼 C=單據號碼 D=單據日期 E=用量 F=單位 G=ERP參照 H=備註
+// ─────────────────────────────────────────────────────────────────
+interface LineItemRow {
+  month: number;
+  source_code: string;
+  invoice_no: string | null;
+  invoice_date: string | null;
+  quantity: number;
+  unit: string | null;
+  erp_ref: string | null;
+  note: string | null;
+}
+
+function strOrNull(v: unknown): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s === '' ? null : s;
+}
+
+/** 轉成 YYYY-MM-DD；接受 Excel 日期物件、ISO/斜線字串，否則 null */
+function toDateStr(v: unknown): string | null {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) {
+    const y = v.getFullYear();
+    const m = String(v.getMonth() + 1).padStart(2, '0');
+    const d = String(v.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(v).trim();
+  const iso = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+  return null;
+}
+
+const LINE_ITEM_SHEETS = ['單據明細', 'S_單據明細'];
+
+function parseLineItemSheet(sheet: XLSX.WorkSheet): LineItemRow[] {
+  const rows: LineItemRow[] = [];
+  const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1');
+  for (let r = 1; r <= range.e.r; r++) { // 第 1 列為標題
+    const month = parseMonth(cellVal(sheet, r, 0));
+    const source_code = String(cellVal(sheet, r, 1) ?? '').trim();
+    const quantity = toNum(cellVal(sheet, r, 4));
+    if (month === null || !source_code || quantity === null) continue;
+    rows.push({
+      month,
+      source_code,
+      invoice_no: strOrNull(cellVal(sheet, r, 2)),
+      invoice_date: toDateStr(cellVal(sheet, r, 3)),
+      quantity,
+      unit: strOrNull(cellVal(sheet, r, 5)),
+      erp_ref: strOrNull(cellVal(sheet, r, 6)),
+      note: strOrNull(cellVal(sheet, r, 7)),
+    });
+  }
+  return rows;
+}
+
+function collectLineItems(wb: XLSX.WorkBook): LineItemRow[] {
+  for (const name of LINE_ITEM_SHEETS) {
+    if (wb.Sheets[name]) {
+      try { return parseLineItemSheet(wb.Sheets[name]); }
+      catch (e) { console.warn(`[import] 解析單據明細 sheet "${name}" 失敗：`, e); }
+    }
+  }
+  return [];
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -277,7 +348,7 @@ export async function POST(req: NextRequest) {
   const buffer = await file.arrayBuffer();
   let wb: XLSX.WorkBook;
   try {
-    wb = XLSX.read(buffer, { type: 'array' });
+    wb = XLSX.read(buffer, { type: 'array', cellDates: true });
   } catch {
     return NextResponse.json(
       { data: null, error: '無法解析 Excel 檔案，請確認格式為 .xlsx' },
@@ -346,8 +417,68 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── 單據明細（每列一張單）：依 (源×月) 分組，重建明細後回算月加總 + CO₂e ──
+  let lineItemsImported = 0;
+  const lineItems = collectLineItems(wb);
+  const groups = new Map<string, LineItemRow[]>();
+  for (const li of lineItems) {
+    const key = `${li.source_code}|${li.month}`;
+    (groups.get(key) ?? groups.set(key, []).get(key)!).push(li);
+  }
+  for (const [key, items] of groups) {
+    const [source_code, monthStr] = key.split('|');
+    const month = parseInt(monthStr, 10);
+    const source = sourceMap.get(source_code);
+    if (!source) {
+      errors.push(`單據明細找不到排放源代碼：${source_code}（月份 ${month}）`);
+      skipped += items.length;
+      continue;
+    }
+    try {
+      // find-or-create 該 (廠×源×月) 的 excel_import 紀錄
+      const existing = await query(
+        `SELECT id FROM activity_records
+         WHERE factory_id = $1 AND emission_source_id = $2
+           AND year = $3 AND month = $4 AND import_source = 'excel_import'
+         LIMIT 1`,
+        [factory_id, source.id, year, month],
+      );
+      let recordId: string;
+      if (existing.rowCount && existing.rowCount > 0) {
+        recordId = existing.rows[0].id;
+        // 重匯：先清掉該紀錄舊明細（可重跑）
+        await query(`DELETE FROM activity_line_items WHERE activity_record_id = $1`, [recordId]);
+      } else {
+        const ins = await query(
+          `INSERT INTO activity_records
+             (factory_id, emission_source_id, year, month, activity_value, activity_unit,
+              import_source, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, 0, $5, 'excel_import', NOW(), NOW())
+           RETURNING id`,
+          [factory_id, source.id, year, month, items[0].unit ?? source.default_unit],
+        );
+        recordId = ins.rows[0].id;
+      }
+      for (const li of items) {
+        await query(
+          `INSERT INTO activity_line_items
+             (activity_record_id, invoice_no, invoice_date, quantity, unit, erp_ref, note)
+           VALUES ($1, $2, $3::date, $4, $5, $6, $7)`,
+          [recordId, li.invoice_no, li.invoice_date, li.quantity,
+           li.unit ?? source.default_unit, li.erp_ref, li.note],
+        );
+      }
+      await recomputeRecordFromLineItems(recordId); // activity_value = SUM + CO₂e
+      lineItemsImported += items.length;
+    } catch (err) {
+      console.error('[import line-items]', err);
+      errors.push(`單據明細 ${source_code} 月份 ${month}：寫入失敗`);
+      skipped += items.length;
+    }
+  }
+
   return NextResponse.json({
-    data: { imported, skipped, errors },
+    data: { imported, skipped, errors, lineItemsImported },
     error: null,
   });
 }

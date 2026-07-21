@@ -114,6 +114,12 @@ export default function ImportModal({ factory, year, onClose }: Props) {
               <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800">
                 請上傳依照標準格式製作的 .xlsx 填報範本。系統將自動解析各 Sheet
                 的資料並寫入資料庫（重複月份將覆蓋更新）。
+                <br />
+                <span className="text-xs text-green-700">
+                  單據級明細請放在「<b>單據明細</b>」分頁，每列一張單，欄位順序：
+                  月份｜排放源代碼｜單據號碼｜單據日期｜用量｜單位｜ERP參照｜備註。
+                  系統會依「排放源×月」自動加總為月用量並計算 CO₂e，供稽核下鑽核對。
+                </span>
               </div>
 
               {/* 工廠 & 年度（唯讀顯示） */}
