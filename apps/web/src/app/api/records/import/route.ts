@@ -449,13 +449,15 @@ export async function POST(req: NextRequest) {
         // 重匯：先清掉該紀錄舊明細（可重跑）
         await query(`DELETE FROM activity_line_items WHERE activity_record_id = $1`, [recordId]);
       } else {
+        // activity_value NOT NULL 且 > 0：以群組加總為初值（明細皆正數，加總必 > 0）
+        const groupSum = items.reduce((s, li) => s + (Number(li.quantity) || 0), 0);
         const ins = await query(
           `INSERT INTO activity_records
              (factory_id, emission_source_id, year, month, activity_value, activity_unit,
               import_source, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, 0, $5, 'excel_import', NOW(), NOW())
+           VALUES ($1, $2, $3, $4, $5, $6, 'excel_import', NOW(), NOW())
            RETURNING id`,
-          [factory_id, source.id, year, month, items[0].unit ?? source.default_unit],
+          [factory_id, source.id, year, month, groupSum, items[0].unit ?? source.default_unit],
         );
         recordId = ins.rows[0].id;
       }
