@@ -17,6 +17,32 @@ function toNum(v: unknown): number | null {
   return isNaN(n) || n === 0 ? null : n;
 }
 
+/**
+ * 解析 Year-Month 欄，支援：
+ *  - Excel 日期序列值（數字，如 46023 → 2026-01）
+ *  - YYYYMM 整數（如 202605）
+ *  - Date 物件
+ *  - 文字 "2026-05" / "2026/5" / "202605"
+ */
+function parseYearMonth(v: unknown): { year: number; month: number } | null {
+  if (v == null || v === '') return null;
+  if (v instanceof Date && !isNaN(v.getTime())) return { year: v.getUTCFullYear(), month: v.getUTCMonth() + 1 };
+  if (typeof v === 'number') {
+    if (v >= 190001 && v <= 210012 && v % 100 >= 1 && v % 100 <= 12) {
+      return { year: Math.floor(v / 100), month: v % 100 }; // YYYYMM
+    }
+    const d = new Date(Math.round((v - 25569) * 86400 * 1000)); // Excel 序列值 → UTC 日期
+    if (!isNaN(d.getTime())) return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
+    return null;
+  }
+  const s = String(v).trim();
+  const m = s.match(/(\d{4})[-/.](\d{1,2})/);
+  if (m) return { year: parseInt(m[1], 10), month: parseInt(m[2], 10) };
+  const m2 = s.match(/^(\d{4})(\d{2})$/);
+  if (m2) return { year: parseInt(m2[1], 10), month: parseInt(m2[2], 10) };
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   let fd: FormData;
   try { fd = await req.formData(); } catch {
@@ -74,12 +100,11 @@ export async function POST(req: NextRequest) {
   let skipped = 0;
   for (let r = 1; r < grid.length; r++) {
     const row = grid[r];
-    const ym = toStr(row[iYM]).match(/(\d{4})[-/.](\d{1,2})/);
+    const ym = parseYearMonth(row[iYM]);
     const qty = toNum(row[iQty]);
     if (!ym || qty === null) { skipped++; continue; }
-    const fy = parseInt(ym[1], 10);
-    const month = parseInt(ym[2], 10);
-    if (fy !== year || month < 1 || month > 12) { skipped++; continue; } // 只匯入選定年度
+    if (ym.year !== year || ym.month < 1 || ym.month > 12) { skipped++; continue; } // 只匯入選定年度
+    const month = ym.month;
     const item: Row = {
       month, quantity: qty,
       invoice_no: iPO >= 0 ? toStr(row[iPO]) || null : null,
