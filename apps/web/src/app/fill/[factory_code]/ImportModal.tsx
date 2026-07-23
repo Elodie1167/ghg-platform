@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import type { Factory } from './page';
 
 interface Props {
@@ -22,6 +22,16 @@ export default function ImportModal({ factory, year, onClose }: Props) {
   const [status, setStatus] = useState<ImportStatus>('idle');
   const [result, setResult] = useState<ImportResult | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // 單據明細範本：選排放源 → 下載對應範本
+  const [sources, setSources] = useState<{ source_code: string; name_zh: string }[]>([]);
+  const [tplSource, setTplSource] = useState('');
+  useEffect(() => {
+    fetch('/api/emission-sources')
+      .then((r) => r.json())
+      .then(({ data }) => { if (Array.isArray(data)) setSources(data); })
+      .catch(() => {});
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -117,9 +127,32 @@ export default function ImportModal({ factory, year, onClose }: Props) {
                 <br />
                 <span className="text-xs text-green-700">
                   單據級明細請放在「<b>單據明細</b>」分頁，每列一張單，欄位順序：
-                  月份｜排放源代碼｜單據號碼｜單據日期｜用量｜單位｜ERP參照｜備註。
+                  月份｜排放源代碼｜單據號碼｜單據日期｜用量｜單位｜ERP參照｜備註｜公檔連結。
                   系統會依「排放源×月」自動加總為月用量並計算 CO₂e，供稽核下鑽核對。
                 </span>
+              </div>
+
+              {/* 步驟一：選排放源下載單據明細範本 */}
+              <div className="border border-gray-200 rounded-lg px-4 py-3">
+                <p className="text-xs font-semibold text-gray-600 mb-2">① 下載單據明細範本（選排放源）</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select value={tplSource} onChange={(e) => setTplSource(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 min-w-[220px]">
+                    <option value="">— 選擇排放源 —</option>
+                    {sources.map((s) => (
+                      <option key={s.source_code} value={s.source_code}>{s.source_code}　{s.name_zh}</option>
+                    ))}
+                  </select>
+                  <a
+                    href={tplSource ? `/api/records/import/template?source_code=${encodeURIComponent(tplSource)}&year=${year}` : undefined}
+                    onClick={(e) => { if (!tplSource) e.preventDefault(); }}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium text-white transition ${tplSource ? 'hover:opacity-90' : 'opacity-40 cursor-not-allowed'}`}
+                    style={{ backgroundColor: '#0C3D2E' }}
+                  >
+                    下載範本
+                  </a>
+                </div>
+                <p className="text-xs text-gray-400 mt-1.5">下載後填入各單據（或貼上 GPT 辨識結果），再於下方上傳。</p>
               </div>
 
               {/* 工廠 & 年度（唯讀顯示） */}

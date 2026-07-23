@@ -40,6 +40,7 @@ export default function LineItemsModal({
   onChanged?: (activityValue: number) => void;
 }) {
   const [items, setItems] = useState<LineItem[]>([]);
+  const [docUrl, setDocUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<Draft>(emptyDraft(unit));
   const [busy, setBusy] = useState(false);
@@ -48,7 +49,10 @@ export default function LineItemsModal({
     setLoading(true);
     fetch(`/api/records/${recordId}/line-items`)
       .then((r) => r.json())
-      .then(({ data }) => setItems(Array.isArray(data) ? data : []))
+      .then((body) => {
+        setItems(Array.isArray(body.data) ? body.data : []);
+        setDocUrl(body.source_doc_url ?? null);
+      })
       .finally(() => setLoading(false));
   }, [recordId]);
 
@@ -103,6 +107,15 @@ export default function LineItemsModal({
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none">×</button>
         </div>
+
+        {docUrl && (
+          <div className="px-5 pt-3">
+            <a href={docUrl} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 underline break-all">
+              📂 開啟公檔發票資料夾（查核正本）
+            </a>
+          </div>
+        )}
 
         <div className="p-5">
           {loading ? (

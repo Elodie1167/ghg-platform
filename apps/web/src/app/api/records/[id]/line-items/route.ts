@@ -14,7 +14,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
        ORDER BY invoice_date NULLS LAST, created_at`,
       [id],
     );
-    return NextResponse.json({ data: r.rows, error: null });
+    const rec = await query(`SELECT source_doc_url FROM activity_records WHERE id = $1`, [id]);
+    return NextResponse.json({ data: r.rows, source_doc_url: rec.rows[0]?.source_doc_url ?? null, error: null });
   } catch (err) {
     console.error('[GET line-items]', err);
     return NextResponse.json({ data: null, error: '查詢單據明細失敗' }, { status: 500 });

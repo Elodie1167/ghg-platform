@@ -153,6 +153,7 @@ interface LineItemRow {
   unit: string | null;
   erp_ref: string | null;
   note: string | null;
+  source_doc_url: string | null;
 }
 
 function strOrNull(v: unknown): string | null {
@@ -195,6 +196,7 @@ function parseLineItemSheet(sheet: XLSX.WorkSheet): LineItemRow[] {
       unit: strOrNull(cellVal(sheet, r, 5)),
       erp_ref: strOrNull(cellVal(sheet, r, 6)),
       note: strOrNull(cellVal(sheet, r, 7)),
+      source_doc_url: strOrNull(cellVal(sheet, r, 8)),
     });
   }
   return rows;
@@ -469,6 +471,11 @@ export async function POST(req: NextRequest) {
           [recordId, li.invoice_no, li.invoice_date, li.quantity,
            li.unit ?? source.default_unit, li.erp_ref, li.note],
         );
+      }
+      // 公檔連結：取該組第一個非空值存到紀錄（同月同源共用一個資料夾連結）
+      const docUrl = items.map((li) => li.source_doc_url).find((u) => u) ?? null;
+      if (docUrl) {
+        await query(`UPDATE activity_records SET source_doc_url = $1 WHERE id = $2`, [docUrl, recordId]);
       }
       await recomputeRecordFromLineItems(recordId); // activity_value = SUM + CO₂e
       lineItemsImported += items.length;
