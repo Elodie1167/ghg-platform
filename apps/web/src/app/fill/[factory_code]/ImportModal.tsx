@@ -16,6 +16,7 @@ interface ImportResult {
   skipped: number;
   errors: string[];
   lineItemsImported?: number;
+  notice?: string;
 }
 
 export default function ImportModal({ factory, year, onClose }: Props) {
@@ -216,9 +217,12 @@ export default function ImportModal({ factory, year, onClose }: Props) {
               {/* 檔案上傳 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  選擇 Excel 檔案
+                  ③ 上傳範本格式檔（.xlsx，即上方下載的範本填好後）
                   <span className="text-red-500 ml-1">*</span>
                 </label>
+                <p className="text-[11px] text-amber-600 mb-2">
+                  注意：此處僅接受固定範本格式；ERP 原生檔請用上方「②」上傳，別丟這裡。
+                </p>
                 <input
                   ref={fileRef}
                   type="file"
@@ -284,6 +288,13 @@ export default function ImportModal({ factory, year, onClose }: Props) {
                   <div className="text-sm text-gray-400 mt-1">略過筆數</div>
                 </div>
               </div>
+
+              {/* 提示（例如把 ERP 原生檔丟到主匯入） */}
+              {result?.notice && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+                  ⚠ {result.notice}
+                </div>
+              )}
 
               {/* 錯誤清單 */}
               {result?.errors && result.errors.length > 0 && (

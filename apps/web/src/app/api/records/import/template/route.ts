@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { query } from '@/lib/db';
+import { refLabel } from '@/lib/ref-label';
 
 // GET /api/records/import/template?source_code=1-2A-2&year=2026
 // 產生「單據明細」固定欄位 .xlsx 範本（已預填選定排放源代碼）
@@ -18,10 +19,11 @@ export async function GET(req: NextRequest) {
     if (r.rows.length) { nameZh = r.rows[0].name_zh; unit = r.rows[0].default_unit ?? ''; }
   }
 
-  const header = ['月份', '排放源代碼', '單據號碼', '單據日期', '用量', '單位', '電表號碼', '備註', '公檔連結'];
+  const ref = refLabel(sourceCode);
+  const header = ['月份', '排放源代碼', '單據號碼', '單據日期', '用量', '單位', ref, '備註', '公檔連結'];
   const example = [
-    [6, sourceCode, 'PO-範例-001', `${year}-06-03`, 120, unit, '電表-A01', '第一次', `\\\\公檔\\GHG\\${sourceCode}\\${year}\\06`],
-    [6, sourceCode, 'PO-範例-002', `${year}-06-18`, 95, unit, '電表-A02', '', ''],
+    [6, sourceCode, 'PO-範例-001', `${year}-06-03`, 120, unit, `${ref}-001`, '第一次', `\\\\公檔\\GHG\\${sourceCode}\\${year}\\06`],
+    [6, sourceCode, 'PO-範例-002', `${year}-06-18`, 95, unit, `${ref}-002`, '', ''],
   ];
   const aoa = [header, ...example];
 

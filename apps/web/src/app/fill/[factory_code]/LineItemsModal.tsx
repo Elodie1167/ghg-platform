@@ -30,12 +30,13 @@ const emptyDraft = (unit: string): Draft => ({
  * 可新增/修改/刪除，變動後由後端回算月加總 + CO₂e。稽核下鑽用。
  */
 export default function LineItemsModal({
-  recordId, title, unit, readOnly, onClose, onChanged,
+  recordId, title, unit, readOnly, refLabel = '發票號', onClose, onChanged,
 }: {
   recordId: string;
   title: string;
   unit: string;
   readOnly?: boolean;
+  refLabel?: string;
   onClose: () => void;
   onChanged?: (activityValue: number) => void;
 }) {
@@ -137,7 +138,7 @@ export default function LineItemsModal({
                     <th className="px-3 py-2 text-left">單據日期</th>
                     <th className="px-3 py-2 text-right">用量</th>
                     <th className="px-3 py-2 text-left">單位</th>
-                    <th className="px-3 py-2 text-left">電表號碼</th>
+                    <th className="px-3 py-2 text-left">{refLabel}</th>
                     <th className="px-3 py-2 text-left">備註</th>
                     {!readOnly && <th className="px-3 py-2 w-8" />}
                   </tr>
@@ -183,7 +184,7 @@ export default function LineItemsModal({
                 <input type="date" value={draft.invoice_date} onChange={(e) => setDraft((d) => ({ ...d, invoice_date: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
                 <input type="number" placeholder="用量" value={draft.quantity} onChange={(e) => setDraft((d) => ({ ...d, quantity: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm text-right" />
                 <input placeholder="單位" value={draft.unit} onChange={(e) => setDraft((d) => ({ ...d, unit: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
-                <input placeholder="電表號碼" value={draft.erp_ref} onChange={(e) => setDraft((d) => ({ ...d, erp_ref: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                <input placeholder={refLabel} value={draft.erp_ref} onChange={(e) => setDraft((d) => ({ ...d, erp_ref: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
                 <input placeholder="備註" value={draft.note} onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
               </div>
               <button onClick={addItem} disabled={busy || draft.quantity === ''}

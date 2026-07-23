@@ -486,8 +486,23 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // 什麼都沒匯到 → 給明確指引（最常見：把 ERP 原生檔丟到這個主匯入）
+  let notice: string | undefined;
+  if (imported === 0 && lineItemsImported === 0) {
+    const erpLike = wb.SheetNames.some((n) => {
+      const s = wb.Sheets[n];
+      if (!s) return false;
+      const hdr = ((XLSX.utils.sheet_to_json(s, { header: 1, defval: '' })[0] as unknown[]) || [])
+        .map((x) => String(x).toLowerCase());
+      return hdr.some((h) => h.includes('year-month') || h.includes('po no'));
+    });
+    notice = erpLike
+      ? '此檔看起來是「ERP 原生匯出檔」。主匯入只吃固定範本格式；請改用上方「② 上傳 ERP 原生檔」，並先選擇排放源。'
+      : '找不到可辨識的分頁（例如 S2_電力、S1_燃料固定、單據明細…）。請確認使用正確的匯入範本；ERP 原生檔請改用「② 上傳 ERP 原生檔」。';
+  }
+
   return NextResponse.json({
-    data: { imported, skipped, errors, lineItemsImported },
+    data: { imported, skipped, errors, lineItemsImported, notice },
     error: null,
   });
 }

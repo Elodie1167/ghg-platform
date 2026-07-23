@@ -825,6 +825,7 @@ export default function FillPageClient({
             recordId={liRecord.id}
             title={liRecord.title}
             unit="kWh"
+            refLabel="電表號碼"
             readOnly
             onClose={() => setLiRecord(null)}
           />
