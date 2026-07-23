@@ -18,10 +18,10 @@ export async function GET(req: NextRequest) {
     if (r.rows.length) { nameZh = r.rows[0].name_zh; unit = r.rows[0].default_unit ?? ''; }
   }
 
-  const header = ['月份', '排放源代碼', '單據號碼', '單據日期', '用量', '單位', 'ERP參照', '備註', '公檔連結'];
+  const header = ['月份', '排放源代碼', '單據號碼', '單據日期', '用量', '單位', '電表號碼', '備註', '公檔連結'];
   const example = [
-    [6, sourceCode, 'PO-範例-001', `${year}-06-03`, 120, unit, 'CSR-KEY-001', '第一次加油', `\\\\公檔\\GHG\\${sourceCode}\\${year}\\06`],
-    [6, sourceCode, 'PO-範例-002', `${year}-06-18`, 95, unit, 'CSR-KEY-002', '', ''],
+    [6, sourceCode, 'PO-範例-001', `${year}-06-03`, 120, unit, '電表-A01', '第一次', `\\\\公檔\\GHG\\${sourceCode}\\${year}\\06`],
+    [6, sourceCode, 'PO-範例-002', `${year}-06-18`, 95, unit, '電表-A02', '', ''],
   ];
   const aoa = [header, ...example];
 

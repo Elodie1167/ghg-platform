@@ -110,10 +110,18 @@ export default function LineItemsModal({
 
         {docUrl && (
           <div className="px-5 pt-3">
-            <a href={docUrl} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 underline break-all">
-              📂 開啟公檔發票資料夾（查核正本）
-            </a>
+            <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+              <span className="text-sm shrink-0">📂 公檔發票資料夾：</span>
+              <code className="text-xs text-blue-800 break-all flex-1">{docUrl}</code>
+              <button
+                type="button"
+                onClick={() => { navigator.clipboard?.writeText(docUrl); }}
+                className="shrink-0 text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+              >複製路徑</button>
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1">
+              瀏覽器無法直接開啟網路磁碟機資料夾（安全限制）；請複製路徑後貼到「檔案總管」網址列開啟，即可一次檢視該月所有發票正本。
+            </p>
           </div>
         )}
 
@@ -129,7 +137,7 @@ export default function LineItemsModal({
                     <th className="px-3 py-2 text-left">單據日期</th>
                     <th className="px-3 py-2 text-right">用量</th>
                     <th className="px-3 py-2 text-left">單位</th>
-                    <th className="px-3 py-2 text-left">ERP 參照</th>
+                    <th className="px-3 py-2 text-left">電表號碼</th>
                     <th className="px-3 py-2 text-left">備註</th>
                     {!readOnly && <th className="px-3 py-2 w-8" />}
                   </tr>
@@ -139,7 +147,7 @@ export default function LineItemsModal({
                     <tr key={it.id} className="border-t border-gray-100">
                       <td className="px-3 py-1.5">{it.invoice_no ?? '—'}</td>
                       <td className="px-3 py-1.5">{it.invoice_date ? String(it.invoice_date).slice(0, 10) : '—'}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{it.quantity != null ? Number(it.quantity).toLocaleString() : '—'}</td>
+                      <td className="px-3 py-1.5 text-right font-mono">{it.quantity != null ? Number(it.quantity).toLocaleString(undefined, { maximumFractionDigits: 10 }) : '—'}</td>
                       <td className="px-3 py-1.5">{it.unit ?? '—'}</td>
                       <td className="px-3 py-1.5 text-gray-500">{it.erp_ref ?? '—'}</td>
                       <td className="px-3 py-1.5 text-gray-500">{it.note ?? '—'}</td>
@@ -158,7 +166,7 @@ export default function LineItemsModal({
                 <tfoot>
                   <tr className="bg-green-50 font-semibold border-t border-gray-200">
                     <td className="px-3 py-2" colSpan={2}>合計（= 月加總）</td>
-                    <td className="px-3 py-2 text-right font-mono text-green-800">{total.toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right font-mono text-green-800">{total.toLocaleString(undefined, { maximumFractionDigits: 10 })}</td>
                     <td className="px-3 py-2">{unit}</td>
                     <td colSpan={readOnly ? 2 : 3} />
                   </tr>
@@ -175,7 +183,7 @@ export default function LineItemsModal({
                 <input type="date" value={draft.invoice_date} onChange={(e) => setDraft((d) => ({ ...d, invoice_date: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
                 <input type="number" placeholder="用量" value={draft.quantity} onChange={(e) => setDraft((d) => ({ ...d, quantity: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm text-right" />
                 <input placeholder="單位" value={draft.unit} onChange={(e) => setDraft((d) => ({ ...d, unit: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
-                <input placeholder="ERP 參照" value={draft.erp_ref} onChange={(e) => setDraft((d) => ({ ...d, erp_ref: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                <input placeholder="電表號碼" value={draft.erp_ref} onChange={(e) => setDraft((d) => ({ ...d, erp_ref: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
                 <input placeholder="備註" value={draft.note} onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
               </div>
               <button onClick={addItem} disabled={busy || draft.quantity === ''}

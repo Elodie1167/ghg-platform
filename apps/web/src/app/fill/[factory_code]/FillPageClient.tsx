@@ -700,6 +700,7 @@ export default function FillPageClient({
                     <th className="px-3 py-3 text-left w-32">帳單迄日</th>
                     <th className="px-3 py-3 text-left w-32">電表號碼</th>
                     <th className="px-3 py-3 text-right w-24">CO₂e (t)</th>
+                    <th className="px-3 py-3 text-center w-28">當月加總明細</th>
                     <th className="px-3 py-3 text-center w-10">查核</th>
                     <th className="px-3 py-3 text-center w-12">狀態</th>
                     <th className="px-3 py-3 w-10" />
@@ -725,7 +726,7 @@ export default function FillPageClient({
                         />
                       </td>
                       <td className="px-2 py-1.5">
-                        <input type="number" min="0" step="0.01" placeholder="kWh"
+                        <input type="number" min="0" step="any" placeholder="kWh（可到小數 10 位）"
                           value={row.activity_value}
                           onChange={(e) => updateRow(row.tempKey, 'activity_value', e.target.value)}
                           className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -752,17 +753,17 @@ export default function FillPageClient({
                           className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                         />
                       </td>
-                      <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
-                        <div className="flex items-center justify-end gap-2">
-                          <span>{(() => {
-                            const c = rowCo2e(parseFloat(row.activity_value) || 0);
-                            return c != null ? c.toFixed(4) : (row.co2e_total != null ? row.co2e_total.toFixed(4) : '—');
-                          })()}</span>
-                          {row.id && (
-                            <button type="button" onClick={() => setLiRecord({ id: row.id!, title: `電力 ${row.month} 月` })}
-                              title="檢視/編輯單據明細" className="text-blue-500 hover:text-blue-700 text-[11px] underline">單據</button>
-                          )}
-                        </div>
+                      <td className="px-3 py-1.5 text-right text-gray-700 text-xs font-mono">
+                        {(() => {
+                          const c = rowCo2e(parseFloat(row.activity_value) || 0);
+                          return c != null ? c.toFixed(4) : (row.co2e_total != null ? row.co2e_total.toFixed(4) : '—');
+                        })()}
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        {row.id
+                          ? <button type="button" onClick={() => setLiRecord({ id: row.id!, title: `電力 ${row.month} 月` })}
+                              className="text-blue-600 hover:text-blue-800 text-xs underline">查看</button>
+                          : <span className="text-gray-300 text-xs">—</span>}
                       </td>
                       <td className="px-2 py-1.5 text-center">
                         <button onClick={() => toggleReview(row.tempKey)}
@@ -795,13 +796,13 @@ export default function FillPageClient({
                   <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold">
                     <td colSpan={2} className="px-3 py-2 text-gray-700">合計</td>
                     <td className="px-3 py-2 text-right text-gray-700 font-mono">
-                      {totalKwh.toLocaleString()} kWh
+                      {totalKwh.toLocaleString(undefined, { maximumFractionDigits: 10 })} kWh
                     </td>
                     <td colSpan={3} />
                     <td className="px-3 py-2 text-right text-gray-700 font-mono">
                       {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
                     </td>
-                    <td colSpan={3} />
+                    <td colSpan={4} />
                   </tr>
                 </tfoot>
               </table>

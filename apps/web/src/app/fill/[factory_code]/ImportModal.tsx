@@ -15,6 +15,7 @@ interface ImportResult {
   imported: number;
   skipped: number;
   errors: string[];
+  lineItemsImported?: number;
 }
 
 export default function ImportModal({ factory, year, onClose }: Props) {
@@ -32,6 +33,30 @@ export default function ImportModal({ factory, year, onClose }: Props) {
       .then(({ data }) => { if (Array.isArray(data)) setSources(data); })
       .catch(() => {});
   }, []);
+
+  // ERP 原生檔直匯
+  const erpFileRef = useRef<HTMLInputElement>(null);
+  const [erpMsg, setErpMsg] = useState('');
+  const [erpBusy, setErpBusy] = useState(false);
+  async function handleErpUpload() {
+    if (!tplSource) { setErpMsg('請先於上方選擇排放源'); return; }
+    const f = erpFileRef.current?.files?.[0];
+    if (!f) { setErpMsg('請選擇 ERP 匯出檔（.tsv / .csv / .xlsx）'); return; }
+    setErpBusy(true); setErpMsg('上傳中…');
+    try {
+      const body = new FormData();
+      body.append('factory_id', factory.id);
+      body.append('year', String(year));
+      body.append('source_code', tplSource);
+      body.append('file', f);
+      const res = await fetch('/api/records/import-erp', { method: 'POST', body });
+      const j = await res.json();
+      if (!res.ok || j.error) { setErpMsg(`失敗：${j.error ?? res.status}`); return; }
+      setErpMsg(`✅ 已匯入 ${j.data.lineItemsImported} 筆單據（月份 ${j.data.months.join(', ')}）；略過 ${j.data.skipped} 列。`);
+    } catch {
+      setErpMsg('網路錯誤');
+    } finally { setErpBusy(false); }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -127,7 +152,7 @@ export default function ImportModal({ factory, year, onClose }: Props) {
                 <br />
                 <span className="text-xs text-green-700">
                   單據級明細請放在「<b>單據明細</b>」分頁，每列一張單，欄位順序：
-                  月份｜排放源代碼｜單據號碼｜單據日期｜用量｜單位｜ERP參照｜備註｜公檔連結。
+                  月份｜排放源代碼｜單據號碼｜單據日期｜用量｜單位｜電表號碼｜備註｜公檔連結。
                   系統會依「排放源×月」自動加總為月用量並計算 CO₂e，供稽核下鑽核對。
                 </span>
               </div>
@@ -153,6 +178,23 @@ export default function ImportModal({ factory, year, onClose }: Props) {
                   </a>
                 </div>
                 <p className="text-xs text-gray-400 mt-1.5">下載後填入各單據（或貼上 GPT 辨識結果），再於下方上傳。</p>
+              </div>
+
+              {/* ERP 原生檔直匯（用上方選的排放源） */}
+              <div className="border border-indigo-200 bg-indigo-50/40 rounded-lg px-4 py-3">
+                <p className="text-xs font-semibold text-indigo-700 mb-1">② 或直接上傳 ERP 原生匯出檔（.tsv/.csv/.xlsx）</p>
+                <p className="text-[11px] text-gray-500 mb-2">
+                  用上方選定的排放源；系統依 Year-Month／Quantity／PO NO. 等欄位自動辨識，忽略品名與 PO 廠內棟別前綴。
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input ref={erpFileRef} type="file" accept=".tsv,.csv,.xlsx"
+                    className="text-xs file:mr-2 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-indigo-600 file:text-white" />
+                  <button type="button" onClick={handleErpUpload} disabled={erpBusy}
+                    className="px-4 py-1.5 rounded-lg text-white text-xs font-medium bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50">
+                    上傳 ERP 檔
+                  </button>
+                </div>
+                {erpMsg && <p className="text-xs text-gray-600 mt-1.5">{erpMsg}</p>}
               </div>
 
               {/* 工廠 & 年度（唯讀顯示） */}
@@ -228,13 +270,17 @@ export default function ImportModal({ factory, year, onClose }: Props) {
               </div>
 
               {/* 統計 */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-3">
                 <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-                  <div className="text-3xl font-bold text-green-700">{result?.imported}</div>
-                  <div className="text-sm text-green-600 mt-1">已匯入筆數</div>
+                  <div className="text-3xl font-bold text-green-700">{result?.imported ?? 0}</div>
+                  <div className="text-sm text-green-600 mt-1">月加總匯入</div>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                  <div className="text-3xl font-bold text-blue-700">{result?.lineItemsImported ?? 0}</div>
+                  <div className="text-sm text-blue-600 mt-1">單據明細筆數</div>
                 </div>
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
-                  <div className="text-3xl font-bold text-gray-500">{result?.skipped}</div>
+                  <div className="text-3xl font-bold text-gray-500">{result?.skipped ?? 0}</div>
                   <div className="text-sm text-gray-400 mt-1">略過筆數</div>
                 </div>
               </div>
