@@ -48,6 +48,7 @@ const UpdateRecordSchema = z.object({
   meter_number: z.string().nullable().optional(),
   date_from: z.string().nullable().optional(),
   date_to: z.string().nullable().optional(),
+  source_doc_url: z.string().nullable().optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────
@@ -148,6 +149,10 @@ export async function PUT(
     if (updates.date_to !== undefined) {
       setClauses.push(`date_to = $${paramIdx++}::date`);
       values.push(updates.date_to);
+    }
+    if (updates.source_doc_url !== undefined) {
+      setClauses.push(`source_doc_url = $${paramIdx++}`);
+      values.push(updates.source_doc_url);
     }
 
     values.push(id); // WHERE id = $N

@@ -42,6 +42,9 @@ export default function LineItemsModal({
 }) {
   const [items, setItems] = useState<LineItem[]>([]);
   const [docUrl, setDocUrl] = useState<string | null>(null);
+  const [docDraft, setDocDraft] = useState('');
+  const [docEditing, setDocEditing] = useState(false);
+  const [docSaving, setDocSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<Draft>(emptyDraft(unit));
   const [busy, setBusy] = useState(false);
@@ -53,11 +56,24 @@ export default function LineItemsModal({
       .then((body) => {
         setItems(Array.isArray(body.data) ? body.data : []);
         setDocUrl(body.source_doc_url ?? null);
+        setDocDraft(body.source_doc_url ?? '');
       })
       .finally(() => setLoading(false));
   }, [recordId]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function saveDocUrl() {
+    setDocSaving(true);
+    try {
+      const v = docDraft.trim() || null;
+      const res = await fetch(`/api/records/${recordId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_doc_url: v }),
+      });
+      if (res.ok) { setDocUrl(v); setDocEditing(false); }
+    } finally { setDocSaving(false); }
+  }
 
   const total = items.reduce((s, i) => s + (Number(i.quantity) || 0), 0);
 
@@ -109,22 +125,58 @@ export default function LineItemsModal({
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none">×</button>
         </div>
 
-        {docUrl && (
-          <div className="px-5 pt-3">
-            <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
-              <span className="text-sm shrink-0">📂 公檔發票資料夾：</span>
-              <code className="text-xs text-blue-800 break-all flex-1">{docUrl}</code>
-              <button
-                type="button"
-                onClick={() => { navigator.clipboard?.writeText(docUrl); }}
-                className="shrink-0 text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
-              >複製路徑</button>
-            </div>
-            <p className="text-[11px] text-gray-400 mt-1">
-              瀏覽器無法直接開啟網路磁碟機資料夾（安全限制）；請複製路徑後貼到「檔案總管」網址列開啟，即可一次檢視該月所有發票正本。
-            </p>
-          </div>
-        )}
+        <div className="px-5 pt-3">
+          {docUrl && !docEditing ? (
+            <>
+              <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                <span className="text-sm shrink-0">📂 公檔發票資料夾：</span>
+                <code className="text-xs text-blue-800 break-all flex-1">{docUrl}</code>
+                <button
+                  type="button"
+                  onClick={() => { navigator.clipboard?.writeText(docUrl); }}
+                  className="shrink-0 text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+                >複製路徑</button>
+                <button
+                  type="button"
+                  onClick={() => setDocEditing(true)}
+                  className="shrink-0 text-xs px-2 py-1 rounded border border-blue-300 text-blue-700 hover:bg-blue-100"
+                >編輯</button>
+              </div>
+              <p className="text-[11px] text-gray-400 mt-1">
+                瀏覽器無法直接開啟網路磁碟機資料夾（安全限制）；請複製路徑後貼到「檔案總管」網址列開啟，即可一次檢視該月所有發票正本。
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                <span className="text-sm shrink-0 pt-1.5">📂 公檔發票資料夾：</span>
+                <input
+                  type="text"
+                  value={docDraft}
+                  onChange={(e) => setDocDraft(e.target.value)}
+                  placeholder="貼上公檔資料夾路徑，例如 \\nt_pdc\永續發展部\...\發票"
+                  className="flex-1 text-xs border border-blue-200 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+                <button
+                  type="button"
+                  onClick={saveDocUrl}
+                  disabled={docSaving}
+                  className="shrink-0 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                >{docSaving ? '儲存中…' : '儲存路徑'}</button>
+                {docUrl && (
+                  <button
+                    type="button"
+                    onClick={() => { setDocDraft(docUrl ?? ''); setDocEditing(false); }}
+                    className="shrink-0 text-xs px-2 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100"
+                  >取消</button>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-400 mt-1">
+                ERP 匯入不含公檔連結；於此填入該月發票所在的公檔資料夾路徑並儲存後，即可用「複製路徑」貼到檔案總管一次開啟整月發票。
+              </p>
+            </>
+          )}
+        </div>
 
         <div className="p-5">
           {loading ? (
@@ -167,7 +219,7 @@ export default function LineItemsModal({
                 <tfoot>
                   <tr className="bg-green-50 font-semibold border-t border-gray-200">
                     <td className="px-3 py-2" colSpan={2}>合計（= 月加總）</td>
-                    <td className="px-3 py-2 text-right font-mono text-green-800">{total.toLocaleString(undefined, { maximumFractionDigits: 10 })}</td>
+                    <td className="px-3 py-2 text-right font-mono text-green-800">{total.toLocaleString(undefined, { minimumFractionDigits: 10, maximumFractionDigits: 10 })}</td>
                     <td className="px-3 py-2">{unit}</td>
                     <td colSpan={readOnly ? 2 : 3} />
                   </tr>

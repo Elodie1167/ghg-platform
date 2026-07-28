@@ -796,7 +796,7 @@ export default function FillPageClient({
                   <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold">
                     <td colSpan={2} className="px-3 py-2 text-gray-700">合計</td>
                     <td className="px-3 py-2 text-right text-gray-700 font-mono">
-                      {totalKwh.toLocaleString(undefined, { maximumFractionDigits: 10 })} kWh
+                      {totalKwh.toLocaleString(undefined, { minimumFractionDigits: 10, maximumFractionDigits: 10 })} kWh
                     </td>
                     <td colSpan={3} />
                     <td className="px-3 py-2 text-right text-gray-700 font-mono">
@@ -1941,7 +1941,7 @@ export default function FillPageClient({
       </footer>
 
       {importModalOpen && (
-        <ImportModal factory={factory} year={year} onClose={() => setImportModalOpen(false)} />
+        <ImportModal factory={factory} year={year} onClose={() => setImportModalOpen(false)} onImported={() => refreshRecords()} />
       )}
     </div>
   );

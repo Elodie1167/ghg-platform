@@ -276,7 +276,7 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
             <div>
               <div className="text-gray-500">用電量（地域）</div>
               <div className="font-mono font-semibold text-gray-800">
-                {totalElecKwh.toLocaleString()} kWh
+                {totalElecKwh.toLocaleString(undefined, { maximumFractionDigits: 10 })} kWh
               </div>
             </div>
             <div>

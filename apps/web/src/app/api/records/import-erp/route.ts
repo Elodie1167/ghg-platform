@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
   const yearStr = fd.get('year') as string | null;
   const source_code = fd.get('source_code') as string | null;
   const file = fd.get('file') as File | null;
+  const docUrl = (fd.get('source_doc_url') as string | null)?.trim() || null; // 公檔連結（選填）
   if (!factory_id || !yearStr || !source_code || !file) {
     return NextResponse.json({ data: null, error: 'factory_id、year、source_code、file 為必填' }, { status: 400 });
   }
@@ -144,6 +145,9 @@ export async function POST(req: NextRequest) {
          VALUES ($1,$2,$3,$4,$5,$6)`,
         [recordId, it.invoice_no, it.quantity, it.unit, it.erp_ref, it.note],
       );
+    }
+    if (docUrl) {
+      await query(`UPDATE activity_records SET source_doc_url = $1 WHERE id = $2`, [docUrl, recordId]);
     }
     await recomputeRecordFromLineItems(recordId);
     lineItemsImported += items.length;

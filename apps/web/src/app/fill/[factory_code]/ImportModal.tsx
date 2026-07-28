@@ -7,6 +7,7 @@ interface Props {
   factory: Factory;
   year: number;
   onClose: () => void;
+  onImported?: () => void;
 }
 
 type ImportStatus = 'idle' | 'uploading' | 'success' | 'error';
@@ -19,15 +20,17 @@ interface ImportResult {
   notice?: string;
 }
 
-export default function ImportModal({ factory, year, onClose }: Props) {
-  const fileRef = useRef<HTMLInputElement>(null);
+export default function ImportModal({ factory, year, onClose, onImported }: Props) {
+  const erpFileRef = useRef<HTMLInputElement>(null);
+  const tplFileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<ImportStatus>('idle');
   const [result, setResult] = useState<ImportResult | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // 單據明細範本：選排放源 → 下載對應範本
+  // 選排放源 → 下載對應範本 / 指定 ERP 匯入目標源
   const [sources, setSources] = useState<{ source_code: string; name_zh: string }[]>([]);
   const [tplSource, setTplSource] = useState('');
+  const [docUrl, setDocUrl] = useState(''); // 公檔連結（選填，供稽核一次開整月發票）
   useEffect(() => {
     fetch('/api/emission-sources')
       .then((r) => r.json())
@@ -35,69 +38,81 @@ export default function ImportModal({ factory, year, onClose }: Props) {
       .catch(() => {});
   }, []);
 
-  // ERP 原生檔直匯
-  const erpFileRef = useRef<HTMLInputElement>(null);
-  const [erpMsg, setErpMsg] = useState('');
-  const [erpBusy, setErpBusy] = useState(false);
-  async function handleErpUpload() {
-    if (!tplSource) { setErpMsg('請先於上方選擇排放源'); return; }
-    const f = erpFileRef.current?.files?.[0];
-    if (!f) { setErpMsg('請選擇 ERP 匯出檔（.tsv / .csv / .xlsx）'); return; }
-    setErpBusy(true); setErpMsg('上傳中…');
-    try {
-      const body = new FormData();
-      body.append('factory_id', factory.id);
-      body.append('year', String(year));
-      body.append('source_code', tplSource);
-      body.append('file', f);
-      const res = await fetch('/api/records/import-erp', { method: 'POST', body });
-      const j = await res.json();
-      if (!res.ok || j.error) { setErpMsg(`失敗：${j.error ?? res.status}`); return; }
-      setErpMsg(`✅ 已匯入 ${j.data.lineItemsImported} 筆單據（月份 ${j.data.months.join(', ')}）；略過 ${j.data.skipped} 列。`);
-    } catch {
-      setErpMsg('網路錯誤');
-    } finally { setErpBusy(false); }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setErrorMsg('');
 
-    const file = fileRef.current?.files?.[0];
-    if (!file) {
-      setErrorMsg('請選擇一個 .xlsx 檔案');
+    const erpFile = erpFileRef.current?.files?.[0] ?? null;
+    const tplFile = tplFileRef.current?.files?.[0] ?? null;
+
+    // 自動偵測：哪一邊有檔案就用哪一邊
+    if (erpFile && tplFile) {
+      setErrorMsg('偵測到兩個檔案，請只保留一種（ERP 匯出檔 或 範本格式檔）。');
       return;
     }
-
-    if (!file.name.endsWith('.xlsx')) {
-      setErrorMsg('僅接受 .xlsx 格式的 Excel 檔案');
+    if (!erpFile && !tplFile) {
+      setErrorMsg('請選擇一個檔案：ERP 匯出檔 或 範本格式檔。');
       return;
     }
 
     setStatus('uploading');
     setResult(null);
-    setErrorMsg('');
-
-    const formData = new FormData();
-    formData.append('factory_id', factory.id);
-    formData.append('year', String(year));
-    formData.append('file', file);
 
     try {
-      const res = await fetch('/api/records/import', {
-        method: 'POST',
-        body: formData,
-      });
+      if (erpFile) {
+        // ── ERP 原生匯出檔 ──
+        if (!tplSource) {
+          setStatus('idle');
+          setErrorMsg('使用 ERP 匯出檔時，請先於上方選擇排放源。');
+          return;
+        }
+        const body = new FormData();
+        body.append('factory_id', factory.id);
+        body.append('year', String(year));
+        body.append('source_code', tplSource);
+        body.append('file', erpFile);
+        if (docUrl.trim()) body.append('source_doc_url', docUrl.trim());
+        const res = await fetch('/api/records/import-erp', { method: 'POST', body });
+        const j = await res.json();
+        if (!res.ok || j.error) {
+          setStatus('error');
+          setErrorMsg(j.error ?? `上傳失敗（HTTP ${res.status}）`);
+          return;
+        }
+        const months: number[] = j.data.months ?? [];
+        setResult({
+          imported: months.length,
+          lineItemsImported: j.data.lineItemsImported ?? 0,
+          skipped: j.data.skipped ?? 0,
+          errors: [],
+          notice: months.length
+            ? `已依 Year-Month 匯入月份：${months.join('、')} 月`
+            : undefined,
+        });
+        setStatus('success');
+        return;
+      }
 
+      // ── 範本格式檔 ──
+      if (!tplFile!.name.endsWith('.xlsx')) {
+        setStatus('idle');
+        setErrorMsg('範本格式檔僅接受 .xlsx。');
+        return;
+      }
+      const formData = new FormData();
+      formData.append('factory_id', factory.id);
+      formData.append('year', String(year));
+      formData.append('file', tplFile!);
+      if (docUrl.trim()) formData.append('source_doc_url', docUrl.trim());
+      const res = await fetch('/api/records/import', { method: 'POST', body: formData });
       const json = await res.json();
-
       if (!res.ok || json.error) {
         setStatus('error');
         setErrorMsg(json.error ?? `上傳失敗（HTTP ${res.status}）`);
         return;
       }
-
-      setStatus('success');
       setResult(json.data);
+      setStatus('success');
     } catch (err) {
       console.error('[ImportModal]', err);
       setStatus('error');
@@ -109,7 +124,8 @@ export default function ImportModal({ factory, year, onClose }: Props) {
     setStatus('idle');
     setResult(null);
     setErrorMsg('');
-    if (fileRef.current) fileRef.current.value = '';
+    if (erpFileRef.current) erpFileRef.current.value = '';
+    if (tplFileRef.current) tplFileRef.current.value = '';
   }
 
   return (
@@ -146,21 +162,14 @@ export default function ImportModal({ factory, year, onClose }: Props) {
         <div className="px-6 py-6">
           {status !== 'success' ? (
             <form onSubmit={handleSubmit} className="space-y-5">
-              {/* 說明 */}
+              {/* 簡短說明 */}
               <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800">
-                請上傳依照標準格式製作的 .xlsx 填報範本。系統將自動解析各 Sheet
-                的資料並寫入資料庫（重複月份將覆蓋更新）。
-                <br />
-                <span className="text-xs text-green-700">
-                  單據級明細請放在「<b>單據明細</b>」分頁，每列一張單，欄位順序：
-                  月份｜排放源代碼｜單據號碼｜單據日期｜用量｜單位｜電表號碼｜備註｜公檔連結。
-                  系統會依「排放源×月」自動加總為月用量並計算 CO₂e，供稽核下鑽核對。
-                </span>
+                請選擇 ERP 匯出之單據上傳或是下載範本進行上傳。
               </div>
 
-              {/* 步驟一：選排放源下載單據明細範本 */}
+              {/* ① 選排放源（＋下載範本） */}
               <div className="border border-gray-200 rounded-lg px-4 py-3">
-                <p className="text-xs font-semibold text-gray-600 mb-2">① 下載單據明細範本（選排放源）</p>
+                <p className="text-xs font-semibold text-gray-600 mb-2">① 選擇排放源</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <select value={tplSource} onChange={(e) => setTplSource(e.target.value)}
                     className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 min-w-[220px]">
@@ -178,27 +187,10 @@ export default function ImportModal({ factory, year, onClose }: Props) {
                     下載範本
                   </a>
                 </div>
-                <p className="text-xs text-gray-400 mt-1.5">下載後填入各單據（或貼上 GPT 辨識結果），再於下方上傳。</p>
+                <p className="text-xs text-gray-400 mt-1.5">使用 ERP 匯出檔時，此排放源即為匯入目標源；使用範本時可先下載對應排放源範本。</p>
               </div>
 
-              {/* ERP 原生檔直匯（用上方選的排放源） */}
-              <div className="border border-indigo-200 bg-indigo-50/40 rounded-lg px-4 py-3">
-                <p className="text-xs font-semibold text-indigo-700 mb-1">② 或直接上傳 ERP 原生匯出檔（.tsv/.csv/.xlsx）</p>
-                <p className="text-[11px] text-gray-500 mb-2">
-                  用上方選定的排放源；系統依 Year-Month／Quantity／PO NO. 等欄位自動辨識，忽略品名與 PO 廠內棟別前綴。
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <input ref={erpFileRef} type="file" accept=".tsv,.csv,.xlsx"
-                    className="text-xs file:mr-2 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-indigo-600 file:text-white" />
-                  <button type="button" onClick={handleErpUpload} disabled={erpBusy}
-                    className="px-4 py-1.5 rounded-lg text-white text-xs font-medium bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50">
-                    上傳 ERP 檔
-                  </button>
-                </div>
-                {erpMsg && <p className="text-xs text-gray-600 mt-1.5">{erpMsg}</p>}
-              </div>
-
-              {/* 工廠 & 年度（唯讀顯示） */}
+              {/* ② 工廠 & 年度（唯讀顯示，置於選排放源下方） */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">工廠</label>
@@ -214,27 +206,33 @@ export default function ImportModal({ factory, year, onClose }: Props) {
                 </div>
               </div>
 
-              {/* 檔案上傳 */}
+              {/* 公檔連結（選填） */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  ③ 上傳範本格式檔（.xlsx，即上方下載的範本填好後）
-                  <span className="text-red-500 ml-1">*</span>
-                </label>
-                <p className="text-[11px] text-amber-600 mb-2">
-                  注意：此處僅接受固定範本格式；ERP 原生檔請用上方「②」上傳，別丟這裡。
-                </p>
+                <label className="block text-xs text-gray-500 mb-1">公檔發票資料夾路徑（選填）</label>
                 <input
-                  ref={fileRef}
-                  type="file"
-                  accept=".xlsx"
-                  className="block w-full text-sm text-gray-700
-                             file:mr-4 file:py-2 file:px-4
-                             file:rounded-lg file:border-0
-                             file:text-sm file:font-medium
-                             file:bg-green-50 file:text-green-700
-                             hover:file:bg-green-100 transition
-                             border border-gray-300 rounded-lg cursor-pointer"
+                  type="text"
+                  value={docUrl}
+                  onChange={(e) => setDocUrl(e.target.value)}
+                  placeholder="\\nt_pdc\永續發展部\...\發票（供稽核一次開整月發票）"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                 />
+              </div>
+
+              {/* ③ 兩種上傳方式：擇一 */}
+              <div className="space-y-3">
+                <div className="border border-indigo-200 bg-indigo-50/40 rounded-lg px-4 py-3">
+                  <p className="text-xs font-semibold text-indigo-700 mb-2">方式 A：上傳 ERP 匯出檔（.tsv / .csv / .xlsx）</p>
+                  <input ref={erpFileRef} type="file" accept=".tsv,.csv,.xlsx"
+                    className="block w-full text-xs text-gray-700 file:mr-3 file:px-4 file:py-2 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 border border-gray-300 rounded-lg cursor-pointer" />
+                </div>
+
+                <div className="text-center text-xs text-gray-400">— 或 —</div>
+
+                <div className="border border-green-200 bg-green-50/40 rounded-lg px-4 py-3">
+                  <p className="text-xs font-semibold text-green-700 mb-2">方式 B：上傳範本格式檔（.xlsx，上方下載的範本填好後）</p>
+                  <input ref={tplFileRef} type="file" accept=".xlsx"
+                    className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100 border border-gray-300 rounded-lg cursor-pointer" />
+                </div>
               </div>
 
               {/* 錯誤訊息 */}
@@ -244,7 +242,7 @@ export default function ImportModal({ factory, year, onClose }: Props) {
                 </div>
               )}
 
-              {/* 按鈕 */}
+              {/* 按鈕：單一開始匯入，自動偵測 */}
               <div className="flex gap-3 pt-1">
                 <button
                   type="button"
@@ -289,7 +287,7 @@ export default function ImportModal({ factory, year, onClose }: Props) {
                 </div>
               </div>
 
-              {/* 提示（例如把 ERP 原生檔丟到主匯入） */}
+              {/* 提示 */}
               {result?.notice && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
                   ⚠ {result.notice}
@@ -321,14 +319,14 @@ export default function ImportModal({ factory, year, onClose }: Props) {
                 </button>
                 <button
                   onClick={() => {
+                    onImported?.(); // 就地重載本頁資料，停在目前排放源分頁（不整頁 reload、不跳回基本設定）
                     onClose();
-                    window.location.reload();
                   }}
                   style={{ backgroundColor: '#0C3D2E' }}
                   className="flex-1 text-white font-medium py-2.5 rounded-lg
                              hover:opacity-90 transition text-sm"
                 >
-                  完成，重新整理頁面
+                  完成，更新此頁
                 </button>
               </div>
             </div>

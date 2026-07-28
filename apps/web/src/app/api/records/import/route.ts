@@ -318,6 +318,7 @@ export async function POST(req: NextRequest) {
   const factory_id = formData.get('factory_id') as string | null;
   const yearStr = formData.get('year') as string | null;
   const file = formData.get('file') as File | null;
+  const formDocUrl = (formData.get('source_doc_url') as string | null)?.trim() || null; // 表單層公檔連結（各組無逐列連結時的後備）
 
   if (!factory_id || !yearStr || !file) {
     return NextResponse.json(
@@ -472,8 +473,8 @@ export async function POST(req: NextRequest) {
            li.unit ?? source.default_unit, li.erp_ref, li.note],
         );
       }
-      // 公檔連結：取該組第一個非空值存到紀錄（同月同源共用一個資料夾連結）
-      const docUrl = items.map((li) => li.source_doc_url).find((u) => u) ?? null;
+      // 公檔連結：取該組第一個非空值；逐列皆空時退回表單層填入的公檔連結（同月同源共用一個資料夾連結）
+      const docUrl = items.map((li) => li.source_doc_url).find((u) => u) ?? formDocUrl;
       if (docUrl) {
         await query(`UPDATE activity_records SET source_doc_url = $1 WHERE id = $2`, [docUrl, recordId]);
       }
