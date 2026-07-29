@@ -168,6 +168,13 @@ export default function SummaryClient({
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <a
+              href={`/api/reports/inventory?year=${year}`}
+              className="bg-white/10 hover:bg-white/20 text-white border border-white/30 rounded-lg px-3 py-1.5 text-sm transition whitespace-nowrap"
+              title="匯出溫室氣體盤查排放清冊（表3-7）Excel"
+            >
+              ⬇ 匯出盤查清冊
+            </a>
             <span className="text-green-300 text-sm">盤查年度</span>
             <select
               value={year}

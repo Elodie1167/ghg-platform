@@ -172,6 +172,14 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
           />
 
           <div className="ml-auto flex gap-2">
+            <a
+              href={`/api/reports/factors${yearFilter != null ? `?year=${yearFilter}` : ''}`}
+              className="px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition border flex items-center"
+              style={{ borderColor: HEADER_BG, color: HEADER_BG }}
+              title="匯出排放係數管理表（表4-2 範疇1及2、表4-3 範疇3）Excel"
+            >
+              ⬇ 匯出係數表{yearFilter != null ? `（${yearFilter}）` : ''}
+            </a>
             <button onClick={() => { setShowCopyForm(!showCopyForm); setShowAddForm(false); }}
               className="px-4 py-1.5 rounded-lg text-sm font-medium hover:opacity-90 transition border"
               style={{ borderColor: HEADER_BG, color: HEADER_BG }}>
