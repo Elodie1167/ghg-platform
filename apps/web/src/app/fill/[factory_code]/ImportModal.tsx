@@ -80,14 +80,23 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
           return;
         }
         const months: number[] = j.data.months ?? [];
+        const skipped: number = j.data.skipped ?? 0;
+        const noticeParts: string[] = [];
+        if (months.length) {
+          noticeParts.push(`已依 Year-Month 匯入月份：${months.join('、')} 月`);
+          if (j.data.sourceEnabled) noticeParts.push('已自動為本廠啟用此排放源分頁');
+        }
+        if (skipped > 0 && months.length === 0) {
+          noticeParts.push(`⚠ 全部 ${skipped} 列被略過，未匯入任何月份。最常見原因是檔案內的年份與所選盤查年度（${year} 年）不符，請確認年度或改選對應年度。`);
+        } else if (skipped > 0) {
+          noticeParts.push(`略過 ${skipped} 列（年份非 ${year} 年、或用量為空/0）。`);
+        }
         setResult({
           imported: months.length,
           lineItemsImported: j.data.lineItemsImported ?? 0,
-          skipped: j.data.skipped ?? 0,
+          skipped,
           errors: [],
-          notice: months.length
-            ? `已依 Year-Month 匯入月份：${months.join('、')} 月`
-            : undefined,
+          notice: noticeParts.length ? noticeParts.join('\n') : undefined,
         });
         setStatus('success');
         return;
@@ -289,8 +298,8 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
 
               {/* 提示 */}
               {result?.notice && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-                  ⚠ {result.notice}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800 whitespace-pre-line">
+                  {result.notice}
                 </div>
               )}
 

@@ -216,6 +216,25 @@ export async function PUT(
           updatedRow.hfc_t = calc.hfc_t ?? null;
         }
       }
+    } else if (needsCalc && updatedRow.activity_value == null) {
+      // 活動數據被清空 → 一併清除既有 co2e，避免舊碳排數字殘留
+      await query(
+        `UPDATE activity_records
+         SET co2e_location = NULL, co2e_market = NULL, co2e_total = NULL,
+             co2e_biomass_co2 = NULL, emission_factor_id = NULL,
+             co2_t = NULL, ch4_t = NULL, n2o_t = NULL, hfc_t = NULL, updated_at = NOW()
+         WHERE id = $1`,
+        [id],
+      );
+      updatedRow.co2e_location = null;
+      updatedRow.co2e_market = null;
+      updatedRow.co2e_total = null;
+      updatedRow.co2e_biomass_co2 = null;
+      updatedRow.emission_factor_id = null;
+      updatedRow.co2_t = null;
+      updatedRow.ch4_t = null;
+      updatedRow.n2o_t = null;
+      updatedRow.hfc_t = null;
     }
 
     return NextResponse.json({ data: updatedRow, error: null });

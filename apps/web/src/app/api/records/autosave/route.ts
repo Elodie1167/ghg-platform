@@ -204,6 +204,17 @@ export async function POST(req: NextRequest) {
         substance: meta.substance ?? null,
         activity_record_id: recordId,
       });
+    } else {
+      // 活動數據被清空（null/0）→ 一併清除既有 co2e，避免舊碳排數字殘留
+      await query(
+        `UPDATE activity_records
+         SET co2e_location = NULL, co2e_market = NULL, co2e_total = NULL,
+             co2e_biomass_co2 = NULL, emission_factor_id = NULL,
+             co2_t = NULL, ch4_t = NULL, n2o_t = NULL, hfc_t = NULL,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [recordId],
+      );
     }
 
     return NextResponse.json(

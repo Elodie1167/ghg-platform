@@ -375,7 +375,8 @@ function MonthlySection({
                       {gasResult?.n2o_t?.toFixed(4) ?? '—'}
                     </td>
                     <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono">
-                      {gasResult?.co2e_t?.toFixed(4) ?? (rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—')}
+                      {/* 輸入清空(kg<=0)時直接顯示「—」，不 fallback 到 DB 舊 co2e，避免殘留 */}
+                      {gasResult?.co2e_t?.toFixed(4) ?? (b > 0 && k > 0 && rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—')}
                     </td>
                     <td className="px-2 py-1.5 text-center">
                       <button onClick={() => toggleReview(m)} disabled={!hasId}
@@ -467,7 +468,8 @@ function MonthlySection({
                     {gasResult?.n2o_t?.toFixed(4) ?? '—'}
                   </td>
                   <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono">
-                    {gasResult?.co2e_t?.toFixed(4) ?? (rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—')}
+                    {/* 輸入清空時直接顯示「—」，不 fallback 到 DB 舊 co2e，避免殘留 */}
+                    {gasResult?.co2e_t?.toFixed(4) ?? ((parseFloat(val) || 0) > 0 && rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—')}
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     <button onClick={() => toggleReview(m)} disabled={!hasId}

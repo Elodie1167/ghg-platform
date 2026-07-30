@@ -154,8 +154,26 @@ export async function POST(req: NextRequest) {
     months.push(month);
   }
 
+  // 匯入成功後，將該排放源自動加入本廠「已勾選」清單，
+  // 否則填報頁分頁會因該源未勾選而把匯入的月份整組隱藏（保留既有 waste_config）
+  let sourceEnabled = false;
+  if (months.length > 0) {
+    const upd = await query(
+      `UPDATE factories
+       SET source_config = jsonb_set(
+             COALESCE(source_config, '{}'::jsonb),
+             '{selected_ids}',
+             COALESCE(source_config->'selected_ids', '[]'::jsonb) || to_jsonb($1::text),
+             true)
+       WHERE id = $2
+         AND NOT COALESCE(source_config->'selected_ids', '[]'::jsonb) @> to_jsonb($1::text)`,
+      [sourceId, factory_id],
+    );
+    sourceEnabled = (upd.rowCount ?? 0) > 0;
+  }
+
   return NextResponse.json({
-    data: { lineItemsImported, months: months.sort((a, b) => a - b), skipped, source_code },
+    data: { lineItemsImported, months: months.sort((a, b) => a - b), skipped, source_code, sourceEnabled },
     error: null,
   });
 }
