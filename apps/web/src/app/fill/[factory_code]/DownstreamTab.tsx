@@ -167,6 +167,22 @@ export default function DownstreamTab({
     if (onReviewToggle && cell.id) onReviewToggle(cell.id, newVal);
   }
 
+  // 清空（activity_value→null，後端一併清 co2e）
+  async function clearCell(sourceId: string) {
+    const cell = cellsRef.current.get(sourceId);
+    if (!cell) return;
+    const next = new Map(cellsRef.current);
+    next.set(sourceId, { ...cell, tkm: '', saveStatus: 'idle' });
+    cellsRef.current = next; setCells(next);
+    if (!cell.id) return;
+    try {
+      await fetch(`/api/records/${cell.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activity_value: null }),
+      });
+    } catch { /* 忽略；畫面已清 */ }
+  }
+
   const grandTotal = visibleSources.reduce(
     (s, src) => s + (parseFloat(getCell(src.id).tkm) || 0), 0,
   );
@@ -220,7 +236,7 @@ export default function DownstreamTab({
                   </td>
                   <td className="px-4 py-2">
                     <input
-                      type="number" min="0" step="1" placeholder="輸入 TKM"
+                      type="number" min="0" step="any" placeholder="輸入 TKM"
                       value={cell.tkm}
                       onChange={(e) => updateCell(src.id, e.target.value)}
                       className="w-56 border border-gray-300 rounded px-3 py-1.5 text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -237,10 +253,15 @@ export default function DownstreamTab({
                       {cell.is_reviewed ? '✅' : '⬜'}
                     </button>
                   </td>
-                  <td className="px-3 py-2 text-center text-xs text-gray-400">
+                  <td className="px-3 py-2 text-center text-xs text-gray-400 whitespace-nowrap">
                     {cell.saveStatus === 'saving' && '⏳'}
                     {cell.saveStatus === 'saved' && '✓'}
                     {cell.saveStatus === 'error' && '❌'}
+                    <button onClick={() => clearCell(src.id)} disabled={!cell.id || cell.is_reviewed}
+                      title={cell.is_reviewed ? '已查核不可清空，請先取消查核' : '清空此列數值'}
+                      className={`ml-1 text-sm leading-none transition ${!cell.id || cell.is_reviewed ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
+                      ✕
+                    </button>
                   </td>
                 </tr>
               );
@@ -250,7 +271,7 @@ export default function DownstreamTab({
             <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-xs">
               <td className="px-4 py-2 text-gray-700">合計</td>
               <td className="px-4 py-2 font-mono text-gray-700">
-                {grandTotal > 0 ? grandTotal.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' TKM' : '—'}
+                {grandTotal > 0 ? grandTotal.toLocaleString(undefined, { maximumFractionDigits: 10 }) + ' TKM' : '—'}
               </td>
               <td colSpan={2} />
             </tr>

@@ -329,7 +329,7 @@ function FuelSection({
                     />
                   </td>
                   <td className="px-2 py-1.5">
-                    <input type="number" min="0" step="0.01" placeholder={source.default_unit}
+                    <input type="number" min="0" step="any" placeholder={source.default_unit}
                       value={row.activity_value}
                       onChange={(e) => updateRow(row.tempKey, 'activity_value', e.target.value)}
                       className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -389,7 +389,7 @@ function FuelSection({
               <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
                 <td colSpan={3} className="px-3 py-2 text-gray-700">合計</td>
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
-                  {totalVol.toLocaleString(undefined, { maximumFractionDigits: 2 })} {source.default_unit}
+                  {totalVol.toLocaleString(undefined, { maximumFractionDigits: 10 })} {source.default_unit}
                 </td>
                 {hasBioFactor && <td />}
                 <td />

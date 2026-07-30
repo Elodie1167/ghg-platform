@@ -237,7 +237,7 @@ function TravelSection({
                     </td>
                   )}
                   <td className="px-2 py-1.5">
-                    <input type="number" min="0" step="0.1"
+                    <input type="number" min="0" step="any"
                       placeholder={isHotel ? '房晚' : 'km'}
                       value={row.activity_value}
                       onChange={(e) => updateRow(row.tempKey, 'activity_value', e.target.value)}
@@ -275,7 +275,7 @@ function TravelSection({
               <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
                 <td colSpan={isHotel ? 3 : 4} className="px-3 py-2 text-gray-700">合計</td>
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
-                  {totalAct.toLocaleString(undefined, { maximumFractionDigits: 1 })} {source.default_unit}
+                  {totalAct.toLocaleString(undefined, { maximumFractionDigits: 10 })} {source.default_unit}
                 </td>
                 <td />
                 <td className="px-3 py-2 text-right font-mono text-gray-700">

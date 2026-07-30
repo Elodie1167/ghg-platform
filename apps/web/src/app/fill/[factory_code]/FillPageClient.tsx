@@ -955,6 +955,21 @@ export default function FillPageClient({
         });
       }
 
+      // 清空某月（activity_value→null，後端一併清 co2e）
+      async function clearMonth(month: number) {
+        const row = rowsRef.current[month];
+        const cleared = { ...row, value: '', carbonContent: '', notes: '', co2e: null };
+        rowsRef.current = { ...rowsRef.current, [month]: cleared };
+        setRows((prev) => ({ ...prev, [month]: cleared }));
+        if (!row.id) return;
+        try {
+          await fetch(`/api/records/${row.id}`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ activity_value: null, meter_number: null, notes: null }),
+          });
+        } catch { /* 忽略；畫面已清 */ }
+      }
+
       const totalVol = Object.values(rows).reduce((s, r) => s + (parseFloat(r.value) || 0), 0);
       const totalCo2e = Object.values(rows).reduce((s, r) => s + (r.co2e ?? 0), 0);
 
@@ -988,7 +1003,7 @@ export default function FillPageClient({
                     <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                       <td className="px-3 py-1.5 font-medium text-gray-700">{m} 月</td>
                       <td className="px-2 py-1.5">
-                        <input type="number" min="0" step="0.01" placeholder="採購量"
+                        <input type="number" min="0" step="any" placeholder="採購量"
                           value={row.value}
                           onChange={(e) => onChange(m, 'value', e.target.value)}
                           className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
@@ -1018,10 +1033,15 @@ export default function FillPageClient({
                           {row.is_reviewed ? '✅' : '⬜'}
                         </button>
                       </td>
-                      <td className="px-2 py-1.5 text-center text-xs">
+                      <td className="px-2 py-1.5 text-center text-xs whitespace-nowrap">
                         {row.saveStatus === 'saving' && '⏳'}
                         {row.saveStatus === 'saved' && '✓'}
                         {row.saveStatus === 'error' && '❌'}
+                        <button onClick={() => clearMonth(m)} disabled={!row.id || row.is_reviewed}
+                          title={row.is_reviewed ? '已查核不可清空，請先取消查核' : '清空此月數值'}
+                          className={`ml-1 text-sm leading-none transition ${!row.id || row.is_reviewed ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
+                          ✕
+                        </button>
                       </td>
                     </tr>
                   );
@@ -1031,7 +1051,7 @@ export default function FillPageClient({
                 <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
                   <td className="px-3 py-2 text-gray-700">合計</td>
                   <td className="px-3 py-2 text-right font-mono text-gray-700">
-                    {totalVol.toLocaleString(undefined, { maximumFractionDigits: 2 })} {source.default_unit}
+                    {totalVol.toLocaleString(undefined, { maximumFractionDigits: 10 })} {source.default_unit}
                   </td>
                   <td colSpan={3} />
                   <td className="px-3 py-2 text-right font-mono text-gray-700">
@@ -1098,7 +1118,24 @@ export default function FillPageClient({
       });
       const lvRef = useRef(lv);
       const [secStatus, setSecStatus] = useState<SaveStatus>('idle');
+      const [cleared, setCleared] = useState<Set<number>>(new Set());
       const tmr = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+      // 清空某月（autosave activity_value=null → 後端一併清 co2e；cleared 讓本列 co2e 即時顯示「—」）
+      async function clearWasteMonth(month: number) {
+        const next = { ...lvRef.current, [month]: '' };
+        lvRef.current = next; setLv(next);
+        setCleared((prev) => new Set(prev).add(month));
+        setSecStatus('saving');
+        try {
+          const res = await fetch('/api/records/autosave', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ factory_id: factory.id, emission_source_id: source.id, year, month, activity_value: null, activity_unit: 'kg', notes: null }),
+          });
+          if (!res.ok) throw new Error();
+          setSecStatus('saved'); setTimeout(() => setSecStatus('idle'), 2000);
+        } catch { setSecStatus('error'); }
+      }
 
       function onWasteChange(month: number, val: string) {
         const next = { ...lvRef.current, [month]: val };
@@ -1166,14 +1203,19 @@ export default function FillPageClient({
                   <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                     <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
                     <td className="px-4 py-1.5">
-                      <input type="number" min="0" step="0.01" placeholder="輸入重量"
+                      <input type="number" min="0" step="any" placeholder="輸入重量"
                         value={val}
                         onChange={(e) => onWasteChange(m, e.target.value)}
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500"
                       />
                     </td>
-                    <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono">
-                      {existing?.co2e_total != null ? existing.co2e_total.toFixed(4) : '—'}
+                    <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono whitespace-nowrap">
+                      {!cleared.has(m) && existing?.co2e_total != null ? existing.co2e_total.toFixed(4) : '—'}
+                      <button onClick={() => clearWasteMonth(m)} disabled={!existing?.id || existing?.is_reviewed}
+                        title={existing?.is_reviewed ? '已查核不可清空，請先取消查核' : '清空此月數值'}
+                        className={`ml-2 text-sm leading-none transition ${!existing?.id || existing?.is_reviewed ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
+                        ✕
+                      </button>
                     </td>
                   </tr>
                 );
@@ -1182,7 +1224,7 @@ export default function FillPageClient({
             <tfoot>
               <tr className="bg-green-50 font-semibold">
                 <td className="px-4 py-2 text-gray-700">合計</td>
-                <td className="px-4 py-2 text-right text-gray-700 font-mono">{total.toLocaleString()} kg</td>
+                <td className="px-4 py-2 text-right text-gray-700 font-mono">{total.toLocaleString(undefined, { maximumFractionDigits: 10 })} kg</td>
                 <td className="px-4 py-2 text-right text-gray-700 font-mono">
                   {co2eTotal > 0 ? co2eTotal.toFixed(4) + ' t' : '—'}
                 </td>
@@ -1275,7 +1317,7 @@ export default function FillPageClient({
                   <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                     <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
                     <td className="px-4 py-1.5 text-right font-mono text-gray-600">
-                      {kwh > 0 ? kwh.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}
+                      {kwh > 0 ? kwh.toLocaleString(undefined, { maximumFractionDigits: 10 }) : '—'}
                     </td>
                     <td className="px-4 py-1.5 text-right font-mono text-gray-700">
                       {c != null && kwh > 0 ? c.toFixed(4) : '—'}
@@ -1288,7 +1330,7 @@ export default function FillPageClient({
               <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold">
                 <td className="px-4 py-2 text-gray-700">合計</td>
                 <td className="px-4 py-2 text-right font-mono text-gray-700">
-                  {totalKwh.toLocaleString(undefined, { maximumFractionDigits: 2 })} kWh
+                  {totalKwh.toLocaleString(undefined, { maximumFractionDigits: 10 })} kWh
                 </td>
                 <td className="px-4 py-2 text-right font-mono text-green-800">
                   {totalCo2e != null ? totalCo2e.toFixed(4) + ' t' : '—'}
@@ -1533,7 +1575,7 @@ export default function FillPageClient({
           ].map(({ label, val, color }) => (
             <div key={label} className={`border rounded-xl p-4 ${color}`}>
               <div className="text-xs mb-1 opacity-70">{label}</div>
-              <div className="text-2xl font-bold">{val.toFixed(3)}</div>
+              <div className="text-2xl font-bold">{val.toFixed(4)}</div>
               <div className="text-xs opacity-60 mt-0.5">tCO₂e</div>
             </div>
           ))}
@@ -1661,7 +1703,7 @@ export default function FillPageClient({
 
     if (tabFactors.length === 0) return null;
 
-    function fmtNum(v: number | null, digits = 6): string {
+    function fmtNum(v: number | null, digits = 10): string {
       if (v === null || v === undefined) return '—';
       const n = Number(v); // 防禦：NUMERIC 可能以字串回傳，避免 .toFixed 例外
       if (Number.isNaN(n)) return '—';
@@ -1753,7 +1795,7 @@ export default function FillPageClient({
                     <span className="text-gray-800 flex-1">{source.name_zh}</span>
                     <span className="text-gray-500 text-xs">CO₂ EF</span>
                     <span className="font-mono font-bold text-gray-700 text-sm">
-                      {factor!.factor_substance != null ? Number(factor!.factor_substance).toLocaleString() : fmtNum(factor!.factor_co2, 4)}
+                      {factor!.factor_substance != null ? Number(factor!.factor_substance).toLocaleString(undefined, { maximumFractionDigits: 10 }) : fmtNum(factor!.factor_co2, 10)}
                     </span>
                   </div>
                 );

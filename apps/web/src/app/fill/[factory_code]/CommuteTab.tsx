@@ -145,6 +145,21 @@ function CommuteTable({
     }
   }
 
+  // 清空（activity_value→null，後端一併清 co2e）
+  async function clearRow(srcId: string) {
+    const row = rowsRef.current[srcId];
+    const src = sources.find((s) => s.id === srcId);
+    if (!row || !src) return;
+    const next = { ...rowsRef.current, [srcId]: { ...row, value: '', notes: '', co2e: null, status: 'idle' as SaveStatus } };
+    rowsRef.current = next; setRows(next);
+    try {
+      await fetch('/api/records/autosave', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ factory_id: factory.id, emission_source_id: srcId, year, month: ANNUAL_MONTH, activity_value: null, activity_unit: src.default_unit, notes: null }),
+      });
+    } catch { /* 忽略；畫面已清 */ }
+  }
+
   const totalPkm = sources.reduce((s, src) => s + (parseFloat(rows[src.id]?.value ?? '') || 0), 0);
   const totalCo2e = sources.reduce((s, src) => s + (rows[src.id]?.co2e ?? 0), 0);
 
@@ -172,7 +187,7 @@ function CommuteTable({
                 </td>
                 <td className="px-4 py-2">
                   <input
-                    type="number" min="0" step="1"
+                    type="number" min="0" step="any"
                     placeholder="填入全年 person-km"
                     value={row?.value ?? ''}
                     onChange={(e) => update(src.id, 'value', e.target.value)}
@@ -191,10 +206,15 @@ function CommuteTable({
                 <td className="px-4 py-2 text-right font-mono text-xs text-gray-400">
                   {row?.co2e != null ? row.co2e.toFixed(4) : '—'}
                 </td>
-                <td className="px-4 py-2 text-center text-xs">
+                <td className="px-4 py-2 text-center text-xs whitespace-nowrap">
                   {row?.status === 'saving' && '⏳'}
                   {row?.status === 'saved' && '✅'}
                   {row?.status === 'error' && '❌'}
+                  <button onClick={() => clearRow(src.id)} disabled={!row?.value && row?.co2e == null}
+                    title="清空數值"
+                    className={`ml-1 text-sm leading-none transition ${!row?.value && row?.co2e == null ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
+                    ✕
+                  </button>
                 </td>
               </tr>
             );
@@ -204,7 +224,7 @@ function CommuteTable({
           <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold">
             <td className="px-4 py-2 text-gray-700">合計</td>
             <td className="px-4 py-2 text-right font-mono text-gray-700">
-              {totalPkm > 0 ? totalPkm.toLocaleString() + ' person-km' : '—'}
+              {totalPkm > 0 ? totalPkm.toLocaleString(undefined, { maximumFractionDigits: 10 }) + ' person-km' : '—'}
             </td>
             <td />
             <td className="px-4 py-2 text-right font-mono text-gray-700">

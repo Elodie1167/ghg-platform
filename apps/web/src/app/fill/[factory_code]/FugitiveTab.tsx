@@ -211,6 +211,19 @@ function SepticSection({
     }
   }
 
+  // 清空某月（天數/人數/時數歸空，activity_value→null 後端一併清 co2e）
+  async function clearRow(idx: number) {
+    const id = rowsRef.current[idx].id;
+    setRows((p) => { const n = [...p]; n[idx] = { ...n[idx], days: '', workers: '', hours: '', co2e: null }; return n; });
+    if (!id) return;
+    try {
+      await fetch(`/api/records/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activity_value: null, sub_location: null, meter_number: null }),
+      });
+    } catch { /* 忽略；畫面已清 */ }
+  }
+
   const totalDays = rows.reduce((s, r) => s + (parseFloat(r.days) || 0), 0);
   const totalHours = rows.reduce((s, r) => s + (parseFloat(r.hours) || 0), 0);
   const monthsWithWorkers = rows.filter((r) => r.workers !== '' && !isNaN(parseFloat(r.workers)));
@@ -258,17 +271,22 @@ function SepticSection({
                       className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </td>
                   <td className="px-2 py-1.5">
-                    <input type="number" min="0" step="0.1" placeholder="hr" value={row.hours}
+                    <input type="number" min="0" step="any" placeholder="hr" value={row.hours}
                       onChange={(e) => updateRow(idx, 'hours', e.target.value)}
                       className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </td>
                   <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
                     {row.co2e != null ? row.co2e.toFixed(4) : '—'}
                   </td>
-                  <td className="px-2 py-1.5 text-center text-xs">
+                  <td className="px-2 py-1.5 text-center text-xs whitespace-nowrap">
                     {row.saveStatus === 'saving' && '⏳'}
                     {row.saveStatus === 'saved' && '✓'}
                     {row.saveStatus === 'error' && '❌'}
+                    <button onClick={() => clearRow(idx)} disabled={!row.id}
+                      title="清空此月數值"
+                      className={`ml-1 text-sm leading-none transition ${!row.id ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
+                      ✕
+                    </button>
                   </td>
                 </tr>
               );
@@ -279,7 +297,7 @@ function SepticSection({
               <td className="px-3 py-2 text-gray-700">年度合計</td>
               <td className="px-3 py-2 text-right font-mono text-gray-700">{totalDays > 0 ? totalDays.toLocaleString() + ' 天' : '—'}</td>
               <td className="px-3 py-2 text-right font-mono text-gray-700">{avgWorkers > 0 ? avgWorkers.toFixed(1) + ' 人均' : '—'}</td>
-              <td className="px-3 py-2 text-right font-mono text-gray-700">{totalHours > 0 ? totalHours.toLocaleString() + ' hr' : '—'}</td>
+              <td className="px-3 py-2 text-right font-mono text-gray-700">{totalHours > 0 ? totalHours.toLocaleString(undefined, { maximumFractionDigits: 10 }) + ' hr' : '—'}</td>
               <td className="px-3 py-2 text-right font-mono text-gray-700">{totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}</td>
               <td />
             </tr>
@@ -457,12 +475,12 @@ function ExtinguisherSection({
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                     </td>
                     <td className="px-2 py-1.5">
-                      <input type="number" min="0" step="0.1" placeholder="kg" value={row.kg_per_bottle}
+                      <input type="number" min="0" step="any" placeholder="kg" value={row.kg_per_bottle}
                         onChange={(e) => updateRow(row.tempKey, 'kg_per_bottle', e.target.value)}
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                     </td>
                     <td className="px-3 py-1.5 text-right text-gray-600 text-xs font-mono">
-                      {totalRowKg > 0 ? totalRowKg.toFixed(2) : '—'}
+                      {totalRowKg > 0 ? totalRowKg.toLocaleString(undefined, { maximumFractionDigits: 10 }) : '—'}
                     </td>
                     <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
                       {row.co2e_total != null ? row.co2e_total.toFixed(4) : '—'}
@@ -492,7 +510,7 @@ function ExtinguisherSection({
               <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
                 <td colSpan={5} className="px-3 py-2 text-gray-700">合計</td>
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
-                  {totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
+                  {totalKg.toLocaleString(undefined, { maximumFractionDigits: 10 })} kg
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
@@ -672,7 +690,7 @@ function EventFugitiveSection({
                     </td>
                   )}
                   <td className="px-2 py-1.5">
-                    <input type="number" min="0" step="0.001" placeholder={source.default_unit} value={row.activity_value}
+                    <input type="number" min="0" step="any" placeholder={source.default_unit} value={row.activity_value}
                       onChange={(e) => updateRow(row.tempKey, 'activity_value', e.target.value)}
                       className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </td>
@@ -711,7 +729,7 @@ function EventFugitiveSection({
               <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
                 <td colSpan={isSF6 ? 4 : 3} className="px-3 py-2 text-gray-700">合計</td>
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
-                  {totalVol.toLocaleString(undefined, { maximumFractionDigits: 3 })} {source.default_unit}
+                  {totalVol.toLocaleString(undefined, { maximumFractionDigits: 10 })} {source.default_unit}
                 </td>
                 <td />
                 <td className="px-3 py-2 text-right font-mono text-gray-700">

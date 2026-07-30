@@ -213,7 +213,7 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
                     </td>
                     <td className="px-2 py-1.5">
                       <input
-                        type="number" min="0" step="0.01" placeholder="MWh"
+                        type="number" min="0" step="any" placeholder="MWh"
                         value={row.rec_mwh}
                         onChange={(e) => updateRow(row.tempKey, 'rec_mwh', e.target.value)}
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -257,7 +257,7 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
               <tr className="bg-blue-50 font-semibold text-xs border-t border-blue-200">
                 <td colSpan={2} className="px-3 py-2 text-blue-800">合計</td>
                 <td className="px-3 py-2 text-right font-mono text-blue-800">
-                  {totalRecMwh.toFixed(2)} MWh
+                  {totalRecMwh.toLocaleString(undefined, { maximumFractionDigits: 10 })} MWh
                 </td>
                 <td colSpan={4} />
               </tr>

@@ -124,7 +124,7 @@ function computeGas(kg: number, factor: AssignedFactor) {
 // ─── 係數顯示面板 ────────────────────────────────────────────────
 function FactorPanel({ factor }: { factor: AssignedFactor }) {
   const [open, setOpen] = useState(false);
-  const fmt = (v: number | null) => v != null ? v.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—';
+  const fmt = (v: number | null) => v != null ? v.toLocaleString(undefined, { maximumFractionDigits: 10 }) : '—';
   return (
     <div className="mt-2 mb-3">
       <button onClick={() => setOpen((o) => !o)}
@@ -293,6 +293,29 @@ function MonthlySection({
     } catch { setStatus('error'); }
   }
 
+  // 清空某月的值（保留記錄列，activity_value 歸 null → 後端一併清 co2e）
+  async function clearMonth(month: number) {
+    const id = recordIds[month];
+    if (isLPG) {
+      const next = { ...lpgRef.current, [month]: { barrels: '', kgPerBarrel: '' } };
+      lpgRef.current = next; setLpgData(next);
+      setLpgEdited((prev) => new Set(prev).add(month));
+    } else {
+      const next = { ...lvRef.current, [month]: '' };
+      lvRef.current = next; setLv(next);
+    }
+    if (!id) return;
+    setStatus('saving');
+    try {
+      const res = await fetch(`/api/records/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activity_value: null, sub_location: null, meter_number: null }),
+      });
+      if (!res.ok) throw new Error();
+      setStatus('saved'); setTimeout(() => setStatus('idle'), 2000);
+    } catch { setStatus('error'); }
+  }
+
   async function toggleReview(month: number) {
     const id = recordIds[month];
     if (!id) return;
@@ -310,7 +333,12 @@ function MonthlySection({
   if (isLPG) {
     const totalKg = MONTHS.reduce((s, m) => {
       const row = lpgData[m] ?? { barrels: '', kgPerBarrel: '' };
-      return s + (parseFloat(row.barrels) || 0) * (parseFloat(row.kgPerBarrel) || 0);
+      const b = parseFloat(row.barrels) || 0;
+      const k = parseFloat(row.kgPerBarrel) || 0;
+      const rec = records.find((r) => r.month === m);
+      // 匯入只有合計量(activity_value)時也計入；手動清空(edited)則不計
+      const eff = b > 0 && k > 0 ? b * k : (!lpgEdited.has(m) && rec?.activity_value != null ? Number(rec.activity_value) : 0);
+      return s + eff;
     }, 0);
 
     return (
@@ -356,7 +384,7 @@ function MonthlySection({
                 const effectiveKg = b > 0 && k > 0
                   ? b * k
                   : (!edited && rec?.activity_value != null ? Number(rec.activity_value) : 0);
-                const computedKg = effectiveKg > 0 ? effectiveKg.toFixed(2) : '—';
+                const computedKg = effectiveKg > 0 ? effectiveKg.toLocaleString(undefined, { maximumFractionDigits: 10 }) : '—';
                 const gasResult = assignedFactor ? computeGas(effectiveKg, assignedFactor) : null;
                 return (
                   <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
@@ -368,7 +396,7 @@ function MonthlySection({
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
                     </td>
                     <td className="px-4 py-1.5">
-                      <input type="number" min="0" step="0.1" placeholder="kg/桶"
+                      <input type="number" min="0" step="any" placeholder="kg/桶"
                         value={row.kgPerBarrel}
                         onChange={(e) => onLpgChange(m, 'kgPerBarrel', e.target.value)}
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
@@ -392,11 +420,16 @@ function MonthlySection({
                       {/* 有活動數據(手動或匯入)才顯示 co2e；手動清空(edited 且無輸入)顯示「—」，避免殘留 */}
                       {gasResult?.co2e_t?.toFixed(4) ?? (!edited && rec?.activity_value != null && rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—')}
                     </td>
-                    <td className="px-2 py-1.5 text-center">
+                    <td className="px-2 py-1.5 text-center whitespace-nowrap">
                       <button onClick={() => toggleReview(m)} disabled={!hasId}
                         title={isRev ? '已查核（點擊取消）' : '點擊標記查核完成'}
                         className={`text-base leading-none transition-all ${isRev ? 'text-green-500' : 'text-gray-300'} ${!hasId ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
                         {isRev ? '✅' : '⬜'}
+                      </button>
+                      <button onClick={() => clearMonth(m)} disabled={!hasId || isRev}
+                        title={isRev ? '已查核不可清空，請先取消查核' : '清空此月數值'}
+                        className={`ml-1.5 text-sm leading-none transition ${!hasId || isRev ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
+                        ✕
                       </button>
                     </td>
                   </tr>
@@ -408,7 +441,7 @@ function MonthlySection({
                 <td className="px-4 py-2 text-gray-700">合計</td>
                 <td colSpan={2} />
                 <td className="px-4 py-2 text-right font-mono text-gray-700">
-                  {totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
+                  {totalKg.toLocaleString(undefined, { maximumFractionDigits: 10 })} kg
                 </td>
                 <td />
                 <td />
@@ -466,7 +499,7 @@ function MonthlySection({
                 <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                   <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
                   <td className="px-4 py-1.5">
-                    <input type="number" min="0" step="0.01" placeholder="輸入數量"
+                    <input type="number" min="0" step="any" placeholder="輸入數量"
                       value={val}
                       onChange={(e) => onChange(m, e.target.value)}
                       className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -485,11 +518,16 @@ function MonthlySection({
                     {/* 輸入清空時直接顯示「—」，不 fallback 到 DB 舊 co2e，避免殘留 */}
                     {gasResult?.co2e_t?.toFixed(4) ?? ((parseFloat(val) || 0) > 0 && rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—')}
                   </td>
-                  <td className="px-2 py-1.5 text-center">
+                  <td className="px-2 py-1.5 text-center whitespace-nowrap">
                     <button onClick={() => toggleReview(m)} disabled={!hasId}
                       title={isRev ? '已查核（點擊取消）' : '點擊標記查核完成'}
                       className={`text-base leading-none transition-all ${isRev ? 'text-green-500' : 'text-gray-300'} ${!hasId ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
                       {isRev ? '✅' : '⬜'}
+                    </button>
+                    <button onClick={() => clearMonth(m)} disabled={!hasId || isRev}
+                      title={isRev ? '已查核不可清空，請先取消查核' : '清空此月數值'}
+                      className={`ml-1.5 text-sm leading-none transition ${!hasId || isRev ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
+                      ✕
                     </button>
                   </td>
                 </tr>
@@ -500,7 +538,7 @@ function MonthlySection({
             <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold">
               <td className="px-4 py-2 text-gray-700">合計</td>
               <td className="px-4 py-2 text-right font-mono text-gray-700">
-                {total.toLocaleString(undefined, { maximumFractionDigits: 2 })} {source.default_unit}
+                {total.toLocaleString(undefined, { maximumFractionDigits: 10 })} {source.default_unit}
               </td>
               <td />
               <td />
@@ -705,7 +743,7 @@ function EventSection({
                     />
                   </td>
                   <td className="px-2 py-1.5">
-                    <input type="number" min="0" step="0.01" placeholder={source.default_unit}
+                    <input type="number" min="0" step="any" placeholder={source.default_unit}
                       value={row.activity_value}
                       onChange={(e) => updateRow(row.tempKey, 'activity_value', e.target.value)}
                       className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -763,7 +801,7 @@ function EventSection({
               <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
                 <td colSpan={3} className="px-3 py-2 text-gray-700">合計</td>
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
-                  {totalVol.toLocaleString(undefined, { maximumFractionDigits: 2 })} {source.default_unit}
+                  {totalVol.toLocaleString(undefined, { maximumFractionDigits: 10 })} {source.default_unit}
                 </td>
                 {hasBioFactor && <td />}
                 <td />

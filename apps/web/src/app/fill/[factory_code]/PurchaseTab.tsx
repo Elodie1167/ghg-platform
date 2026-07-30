@@ -103,7 +103,7 @@ export default function PurchaseTab({
                         <div className="text-xs text-gray-400 mt-0.5">重量由上游運輸帶入（唯讀）</div>
                       </td>
                       <td className="px-4 py-2 text-right font-mono text-gray-700">
-                        {ton > 0 ? ton.toLocaleString(undefined, { maximumFractionDigits: 2 }) : <span className="text-gray-300">—</span>}
+                        {ton > 0 ? ton.toLocaleString(undefined, { maximumFractionDigits: 10 }) : <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-4 py-2 text-right text-xs text-gray-400">計算引擎建置中</td>
                     </tr>
@@ -202,6 +202,20 @@ function WaterRow({
     }, 1000);
   }
 
+  // 清空（activity_value→null，後端一併清 co2e）
+  async function clearRow() {
+    const id = rowRef.current.id;
+    const cleared = { ...rowRef.current, value: '', notes: '', co2e: null };
+    rowRef.current = cleared; setRow(cleared);
+    if (!id) return;
+    try {
+      await fetch(`/api/records/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activity_value: null, notes: null }),
+      });
+    } catch { /* 忽略；畫面已清 */ }
+  }
+
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-2xl">
       <table className="w-full text-sm border-collapse">
@@ -222,7 +236,7 @@ function WaterRow({
             </td>
             <td className="px-4 py-2">
               <input
-                type="number" min="0" step="0.01" placeholder={`年度總用水量 (${unit})`}
+                type="number" min="0" step="any" placeholder={`年度總用水量 (${unit})`}
                 value={row.value}
                 onChange={(e) => onChange('value', e.target.value)}
                 className="w-full border border-gray-300 rounded px-2 py-1.5 text-right focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -239,10 +253,15 @@ function WaterRow({
                 className="w-full border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
               />
             </td>
-            <td className="px-4 py-2 text-center text-xs">
+            <td className="px-4 py-2 text-center text-xs whitespace-nowrap">
               {row.status === 'saving' && '⏳'}
               {row.status === 'saved' && '✅'}
               {row.status === 'error' && '❌'}
+              <button onClick={clearRow} disabled={!row.id}
+                title="清空數值"
+                className={`ml-1 text-sm leading-none transition ${!row.id ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
+                ✕
+              </button>
             </td>
           </tr>
         </tbody>
@@ -308,6 +327,19 @@ function FabricRow({
     }, 1000);
   }
 
+  async function clearRow() {
+    const id = rowRef.current.id;
+    const cleared = { ...rowRef.current, value: '', notes: '', co2e: null };
+    rowRef.current = cleared; setRow(cleared);
+    if (!id) return;
+    try {
+      await fetch(`/api/records/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activity_value: null, notes: null }),
+      });
+    } catch { /* 忽略；畫面已清 */ }
+  }
+
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-2xl">
       <table className="w-full text-sm border-collapse">
@@ -343,10 +375,15 @@ function FabricRow({
                 className="w-full border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
               />
             </td>
-            <td className="px-4 py-2 text-center text-xs">
+            <td className="px-4 py-2 text-center text-xs whitespace-nowrap">
               {row.status === 'saving' && '⏳'}
               {row.status === 'saved' && '✅'}
               {row.status === 'error' && '❌'}
+              <button onClick={clearRow} disabled={!row.id}
+                title="清空數值"
+                className={`ml-1 text-sm leading-none transition ${!row.id ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
+                ✕
+              </button>
             </td>
           </tr>
         </tbody>

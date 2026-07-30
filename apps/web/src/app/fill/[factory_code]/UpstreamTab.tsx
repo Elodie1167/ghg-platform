@@ -263,13 +263,13 @@ export default function UpstreamTab({
                         <td key={item} className="px-2 py-1.5" colSpan={2}>
                           <div className="flex gap-1 items-center">
                             <input
-                              type="number" min="0" step="0.01" placeholder="TKM"
+                              type="number" min="0" step="any" placeholder="TKM"
                               value={cell.tkm}
                               onChange={(e) => updateCell(src.id, supply, item, 'tkm', e.target.value)}
                               className="w-24 border border-gray-300 rounded px-1.5 py-1 text-right text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
                             />
                             <input
-                              type="number" min="0" step="0.01" placeholder="ton"
+                              type="number" min="0" step="any" placeholder="ton"
                               value={cell.ton}
                               onChange={(e) => updateCell(src.id, supply, item, 'ton', e.target.value)}
                               className="w-20 border border-gray-300 rounded px-1.5 py-1 text-right text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -311,10 +311,10 @@ export default function UpstreamTab({
                       <td key={item} className="px-2 py-2 font-mono text-gray-700" colSpan={2}>
                         <div className="flex gap-1">
                           <span className="w-24 text-right">
-                            {tkmTotal > 0 ? tkmTotal.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'}
+                            {tkmTotal > 0 ? tkmTotal.toLocaleString(undefined, { maximumFractionDigits: 10 }) : '—'}
                           </span>
                           <span className="w-20 text-right">
-                            {tonTotal > 0 ? tonTotal.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—'}
+                            {tonTotal > 0 ? tonTotal.toLocaleString(undefined, { maximumFractionDigits: 10 }) : '—'}
                           </span>
                         </div>
                       </td>
@@ -337,7 +337,7 @@ export default function UpstreamTab({
               <div key={item} className="text-xs">
                 <span className="text-gray-500">{item}：</span>
                 <span className="font-mono font-semibold text-green-800">
-                  {total > 0 ? total.toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' ton' : '—'}
+                  {total > 0 ? total.toLocaleString(undefined, { maximumFractionDigits: 10 }) + ' ton' : '—'}
                 </span>
               </div>
             );
