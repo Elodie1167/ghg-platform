@@ -202,6 +202,8 @@ function MonthlySection({
   });
   const lpgRef = useRef(lpgData);
   useEffect(() => { if (isLPG) lpgRef.current = lpgData; }, [lpgData, isLPG]);
+  // 本 session 手動編輯過的月份：用來區分「匯入(未編輯、只有合計量)」與「手動清空」
+  const [lpgEdited, setLpgEdited] = useState<Set<number>>(new Set());
 
   const [recordIds, setRecordIds] = useState<Record<number, string | null>>(() => {
     const init: Record<number, string | null> = {};
@@ -255,6 +257,7 @@ function MonthlySection({
     const next = { ...lpgRef.current, [month]: { ...current, [field]: val } };
     lpgRef.current = next;
     setLpgData(next);
+    setLpgEdited((prev) => new Set(prev).add(month));
     if (tmr.current) clearTimeout(tmr.current);
     tmr.current = setTimeout(() => saveLpgMonth(month), 1000);
   }
@@ -347,8 +350,14 @@ function MonthlySection({
                 const isRev = reviewed[m] ?? false;
                 const b = parseFloat(row.barrels) || 0;
                 const k = parseFloat(row.kgPerBarrel) || 0;
-                const computedKg = b > 0 && k > 0 ? (b * k).toFixed(2) : '—';
-                const gasResult = assignedFactor ? computeGas(b * k, assignedFactor) : null;
+                const edited = lpgEdited.has(m);
+                // 合計 kg：優先用「桶數×每桶kg」；若無(例如 ERP/範本匯入只帶合計量)且本 session
+                // 未手動編輯過該月，則回退用 activity_value（匯入的合計量）。手動清空(edited)時不回退，維持歸零。
+                const effectiveKg = b > 0 && k > 0
+                  ? b * k
+                  : (!edited && rec?.activity_value != null ? Number(rec.activity_value) : 0);
+                const computedKg = effectiveKg > 0 ? effectiveKg.toFixed(2) : '—';
+                const gasResult = assignedFactor ? computeGas(effectiveKg, assignedFactor) : null;
                 return (
                   <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                     <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
@@ -364,7 +373,12 @@ function MonthlySection({
                         onChange={(e) => onLpgChange(m, 'kgPerBarrel', e.target.value)}
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
                     </td>
-                    <td className="px-4 py-1.5 text-right font-mono text-gray-600 text-xs">{computedKg}</td>
+                    <td className="px-4 py-1.5 text-right font-mono text-gray-600 text-xs">
+                      {computedKg}
+                      {!edited && b === 0 && rec?.activity_value != null && (
+                        <span className="ml-1 text-[10px] text-blue-400 align-middle" title="由 ERP/範本匯入的合計量；如需改為桶數×每桶kg 直接於左側填入即可覆蓋">匯入</span>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
                       {gasResult?.co2_t?.toFixed(4) ?? '—'}
                     </td>
@@ -375,8 +389,8 @@ function MonthlySection({
                       {gasResult?.n2o_t?.toFixed(4) ?? '—'}
                     </td>
                     <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono">
-                      {/* 輸入清空(kg<=0)時直接顯示「—」，不 fallback 到 DB 舊 co2e，避免殘留 */}
-                      {gasResult?.co2e_t?.toFixed(4) ?? (b > 0 && k > 0 && rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—')}
+                      {/* 有活動數據(手動或匯入)才顯示 co2e；手動清空(edited 且無輸入)顯示「—」，避免殘留 */}
+                      {gasResult?.co2e_t?.toFixed(4) ?? (!edited && rec?.activity_value != null && rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—')}
                     </td>
                     <td className="px-2 py-1.5 text-center">
                       <button onClick={() => toggleReview(m)} disabled={!hasId}
