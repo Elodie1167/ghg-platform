@@ -98,15 +98,14 @@ function parseTransportSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
 
     if (val === null) continue;
 
+    // 上下游運輸已合併為共用係數（3-4-A 陸/3-4-B 海/3-4-C 空），不再分上下游
     let source_code: string | null = null;
-    if (direction.includes('上游') || direction.includes('採購入廠')) {
+    const isTransport = direction.includes('上游') || direction.includes('採購入廠')
+      || direction.includes('下游') || direction.includes('成品出貨');
+    if (isTransport) {
       if (mode.includes('海運')) source_code = '3-4-B';
       else if (mode.includes('陸運')) source_code = '3-4-A';
       else if (mode.includes('空運')) source_code = '3-4-C';
-    } else if (direction.includes('下游') || direction.includes('成品出貨')) {
-      if (mode.includes('海運')) source_code = '3-9-C';
-      else if (mode.includes('陸運')) source_code = '3-9-A';
-      else if (mode.includes('空運')) source_code = '3-9-B';
     }
 
     if (source_code) {
@@ -231,14 +230,12 @@ function parseWorkbook(wb: XLSX.WorkBook): ParsedRow[] {
         { col: 3, source_code: '1-1A-3', unit: 'kg' },
         { col: 4, source_code: '1-1A-4', unit: 'L' },
         { col: 5, source_code: '1-1B-1', unit: 'kg' },
-        { col: 6, source_code: '1-1B-2', unit: 'kg' },
       ]),
 
     'S1_燃料移動': () =>
       parseMonthlySheet(wb.Sheets['S1_燃料移動'], [
         { col: 1, source_code: '1-2A-1', unit: 'L' },
         { col: 2, source_code: '1-2A-2', unit: 'L' },
-        { col: 3, source_code: '1-2A-4', unit: 'L' },
         { col: 4, source_code: '1-2A-5', unit: 'L' },
       ]),
 
@@ -266,7 +263,6 @@ function parseWorkbook(wb: XLSX.WorkBook): ParsedRow[] {
       parseMonthlySheet(wb.Sheets['S3_廢棄物'], [
         { col: 1, source_code: '3-5-A', unit: 'kg' },
         { col: 2, source_code: '3-5-B', unit: 'kg' },
-        { col: 3, source_code: '3-5-C', unit: 'kg' },
         { col: 4, source_code: '3-5-D', unit: 'kg' },
         { col: 5, source_code: '3-5-E', unit: 'kg' },
         { col: 6, source_code: '3-5-F', unit: 'kg' },

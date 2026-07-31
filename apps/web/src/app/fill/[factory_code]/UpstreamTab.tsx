@@ -213,9 +213,9 @@ export default function UpstreamTab({
   return (
     <div>
       <div className="mb-6">
-        <h2 className="text-lg font-semibold text-gray-800">上游運輸（進口）S3</h2>
+        <h2 className="text-lg font-semibold text-gray-800">上下游運輸 S3</h2>
         <p className="text-sm text-gray-500 mt-0.5">
-          填入年度 TKM 與採購總重量。重量合計會自動帶入「採購商品」頁籤。
+          上下游（進出口）運輸共用係數。填入年度 TKM 與採購總重量；重量合計會自動帶入「採購商品」頁籤。
         </p>
       </div>
 

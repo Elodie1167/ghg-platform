@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
 import { MONTHS, HEADER_BG, BTN_BG } from './tabTypes';
 import type { EmissionSource, ActivityRecord, AssignedFactor } from './page';
+import LineItemsCell from './LineItemsCell';
 
 interface EventRow {
   tempKey: string;
@@ -20,14 +21,20 @@ interface EventRow {
   n2o_t: number | null;
   hfc_t: number | null;
   is_reviewed: boolean;
+  line_items_count: number;
   saveStatus: SaveStatus;
 }
 
-function computeGas(kg: number, factor: AssignedFactor) {
+// 與伺服器 co2e-calc.ts 一致：液態/氣態燃料（體積單位）且有密度時，
+// 先 value × density → 質量(kg)，再 × NCV(MJ/kg)。公務車-柴油即走此鏈。
+const VOLUME_UNITS = new Set(['L', 'l', 'KL', 'Nm3', 'Nm³', 'm3', 'm³']);
+function computeGas(value: number, factor: AssignedFactor, unit: string) {
   const GWP_CH4 = factor.gwp_ch4 ?? 27.9;
   const GWP_N2O = factor.gwp_n2o ?? 273.0;
   const ncv = factor.ncv ?? 0;
-  if (kg <= 0) return null;
+  if (value <= 0) return null;
+  const density = factor.density ?? 0;
+  const kg = (VOLUME_UNITS.has(unit) && density > 0) ? value * density : value;
   let co2_t: number, ch4_t: number, n2o_t: number;
   if (ncv > 0) {
     const tj = (kg * ncv) / 1_000_000;
@@ -156,6 +163,7 @@ function FuelSection({
       n2o_t: r.n2o_t ?? null,
       hfc_t: r.hfc_t ?? null,
       is_reviewed: r.is_reviewed ?? false,
+      line_items_count: r.line_items_count ?? 0,
       saveStatus: 'idle' as SaveStatus,
     }))
   );
@@ -174,7 +182,7 @@ function FuelSection({
       month: new Date().getMonth() + 1,
       date_from: '', sub_location: '', activity_value: '', meter_number: '', notes: '',
       co2e_total: null, co2_t: null, ch4_t: null, n2o_t: null, hfc_t: null,
-      is_reviewed: false, saveStatus: 'idle',
+      is_reviewed: false, line_items_count: 0, saveStatus: 'idle',
     }]);
   }
 
@@ -297,6 +305,7 @@ function FuelSection({
                 <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CO₂ (t)</th>
                 <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CH₄ (t)</th>
                 <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>N₂O (t)</th>
+                <th className="px-3 py-2.5 text-center w-16">明細</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
                 <th className="px-3 py-2.5 text-center w-8">狀</th>
                 <th className="px-3 py-2.5 w-8" />
@@ -305,7 +314,7 @@ function FuelSection({
             <tbody>
               {rows.map((row, idx) => {
                 const gasResult = assignedFactor
-                  ? computeGas(parseFloat(row.activity_value) || 0, assignedFactor)
+                  ? computeGas(parseFloat(row.activity_value) || 0, assignedFactor, source.default_unit)
                   : null;
                 return (
                 <tr key={row.tempKey} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
@@ -363,6 +372,10 @@ function FuelSection({
                     {(gasResult?.n2o_t ?? row.n2o_t)?.toFixed(4) ?? '—'}
                   </td>
                   <td className="px-2 py-1.5 text-center">
+                    <LineItemsCell recordId={row.id} count={row.line_items_count}
+                      title={`${source.name_zh} ${row.month} 月`} unit={source.default_unit} sourceCode={source.source_code} />
+                  </td>
+                  <td className="px-2 py-1.5 text-center">
                     <button
                       onClick={() => toggleReview(row.tempKey)}
                       disabled={!row.id}
@@ -399,7 +412,7 @@ function FuelSection({
                 <td />
                 <td />
                 <td />
-                <td colSpan={3} />
+                <td colSpan={4} />
               </tr>
             </tfoot>
           </table>

@@ -248,7 +248,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
     ? actVal * edit.grid_emission_factor / 1000
     : null;
 
-  function fmtNum(v: number | null, d = 6): string {
+  function fmtNum(v: number | null, d = 10): string {
     return v != null ? v.toFixed(d) : '—';
   }
 
@@ -492,64 +492,64 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                     <>
                       <span className="text-gray-400">× {edit.density} ({edit.density_unit})</span>
                       <span className="text-gray-400">=</span>
-                      <span className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{massKg.toFixed(3)} kg</span>
+                      <span className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{massKg.toFixed(10)} kg</span>
                     </>
                   )}
                   <span className="text-gray-400">× NCV {edit.ncv} ({edit.ncv_unit})</span>
                   <span className="text-gray-400">=</span>
-                  <span className="bg-amber-50 text-amber-800 px-2 py-1 rounded">{energyMJ.toFixed(3)} MJ</span>
-                  <span className="text-gray-400">= {energyTJ.toFixed(8)} TJ</span>
+                  <span className="bg-amber-50 text-amber-800 px-2 py-1 rounded">{energyMJ.toFixed(10)} MJ</span>
+                  <span className="text-gray-400">= {energyTJ.toFixed(10)} TJ</span>
                 </div>
 
                 {tonCO2Fossil != null && (
                   <div className="flex items-center gap-2 flex-wrap pl-4 border-l-2 border-gray-200">
                     <span className="text-gray-500">CO₂ {bioFrac > 0 ? '(化石)' : ''}:</span>
-                    <span>{fossilTJ.toFixed(8)} TJ × {edit.factor_co2} kg/TJ ÷ 1000</span>
+                    <span>{fossilTJ.toFixed(10)} TJ × {edit.factor_co2} kg/TJ ÷ 1000</span>
                     <span className="text-gray-400">=</span>
-                    <span className="text-gray-700">{fmtNum(tonCO2Fossil, 6)} tCO₂</span>
+                    <span className="text-gray-700">{fmtNum(tonCO2Fossil)} tCO₂</span>
                     <span className="text-gray-400">× {GWP_CO2}</span>
-                    <span className="font-semibold text-green-700">{fmtNum(tonCO2Fossil * GWP_CO2, 6)} tCO₂-eq</span>
+                    <span className="font-semibold text-green-700">{fmtNum(tonCO2Fossil * GWP_CO2)} tCO₂-eq</span>
                   </div>
                 )}
                 {tonCO2Bio != null && (
                   <div className="flex items-center gap-2 flex-wrap pl-4 border-l-2 border-green-300 bg-green-50/50 rounded-r">
                     <span className="text-green-700">🌿 CO₂ (生質):</span>
-                    <span className="text-green-600">{bioTJ.toFixed(8)} TJ × {edit.factor_co2_bio} kg/TJ ÷ 1000</span>
+                    <span className="text-green-600">{bioTJ.toFixed(10)} TJ × {edit.factor_co2_bio} kg/TJ ÷ 1000</span>
                     <span className="text-gray-400">=</span>
-                    <span className="text-green-700">{fmtNum(tonCO2Bio, 6)} tCO₂</span>
+                    <span className="text-green-700">{fmtNum(tonCO2Bio)} tCO₂</span>
                     <span className="text-gray-400 text-[10px]">（另計，不入化石排放總量）</span>
                   </div>
                 )}
                 {tonCH4 != null && (
                   <div className="flex items-center gap-2 flex-wrap pl-4 border-l-2 border-gray-200">
                     <span className="text-gray-500">CH₄:</span>
-                    <span>{energyTJ.toFixed(8)} TJ × {edit.factor_ch4} kg/TJ ÷ 1000</span>
+                    <span>{energyTJ.toFixed(10)} TJ × {edit.factor_ch4} kg/TJ ÷ 1000</span>
                     <span className="text-gray-400">=</span>
-                    <span className="text-gray-700">{fmtNum(tonCH4, 8)} tCH₄</span>
+                    <span className="text-gray-700">{fmtNum(tonCH4)} tCH₄</span>
                     <span className="text-gray-400">× {GWP_CH4}</span>
-                    <span className="font-semibold text-green-700">{fmtNum(tonCH4 * GWP_CH4, 6)} tCO₂-eq</span>
+                    <span className="font-semibold text-green-700">{fmtNum(tonCH4 * GWP_CH4)} tCO₂-eq</span>
                   </div>
                 )}
                 {tonN2O != null && (
                   <div className="flex items-center gap-2 flex-wrap pl-4 border-l-2 border-gray-200">
                     <span className="text-gray-500">N₂O:</span>
-                    <span>{energyTJ.toFixed(8)} TJ × {edit.factor_n2o} kg/TJ ÷ 1000</span>
+                    <span>{energyTJ.toFixed(10)} TJ × {edit.factor_n2o} kg/TJ ÷ 1000</span>
                     <span className="text-gray-400">=</span>
-                    <span className="text-gray-700">{fmtNum(tonN2O, 8)} tN₂O</span>
+                    <span className="text-gray-700">{fmtNum(tonN2O)} tN₂O</span>
                     <span className="text-gray-400">× {GWP_N2O}</span>
-                    <span className="font-semibold text-green-700">{fmtNum(tonN2O * GWP_N2O, 6)} tCO₂-eq</span>
+                    <span className="font-semibold text-green-700">{fmtNum(tonN2O * GWP_N2O)} tCO₂-eq</span>
                   </div>
                 )}
 
                 {co2eq != null && (
                   <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200 flex flex-wrap items-center gap-3">
                     <span className="text-xs text-gray-600">{previewActivity} {previewUnit} 化石排放合計：</span>
-                    <span className="text-lg font-bold text-green-800">{co2eq.toFixed(4)} tCO₂-eq</span>
+                    <span className="text-lg font-bold text-green-800">{co2eq.toFixed(10)} tCO₂-eq</span>
                     {co2eBio != null && (
                       <>
                         <span className="text-xs text-gray-400 mx-1">｜</span>
                         <span className="text-xs text-green-700">🌿 生質 CO₂（另計）：</span>
-                        <span className="font-semibold text-green-700">{co2eBio.toFixed(4)} tCO₂</span>
+                        <span className="font-semibold text-green-700">{co2eBio.toFixed(10)} tCO₂</span>
                       </>
                     )}
                   </div>
@@ -565,7 +565,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                   <span className="text-gray-400">× {edit.grid_emission_factor} tCO₂/MWh ÷ 1000</span>
                   <span className="text-gray-400">=</span>
                   <span className="bg-green-50 text-green-800 px-2 py-1 rounded font-semibold">
-                    {gridCO2eq?.toFixed(6)} tCO₂-eq
+                    {gridCO2eq?.toFixed(10)} tCO₂-eq
                   </span>
                 </div>
               </div>
@@ -586,20 +586,20 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                     <span className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{previewActivity} hr</span>
                     <span className="text-gray-400">÷ 24</span>
                     <span className="text-gray-400">=</span>
-                    <span className="bg-amber-50 text-amber-800 px-2 py-1 rounded">{effectiveMandays.toFixed(4)} mandays</span>
+                    <span className="bg-amber-50 text-amber-800 px-2 py-1 rounded">{effectiveMandays.toFixed(10)} mandays</span>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap pl-4 border-l-2 border-gray-200">
                     <span className="text-gray-500">CH₄:</span>
-                    <span>{effectiveMandays.toFixed(4)} mandays × BOD {bod} × Bo {bo} × MCF {mcf}</span>
+                    <span>{effectiveMandays.toFixed(10)} mandays × BOD {bod} × Bo {bo} × MCF {mcf}</span>
                     <span className="text-gray-400">=</span>
-                    <span className="text-gray-700">{ch4Kg.toFixed(6)} kg CH₄</span>
-                    <span className="text-gray-400">= {tCH4.toFixed(8)} tCH₄</span>
+                    <span className="text-gray-700">{ch4Kg.toFixed(10)} kg CH₄</span>
+                    <span className="text-gray-400">= {tCH4.toFixed(10)} tCH₄</span>
                     <span className="text-gray-400">× GWP {GWP_CH4}</span>
-                    <span className="font-semibold text-green-700">{tCO2e.toFixed(6)} tCO₂-eq</span>
+                    <span className="font-semibold text-green-700">{tCO2e.toFixed(10)} tCO₂-eq</span>
                   </div>
                   <div className="mt-2 p-3 bg-green-50 rounded-lg border border-green-200 flex items-center gap-3">
                     <span className="text-xs text-gray-600">{previewActivity} hr 排放合計：</span>
-                    <span className="text-lg font-bold text-green-800">{tCO2e.toFixed(6)} tCO₂-eq</span>
+                    <span className="text-lg font-bold text-green-800">{tCO2e.toFixed(10)} tCO₂-eq</span>
                   </div>
                 </div>
               );
@@ -613,7 +613,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                   <span className="text-gray-400">× CO₂ {edit.factor_co2} ÷ 1000</span>
                   <span className="text-gray-400">=</span>
                   <span className="bg-green-50 text-green-800 px-2 py-1 rounded font-semibold">
-                    {(actVal * (edit.factor_co2 ?? 0) / 1000).toFixed(6)} tCO₂
+                    {(actVal * (edit.factor_co2 ?? 0) / 1000).toFixed(10)} tCO₂
                   </span>
                 </div>
               </div>
@@ -627,7 +627,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                   <span className="text-gray-400">× 排放係數 {edit.scope3_factor} ÷ 1000</span>
                   <span className="text-gray-400">=</span>
                   <span className="bg-green-50 text-green-800 px-2 py-1 rounded font-semibold">
-                    {(actVal * (edit.scope3_factor ?? 0) / 1000).toFixed(6)} tCO₂e
+                    {(actVal * (edit.scope3_factor ?? 0) / 1000).toFixed(10)} tCO₂e
                   </span>
                 </div>
               </div>

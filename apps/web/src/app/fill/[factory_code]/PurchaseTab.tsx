@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
 import { HEADER_BG } from './tabTypes';
 import type { ActivityRecord } from './page';
+import LineItemsCell from './LineItemsCell';
 
 const FABRIC_CODE = '3-1-A';
 const WATER_CODE = '3-1-E'; // 外購水（採購水資源）
@@ -130,6 +131,9 @@ export default function PurchaseTab({
             existingRec={existingRecords.find(
               (r) => r.emission_source_id === waterSource.id && r.month === ANNUAL_MONTH
             ) ?? null}
+            lineItemsCount={existingRecords.find(
+              (r) => r.emission_source_id === waterSource.id && r.month === ANNUAL_MONTH
+            )?.line_items_count ?? 0}
           />
           <p className="text-xs text-gray-400 mt-2">
             填年度總用水量，CO₂e 由「外購水」係數自動計算。需先於
@@ -143,7 +147,7 @@ export default function PurchaseTab({
 }
 
 function WaterRow({
-  sourceId, sourceName, sourceCode, unit, factory, year, existingRec,
+  sourceId, sourceName, sourceCode, unit, factory, year, existingRec, lineItemsCount,
 }: {
   sourceId: string;
   sourceName: string;
@@ -152,6 +156,7 @@ function WaterRow({
   factory: TabProps['factory'];
   year: number;
   existingRec: ActivityRecord | null;
+  lineItemsCount: number;
 }) {
   const [row, setRow] = useState<AnnualRow>({
     id: existingRec?.id ?? null,
@@ -225,6 +230,7 @@ function WaterRow({
             <th className="px-4 py-2.5 text-right w-44">年度用水量 ({unit})</th>
             <th className="px-4 py-2.5 text-right w-28">CO₂e (t)</th>
             <th className="px-4 py-2.5 text-left w-40">備註</th>
+            <th className="px-4 py-2.5 text-center w-16">明細</th>
             <th className="px-4 py-2.5 text-center w-8">狀</th>
           </tr>
         </thead>
@@ -252,6 +258,10 @@ function WaterRow({
                 onChange={(e) => onChange('notes', e.target.value)}
                 className="w-full border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
               />
+            </td>
+            <td className="px-4 py-2 text-center">
+              <LineItemsCell recordId={row.id} count={lineItemsCount}
+                title={`${sourceName} 年度`} unit={unit} sourceCode={sourceCode} />
             </td>
             <td className="px-4 py-2 text-center text-xs whitespace-nowrap">
               {row.status === 'saving' && '⏳'}

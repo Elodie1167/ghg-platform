@@ -9,7 +9,6 @@ import FuelTab from './FuelTab';
 import CombustionTab from './CombustionTab';
 import FugitiveTab from './FugitiveTab';
 import UpstreamTab from './UpstreamTab';
-import DownstreamTab from './DownstreamTab';
 import PurchaseTab from './PurchaseTab';
 import TravelTab from './TravelTab';
 import CommuteTab from './CommuteTab';
@@ -43,8 +42,7 @@ const TABS = [
   { id: 'purchase',    label: '採購商品 3.1' },
   { id: 'energy',      label: '能源相關 3.3' },
   { id: 'waste',       label: '廢棄物 3.5' },
-  { id: 'upstream',    label: '上游運輸 3.4' },
-  { id: 'downstream',  label: '下游運輸 3.9' },
+  { id: 'upstream',    label: '上下游運輸 3.4' },
   { id: 'travel',      label: '商務旅行 3.6' },
   { id: 'commute',     label: '員工通勤 3.7' },
   { id: 'summary',     label: '碳排彙總' },
@@ -1874,7 +1872,6 @@ export default function FillPageClient({
       case 'purchase':   return <PurchaseTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} upstreamTons={upstreamTons} onReviewToggle={handleReviewToggle} />;
       case 'energy':     return <EnergyTab />;
       case 'upstream':   return null;  // always-mounted outside TabContent
-      case 'downstream': return <DownstreamTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
       case 'travel':     return <TravelTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
       case 'commute':    return <CommuteTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
       case 'summary':    return <SummaryTab />;

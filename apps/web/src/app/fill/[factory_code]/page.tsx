@@ -52,6 +52,7 @@ export interface ActivityRecord {
   meter_number: string | null;
   date_from: string | null;
   date_to: string | null;
+  line_items_count: number;
 }
 
 export interface WasteMethodConfig {
@@ -149,7 +150,8 @@ export default async function FillPage({
             ar.co2e_total::float, ar.co2e_location::float, ar.co2e_market::float, ar.co2e_biomass_co2::float,
             ar.co2_t::float, ar.ch4_t::float, ar.n2o_t::float, ar.hfc_t::float,
             ar.is_reviewed, ar.sub_location, ar.meter_number,
-            ar.date_from::text AS date_from, ar.date_to::text AS date_to
+            ar.date_from::text AS date_from, ar.date_to::text AS date_to,
+            (SELECT COUNT(*)::int FROM activity_line_items li WHERE li.activity_record_id = ar.id) AS line_items_count
      FROM activity_records ar
      JOIN emission_sources es ON ar.emission_source_id = es.id
      WHERE ar.factory_id = $1 AND ar.year = $2
