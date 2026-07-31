@@ -9,11 +9,13 @@ import FuelTab from './FuelTab';
 import CombustionTab from './CombustionTab';
 import FugitiveTab from './FugitiveTab';
 import UpstreamTab from './UpstreamTab';
+import DownstreamTab from './DownstreamTab';
 import PurchaseTab from './PurchaseTab';
 import TravelTab from './TravelTab';
 import CommuteTab from './CommuteTab';
 import RECPanel from './RECPanel';
 import LineItemsModal from './LineItemsModal';
+import LineItemsCell from './LineItemsCell';
 
 const SOURCE_GROUPS = [
   { tabId: 'elec',        label: '電力來源',                 prefix: '2-'  },
@@ -42,7 +44,8 @@ const TABS = [
   { id: 'purchase',    label: '採購商品 3.1' },
   { id: 'energy',      label: '能源相關 3.3' },
   { id: 'waste',       label: '廢棄物 3.5' },
-  { id: 'upstream',    label: '上下游運輸 3.4' },
+  { id: 'upstream',    label: '上游運輸 3.4' },
+  { id: 'downstream',  label: '下游運輸 3.9' },
   { id: 'travel',      label: '商務旅行 3.6' },
   { id: 'commute',     label: '員工通勤 3.7' },
   { id: 'summary',     label: '碳排彙總' },
@@ -1188,6 +1191,7 @@ export default function FillPageClient({
               <tr style={{ backgroundColor: '#0C3D2E' }} className="text-white">
                 <th className="px-4 py-2 text-left w-16">月份</th>
                 <th className="px-4 py-2 text-right">廢棄物重量 (kg)</th>
+                <th className="px-3 py-2 text-center w-16">明細</th>
                 <th className="px-4 py-2 text-right w-32">CO₂e (t)</th>
               </tr>
             </thead>
@@ -1207,6 +1211,10 @@ export default function FillPageClient({
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500"
                       />
                     </td>
+                    <td className="px-3 py-1.5 text-center">
+                      <LineItemsCell recordId={existing?.id ?? null} count={existing?.line_items_count ?? 0}
+                        title={`${source.name_zh} ${m} 月`} unit="kg" sourceCode={source.source_code} />
+                    </td>
                     <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono whitespace-nowrap">
                       {!cleared.has(m) && existing?.co2e_total != null ? existing.co2e_total.toFixed(4) : '—'}
                       <button onClick={() => clearWasteMonth(m)} disabled={!existing?.id || existing?.is_reviewed}
@@ -1223,6 +1231,7 @@ export default function FillPageClient({
               <tr className="bg-green-50 font-semibold">
                 <td className="px-4 py-2 text-gray-700">合計</td>
                 <td className="px-4 py-2 text-right text-gray-700 font-mono">{total.toLocaleString(undefined, { maximumFractionDigits: 10 })} kg</td>
+                <td />
                 <td className="px-4 py-2 text-right text-gray-700 font-mono">
                   {co2eTotal > 0 ? co2eTotal.toFixed(4) + ' t' : '—'}
                 </td>
@@ -1872,6 +1881,7 @@ export default function FillPageClient({
       case 'purchase':   return <PurchaseTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} upstreamTons={upstreamTons} onReviewToggle={handleReviewToggle} />;
       case 'energy':     return <EnergyTab />;
       case 'upstream':   return null;  // always-mounted outside TabContent
+      case 'downstream': return <DownstreamTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
       case 'travel':     return <TravelTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
       case 'commute':    return <CommuteTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
       case 'summary':    return <SummaryTab />;

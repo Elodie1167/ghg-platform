@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, Component, type ReactNode, type ErrorInfo 
 import type { TabProps, SaveStatus } from './tabTypes';
 import { MONTHS, HEADER_BG, BTN_BG } from './tabTypes';
 import type { EmissionSource, ActivityRecord } from './page';
+import LineItemsCell from './LineItemsCell';
 
 class FugitiveErrorBoundary extends Component<
   { children: ReactNode },
@@ -44,6 +45,7 @@ interface EventRow {
   co2e_total: number | null;
   hfc_t: number | null;
   is_reviewed: boolean;
+  line_items_count: number;
   saveStatus: SaveStatus;
 }
 
@@ -58,6 +60,7 @@ interface ExtRow {
   kg_per_bottle: string;  // stored in meter_number
   co2e_total: number | null;
   is_reviewed: boolean;
+  line_items_count: number;
   saveStatus: SaveStatus;
 }
 
@@ -233,6 +236,9 @@ function SepticSection({
   const totalCo2e = rows.reduce((s, r) => s + (r.co2e ?? 0), 0);
   const aveHour = totalDays > 0 && avgWorkers > 0 ? totalHours / avgWorkers / totalDays : 0;
   const proportion = aveHour / 24;
+  // 月 → 單據明細筆數（>0 表示該月為多張單據加總，顯示「查看明細」）
+  const liCountByMonth: Record<number, number> = {};
+  for (const r of records) liCountByMonth[r.month] = r.line_items_count ?? 0;
 
   return (
     <div className="mb-6">
@@ -251,6 +257,7 @@ function SepticSection({
               <th className="px-3 py-2 text-right w-28">上班人數</th>
               <th className="px-3 py-2 text-right w-28">上班總時數</th>
               <th className="px-3 py-2 text-right w-28">CO₂e (t)</th>
+              <th className="px-3 py-2 text-center w-16">明細</th>
               <th className="px-3 py-2 text-center w-8">狀</th>
             </tr>
           </thead>
@@ -278,6 +285,10 @@ function SepticSection({
                   <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
                     {row.co2e != null ? row.co2e.toFixed(4) : '—'}
                   </td>
+                  <td className="px-3 py-1.5 text-center">
+                    <LineItemsCell recordId={row.id} count={liCountByMonth[m] ?? 0}
+                      title={`${source.name_zh} ${m} 月`} unit={source.default_unit} sourceCode={source.source_code} />
+                  </td>
                   <td className="px-2 py-1.5 text-center text-xs whitespace-nowrap">
                     {row.saveStatus === 'saving' && '⏳'}
                     {row.saveStatus === 'saved' && '✓'}
@@ -299,6 +310,7 @@ function SepticSection({
               <td className="px-3 py-2 text-right font-mono text-gray-700">{avgWorkers > 0 ? avgWorkers.toFixed(1) + ' 人均' : '—'}</td>
               <td className="px-3 py-2 text-right font-mono text-gray-700">{totalHours > 0 ? totalHours.toLocaleString(undefined, { maximumFractionDigits: 10 }) + ' hr' : '—'}</td>
               <td className="px-3 py-2 text-right font-mono text-gray-700">{totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}</td>
+              <td />
               <td />
             </tr>
           </tfoot>

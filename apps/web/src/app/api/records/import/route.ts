@@ -98,14 +98,16 @@ function parseTransportSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
 
     if (val === null) continue;
 
-    // 上下游運輸已合併為共用係數（3-4-A 陸/3-4-B 海/3-4-C 空），不再分上下游
+    // 上游填 3-4、下游填 3-9（下游計算時共用上游同運輸別係數，見 emission_sources.factor_source_id）
     let source_code: string | null = null;
-    const isTransport = direction.includes('上游') || direction.includes('採購入廠')
-      || direction.includes('下游') || direction.includes('成品出貨');
-    if (isTransport) {
+    if (direction.includes('上游') || direction.includes('採購入廠')) {
       if (mode.includes('海運')) source_code = '3-4-B';
       else if (mode.includes('陸運')) source_code = '3-4-A';
       else if (mode.includes('空運')) source_code = '3-4-C';
+    } else if (direction.includes('下游') || direction.includes('成品出貨')) {
+      if (mode.includes('海運')) source_code = '3-9-C';
+      else if (mode.includes('陸運')) source_code = '3-9-A';
+      else if (mode.includes('空運')) source_code = '3-9-B';
     }
 
     if (source_code) {

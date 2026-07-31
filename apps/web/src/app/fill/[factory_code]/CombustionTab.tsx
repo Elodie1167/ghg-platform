@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
 import { MONTHS, HEADER_BG, BTN_BG } from './tabTypes';
 import type { EmissionSource, ActivityRecord, AssignedFactor } from './page';
+import LineItemsCell from './LineItemsCell';
 
 // 用月度表格（帳單/計量）
 const MONTHLY_CODES = ['1-1A-3', '1-1A-9'];
@@ -23,6 +24,7 @@ interface EventRow {
   n2o_t: number | null;
   hfc_t: number | null;
   is_reviewed: boolean;
+  line_items_count: number;
   saveStatus: SaveStatus;
 }
 
@@ -329,6 +331,9 @@ function MonthlySection({
   }
 
   const co2eTotal = records.filter((r) => r.co2e_total != null).reduce((s, r) => s + (r.co2e_total ?? 0), 0);
+  // 月 → 單據明細筆數（>0 表示該月為多張單據加總，顯示「查看明細」）
+  const liCountByMonth: Record<number, number> = {};
+  for (const r of records) liCountByMonth[r.month] = r.line_items_count ?? 0;
 
   if (isLPG) {
     const totalKg = MONTHS.reduce((s, m) => {
@@ -367,6 +372,7 @@ function MonthlySection({
                 <th className="px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CH₄ (t)</th>
                 <th className="px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>N₂O (t)</th>
                 <th className="px-4 py-2 text-right w-28">CO₂e (t)</th>
+                <th className="px-3 py-2 text-center w-16">明細</th>
                 <th className="px-4 py-2 text-center w-10">查核</th>
               </tr>
             </thead>
@@ -420,6 +426,10 @@ function MonthlySection({
                       {/* 有活動數據(手動或匯入)才顯示 co2e；手動清空(edited 且無輸入)顯示「—」，避免殘留 */}
                       {gasResult?.co2e_t?.toFixed(4) ?? (!edited && rec?.activity_value != null && rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—')}
                     </td>
+                    <td className="px-3 py-1.5 text-center">
+                      <LineItemsCell recordId={recordIds[m] ?? null} count={liCountByMonth[m] ?? 0}
+                        title={`${source.name_zh} ${m} 月`} unit={source.default_unit} sourceCode={source.source_code} />
+                    </td>
                     <td className="px-2 py-1.5 text-center whitespace-nowrap">
                       <button onClick={() => toggleReview(m)} disabled={!hasId}
                         title={isRev ? '已查核（點擊取消）' : '點擊標記查核完成'}
@@ -449,6 +459,7 @@ function MonthlySection({
                 <td className="px-4 py-2 text-right font-mono text-gray-700">
                   {co2eTotal > 0 ? co2eTotal.toFixed(4) + ' t' : '—'}
                 </td>
+                <td />
                 <td />
               </tr>
             </tfoot>
@@ -485,6 +496,7 @@ function MonthlySection({
               <th className="px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CH₄ (t)</th>
               <th className="px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>N₂O (t)</th>
               <th className="px-4 py-2 text-right w-28">CO₂e (t)</th>
+              <th className="px-3 py-2 text-center w-16">明細</th>
               <th className="px-4 py-2 text-center w-10">查核</th>
             </tr>
           </thead>
@@ -518,6 +530,10 @@ function MonthlySection({
                     {/* 輸入清空時直接顯示「—」，不 fallback 到 DB 舊 co2e，避免殘留 */}
                     {gasResult?.co2e_t?.toFixed(4) ?? ((parseFloat(val) || 0) > 0 && rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—')}
                   </td>
+                  <td className="px-3 py-1.5 text-center">
+                    <LineItemsCell recordId={recordIds[m] ?? null} count={liCountByMonth[m] ?? 0}
+                      title={`${source.name_zh} ${m} 月`} unit={source.default_unit} sourceCode={source.source_code} />
+                  </td>
                   <td className="px-2 py-1.5 text-center whitespace-nowrap">
                     <button onClick={() => toggleReview(m)} disabled={!hasId}
                       title={isRev ? '已查核（點擊取消）' : '點擊標記查核完成'}
@@ -546,6 +562,7 @@ function MonthlySection({
               <td className="px-4 py-2 text-right font-mono text-gray-700">
                 {co2eTotal > 0 ? co2eTotal.toFixed(4) + ' t' : '—'}
               </td>
+              <td />
               <td />
             </tr>
           </tfoot>
@@ -584,6 +601,7 @@ function EventSection({
       n2o_t: r.n2o_t ?? null,
       hfc_t: r.hfc_t ?? null,
       is_reviewed: r.is_reviewed ?? false,
+      line_items_count: r.line_items_count ?? 0,
       saveStatus: 'idle' as SaveStatus,
     }))
   );
@@ -599,7 +617,7 @@ function EventSection({
       month: new Date().getMonth() + 1,
       date_from: '', sub_location: '', activity_value: '', meter_number: '', notes: '',
       co2e_total: null, co2_t: null, ch4_t: null, n2o_t: null, hfc_t: null,
-      is_reviewed: false, saveStatus: 'idle',
+      is_reviewed: false, line_items_count: 0, saveStatus: 'idle',
     }]);
   }
 
@@ -711,6 +729,7 @@ function EventSection({
                 <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CO₂ (t)</th>
                 <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CH₄ (t)</th>
                 <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>N₂O (t)</th>
+                <th className="px-3 py-2.5 text-center w-16">明細</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
                 <th className="px-3 py-2.5 text-center w-8">狀</th>
                 <th className="px-3 py-2.5 w-8" />
@@ -778,6 +797,10 @@ function EventSection({
                     {(gasResult?.n2o_t ?? row.n2o_t)?.toFixed(4) ?? '—'}
                   </td>
                   <td className="px-2 py-1.5 text-center">
+                    <LineItemsCell recordId={row.id} count={row.line_items_count}
+                      title={`${source.name_zh} ${row.month} 月`} unit={source.default_unit} sourceCode={source.source_code} />
+                  </td>
+                  <td className="px-2 py-1.5 text-center">
                     <button onClick={() => toggleReview(row.tempKey)} disabled={!row.id}
                       title={row.is_reviewed ? '已查核（點擊取消）' : '點擊標記查核完成'}
                       className={`text-base leading-none transition-all ${row.is_reviewed ? 'text-green-500' : 'text-gray-300'} ${!row.id ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
@@ -808,6 +831,7 @@ function EventSection({
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
                 </td>
+                <td />
                 <td />
                 <td />
                 <td />

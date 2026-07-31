@@ -52,7 +52,10 @@ export async function calcCo2e(params: {
             ef.gwp_ch4::float, ef.gwp_n2o::float
      FROM emission_factors ef
      JOIN emission_factor_assignments efa ON efa.emission_factor_id = ef.id
-     WHERE efa.factory_id = $1 AND ef.emission_source_id = $2 AND ef.year <= $3
+     WHERE efa.factory_id = $1
+       AND ef.emission_source_id = COALESCE(
+             (SELECT factor_source_id FROM emission_sources WHERE id = $2), $2)
+       AND ef.year <= $3
      ORDER BY ef.year DESC LIMIT 1`,
     [params.factory_id, params.emission_source_id, params.year],
   );

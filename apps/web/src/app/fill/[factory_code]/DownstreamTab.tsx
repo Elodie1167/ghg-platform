@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
 import { HEADER_BG } from './tabTypes';
+import LineItemsCell from './LineItemsCell';
 
 // 3-9-A: 陸運, 3-9-B: 空運, 3-9-C: 海運
 const ALL_TRANSPORT_CODES = ['3-9-A', '3-9-B', '3-9-C'] as const;
@@ -221,6 +222,7 @@ export default function DownstreamTab({
             <tr style={{ backgroundColor: HEADER_BG }} className="text-white text-xs">
               <th className="px-4 py-2.5 text-left w-28">運輸方式</th>
               <th className="px-4 py-2.5 text-left">年度 TKM（公噸‧公里）</th>
+              <th className="px-3 py-2.5 text-center w-16">明細</th>
               <th className="px-3 py-2.5 text-center w-16">查核</th>
               <th className="px-3 py-2.5 text-center w-12">狀態</th>
             </tr>
@@ -241,6 +243,11 @@ export default function DownstreamTab({
                       onChange={(e) => updateCell(src.id, e.target.value)}
                       className="w-56 border border-gray-300 rounded px-3 py-1.5 text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <LineItemsCell recordId={cell.id}
+                      count={existingRecords.find((r) => r.emission_source_id === src.id && r.month === ANNUAL_MONTH)?.line_items_count ?? 0}
+                      title={`${src.name_zh} 年度`} unit="tonne-km" sourceCode={src.source_code} />
                   </td>
                   <td className="px-3 py-2 text-center">
                     <button
@@ -273,7 +280,7 @@ export default function DownstreamTab({
               <td className="px-4 py-2 font-mono text-gray-700">
                 {grandTotal > 0 ? grandTotal.toLocaleString(undefined, { maximumFractionDigits: 10 }) + ' TKM' : '—'}
               </td>
-              <td colSpan={2} />
+              <td colSpan={3} />
             </tr>
           </tfoot>
         </table>
