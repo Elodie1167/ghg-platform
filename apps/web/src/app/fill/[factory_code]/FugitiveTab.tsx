@@ -345,7 +345,9 @@ function ExtinguisherSection({
       refill_count: r.notes ?? '',
       kg_per_bottle: r.meter_number ?? '',
       co2e_total: r.co2e_total,
-      is_reviewed: r.is_reviewed ?? false, saveStatus: 'idle' as SaveStatus,
+      is_reviewed: r.is_reviewed ?? false,
+      line_items_count: r.line_items_count ?? 0,
+      saveStatus: 'idle' as SaveStatus,
     }))
   );
   const rowsRef = useRef(rows);
@@ -354,7 +356,7 @@ function ExtinguisherSection({
 
   function addRow() {
     const tempKey = `new-${Date.now()}`;
-    setRows((p) => [...p, { tempKey, id: null, month: new Date().getMonth() + 1, date_from: '', new_count: '', refill_count: '', kg_per_bottle: '', co2e_total: null, is_reviewed: false, saveStatus: 'idle' }]);
+    setRows((p) => [...p, { tempKey, id: null, month: new Date().getMonth() + 1, date_from: '', new_count: '', refill_count: '', kg_per_bottle: '', co2e_total: null, is_reviewed: false, line_items_count: 0, saveStatus: 'idle' }]);
   }
 
   async function toggleReview(tempKey: string) {
@@ -451,6 +453,7 @@ function ExtinguisherSection({
                 <th className="px-3 py-2.5 text-right w-28">一瓶 (kg)</th>
                 <th className="px-3 py-2.5 text-right w-28">合計 (kg)</th>
                 <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
+                <th className="px-3 py-2.5 text-center w-16">明細</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
                 <th className="px-3 py-2.5 text-center w-8">狀</th>
                 <th className="px-3 py-2.5 w-8" />
@@ -498,6 +501,10 @@ function ExtinguisherSection({
                       {row.co2e_total != null ? row.co2e_total.toFixed(4) : '—'}
                     </td>
                     <td className="px-2 py-1.5 text-center">
+                      <LineItemsCell recordId={row.id} count={row.line_items_count}
+                        title={`${source.name_zh} ${row.month} 月`} unit={source.default_unit} sourceCode={source.source_code} />
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
                       <button onClick={() => toggleReview(row.tempKey)} disabled={!row.id}
                         title={row.is_reviewed ? '已查核（點擊取消）' : '點擊標記查核完成'}
                         className={`text-base leading-none transition-all ${row.is_reviewed ? 'text-green-500' : 'text-gray-300'} ${!row.id ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
@@ -527,7 +534,7 @@ function ExtinguisherSection({
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
                 </td>
-                <td colSpan={3} />
+                <td colSpan={4} />
               </tr>
             </tfoot>
           </table>
@@ -561,7 +568,9 @@ function EventFugitiveSection({
         activity_value: actVal, unit_count: unitCnt,
         notes: r.notes ?? '', co2e_total: r.co2e_total,
         hfc_t: r.hfc_t ?? null,
-        is_reviewed: r.is_reviewed ?? false, saveStatus: 'idle' as SaveStatus,
+        is_reviewed: r.is_reviewed ?? false,
+        line_items_count: r.line_items_count ?? 0,
+        saveStatus: 'idle' as SaveStatus,
       };
     })
   );
@@ -571,7 +580,7 @@ function EventFugitiveSection({
 
   function addRow() {
     const tempKey = `new-${Date.now()}`;
-    setRows((p) => [...p, { tempKey, id: null, month: new Date().getMonth() + 1, date_from: '', sub_location: '', activity_value: '', unit_count: '', notes: '', co2e_total: null, hfc_t: null, is_reviewed: false, saveStatus: 'idle' }]);
+    setRows((p) => [...p, { tempKey, id: null, month: new Date().getMonth() + 1, date_from: '', sub_location: '', activity_value: '', unit_count: '', notes: '', co2e_total: null, hfc_t: null, is_reviewed: false, line_items_count: 0, saveStatus: 'idle' }]);
   }
 
   async function toggleReview(tempKey: string) {
@@ -668,6 +677,7 @@ function EventFugitiveSection({
                 <th className="px-3 py-2.5 text-left w-28">備註</th>
                 <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
                 <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>HFCs (t)</th>
+                <th className="px-3 py-2.5 text-center w-16">明細</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
                 <th className="px-3 py-2.5 text-center w-8">狀</th>
                 <th className="px-3 py-2.5 w-8" />
@@ -718,6 +728,10 @@ function EventFugitiveSection({
                     {row.hfc_t?.toFixed(4) ?? '—'}
                   </td>
                   <td className="px-2 py-1.5 text-center">
+                    <LineItemsCell recordId={row.id} count={row.line_items_count}
+                      title={`${source.name_zh} ${row.month} 月`} unit={source.default_unit} sourceCode={source.source_code} />
+                  </td>
+                  <td className="px-2 py-1.5 text-center">
                     <button onClick={() => toggleReview(row.tempKey)} disabled={!row.id}
                       title={row.is_reviewed ? '已查核（點擊取消）' : '點擊標記查核完成'}
                       className={`text-base leading-none transition-all ${row.is_reviewed ? 'text-green-500' : 'text-gray-300'} ${!row.id ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
@@ -748,7 +762,7 @@ function EventFugitiveSection({
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
                 </td>
                 <td />
-                <td colSpan={3} />
+                <td colSpan={4} />
               </tr>
             </tfoot>
           </table>
