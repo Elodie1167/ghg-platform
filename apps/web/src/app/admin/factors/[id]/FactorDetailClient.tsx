@@ -151,6 +151,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
   const isRefrigerant = !isSeptic && (factor.category?.includes('冷媒') || factor.source_code.startsWith('1-4'));
   const isWelding = factor.source_code.startsWith('1-3'); // 焊條：已外算碳含量，只需 CO₂ 係數
   const isScope3 = factor.scope === 3;                    // 範疇三：只需排放係數 + GWP
+  const isFabricBoiler = factor.source_code === '1-1A-9'; // 廢布鍋爐：一般 S1 燃燒，不需生質分段係數
 
   async function handleSave() {
     setSaving(true);
@@ -369,8 +370,8 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                 <NumField label="物質/HFCs 係數" value={n(edit.factor_substance)} onChange={(v) => setEdit((e) => ({ ...e, factor_substance: p(v) }))} unit="tCO₂-eq/unit" />
               </div>
             )}
-            {/* 生質燃料分段係數（僅 S1 燃燒類；焊條/冷媒/化糞池不顯示） */}
-            {factor.scope === 1 && !isRefrigerant && !isSeptic && !isWelding && (
+            {/* 生質燃料分段係數（僅 S1 燃燒類；焊條/冷媒/化糞池/廢布鍋爐不顯示） */}
+            {factor.scope === 1 && !isRefrigerant && !isSeptic && !isWelding && !isFabricBoiler && (
               <div className="p-4 bg-green-50 rounded-lg border border-green-100">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xs font-semibold text-green-800">🌿 生質部分係數（適用混合生質燃料，如 B20/B40）</span>
