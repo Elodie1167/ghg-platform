@@ -15,7 +15,8 @@ export interface FactoryReduction {
   s2_mkt: number;
   s1s2_loc: number;
   s1s2_mkt: number;
-  irec_kwh: number;   // 該廠 iREC 度數（張數 = irec_kwh / 1000，1 張 = 1 MWh）
+  irec_kwh: number;    // 該廠 iREC 度數（張數 = irec_kwh / 1000，1 張 = 1 MWh）
+  biomass_co2: number; // 生質 CO₂（另計，依 GHG Protocol 不計入 S1）tCO₂
 }
 
 // iREC 1 張 = 1 MWh = 1000 kWh

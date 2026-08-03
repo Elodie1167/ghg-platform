@@ -21,27 +21,27 @@ export async function GET(req: NextRequest) {
 
     const r2 = (v: number) => Math.round(v * 100) / 100;
     const certs = (kwh: number) => Math.round((kwh / IREC_KWH_PER_CERT) * 100) / 100;
-    const header = ['S1', 'S2 地域', 'S2 市場', 'S1+S2 地域', 'S1+S2 市場', 'iREC 張數'];
+    const header = ['S1', 'S2 地域', 'S2 市場', 'S1+S2 地域', 'S1+S2 市場', 'iREC 張數', '生質CO₂(另計·不入S1)'];
 
     // 產區加總
     const regionMap = new Map<string, typeof d.totals>();
     for (const f of d.factories) {
-      const cur = regionMap.get(f.country_code) ?? { s1: 0, s2_loc: 0, s2_mkt: 0, s1s2_loc: 0, s1s2_mkt: 0, irec_kwh: 0 };
+      const cur = regionMap.get(f.country_code) ?? { s1: 0, s2_loc: 0, s2_mkt: 0, s1s2_loc: 0, s1s2_mkt: 0, irec_kwh: 0, biomass_co2: 0 };
       cur.s1 += f.s1; cur.s2_loc += f.s2_loc; cur.s2_mkt += f.s2_mkt;
-      cur.s1s2_loc += f.s1s2_loc; cur.s1s2_mkt += f.s1s2_mkt; cur.irec_kwh += f.irec_kwh;
+      cur.s1s2_loc += f.s1s2_loc; cur.s1s2_mkt += f.s1s2_mkt; cur.irec_kwh += f.irec_kwh; cur.biomass_co2 += f.biomass_co2;
       regionMap.set(f.country_code, cur);
     }
     const regionRows: (string | number)[][] = [['產區', ...header]];
-    regionRows.push(['集團合計', r2(d.totals.s1), r2(d.totals.s2_loc), r2(d.totals.s2_mkt), r2(d.totals.s1s2_loc), r2(d.totals.s1s2_mkt), certs(d.totals.irec_kwh)]);
+    regionRows.push(['集團合計', r2(d.totals.s1), r2(d.totals.s2_loc), r2(d.totals.s2_mkt), r2(d.totals.s1s2_loc), r2(d.totals.s1s2_mkt), certs(d.totals.irec_kwh), r2(d.totals.biomass_co2)]);
     for (const [cc, t] of regionMap) {
-      regionRows.push([COUNTRY_LABELS[cc] ?? cc, r2(t.s1), r2(t.s2_loc), r2(t.s2_mkt), r2(t.s1s2_loc), r2(t.s1s2_mkt), certs(t.irec_kwh)]);
+      regionRows.push([COUNTRY_LABELS[cc] ?? cc, r2(t.s1), r2(t.s2_loc), r2(t.s2_mkt), r2(t.s1s2_loc), r2(t.s1s2_mkt), certs(t.irec_kwh), r2(t.biomass_co2)]);
     }
 
     // 各廠明細
     const facRows: (string | number)[][] = [['廠代碼', '名稱', '產區', ...header]];
     for (const f of d.factories as FactoryReduction[]) {
       facRows.push([f.factory_code, f.name_zh, COUNTRY_LABELS[f.country_code] ?? f.country_code,
-        r2(f.s1), r2(f.s2_loc), r2(f.s2_mkt), r2(f.s1s2_loc), r2(f.s1s2_mkt), certs(f.irec_kwh)]);
+        r2(f.s1), r2(f.s2_loc), r2(f.s2_mkt), r2(f.s1s2_loc), r2(f.s1s2_mkt), certs(f.irec_kwh), r2(f.biomass_co2)]);
     }
 
     // 摘要

@@ -10,7 +10,7 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 const COUNTRY_ORDER = ['TWN', 'CHN', 'NVN', 'SVN', 'CAB', 'SLV', 'BGD', 'IND'];
 const T2030_RATIO = 0.5; // 2030 相比 2020 減 50%，2050 減 100%
 
-type RowAgg = { s1: number; s2_loc: number; s2_mkt: number; s1s2_loc: number; s1s2_mkt: number; irec_kwh: number };
+type RowAgg = { s1: number; s2_loc: number; s2_mkt: number; s1s2_loc: number; s1s2_mkt: number; irec_kwh: number; biomass_co2: number };
 
 const fmt2 = (v: number) => (v === 0 ? '—' : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const fmt0 = (v: number) => (v === 0 ? '—' : Math.round(v).toLocaleString());
@@ -63,9 +63,10 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
   const regionAgg = (rows: FactoryReduction[]): RowAgg => rows.reduce(
     (a, f) => ({
       s1: a.s1 + f.s1, s2_loc: a.s2_loc + f.s2_loc, s2_mkt: a.s2_mkt + f.s2_mkt,
-      s1s2_loc: a.s1s2_loc + f.s1s2_loc, s1s2_mkt: a.s1s2_mkt + f.s1s2_mkt, irec_kwh: a.irec_kwh + f.irec_kwh,
+      s1s2_loc: a.s1s2_loc + f.s1s2_loc, s1s2_mkt: a.s1s2_mkt + f.s1s2_mkt,
+      irec_kwh: a.irec_kwh + f.irec_kwh, biomass_co2: a.biomass_co2 + f.biomass_co2,
     }),
-    { s1: 0, s2_loc: 0, s2_mkt: 0, s1s2_loc: 0, s1s2_mkt: 0, irec_kwh: 0 },
+    { s1: 0, s2_loc: 0, s2_mkt: 0, s1s2_loc: 0, s1s2_mkt: 0, irec_kwh: 0, biomass_co2: 0 },
   );
 
   const exportUrl = `/api/reduction/export?${buildParams().toString()}`;
@@ -359,13 +360,14 @@ function TableHead({ first }: { first: string }) {
         <th className="px-3 py-2.5 text-right">S1+S2 地域</th>
         <th className="px-3 py-2.5 text-right">S1+S2 市場</th>
         <th className="px-3 py-2.5 text-right">iREC 張數</th>
+        <th className="px-3 py-2.5 text-right">生質CO₂<br /><span className="text-[10px] font-normal opacity-80">另計·不入S1</span></th>
       </tr>
     </thead>
   );
 }
 
 function EmptyRow() {
-  return <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">此條件下尚無資料</td></tr>;
+  return <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">此條件下尚無資料</td></tr>;
 }
 
 function Seg({ label, value, options, onChange }: {
@@ -427,6 +429,7 @@ function Row({ label, sublabel, f, bold, bg, labelClass }: {
       <td className={td}>{fmt2(f.s1s2_loc)}</td>
       <td className={td}>{fmt2(f.s1s2_mkt)}</td>
       <td className={`${td} text-teal-700`}>{certsFmt(f.irec_kwh)}</td>
+      <td className={`${td} text-amber-700`}>{fmt2(f.biomass_co2)}</td>
     </tr>
   );
 }

@@ -35,7 +35,7 @@ function orderFactories<T extends { factory_code: string; country_code: string }
 
 function finalizeFactory(r: {
   factory_code: string; name_zh: string; country_code: string;
-  s1: number; s2_loc: number; s2_mkt: number; irec_kwh: number;
+  s1: number; s2_loc: number; s2_mkt: number; irec_kwh: number; biomass_co2: number;
 }): FactoryReduction {
   return {
     ...r,
@@ -53,8 +53,9 @@ function sumTotals(factories: FactoryReduction[]) {
       s1s2_loc: acc.s1s2_loc + f.s1s2_loc,
       s1s2_mkt: acc.s1s2_mkt + f.s1s2_mkt,
       irec_kwh: acc.irec_kwh + f.irec_kwh,
+      biomass_co2: acc.biomass_co2 + f.biomass_co2,
     }),
-    { s1: 0, s2_loc: 0, s2_mkt: 0, s1s2_loc: 0, s1s2_mkt: 0, irec_kwh: 0 },
+    { s1: 0, s2_loc: 0, s2_mkt: 0, s1s2_loc: 0, s1s2_mkt: 0, irec_kwh: 0, biomass_co2: 0 },
   );
 }
 
@@ -85,7 +86,8 @@ export async function getReductionFromPlatform(
       `SELECT f.factory_code, f.name_zh, f.country_code,
               COALESCE(SUM(CASE WHEN es.scope = 1 THEN ar.co2e_total::float ELSE 0 END), 0)    AS s1,
               COALESCE(SUM(CASE WHEN es.scope = 2 THEN ar.co2e_location::float ELSE 0 END), 0) AS s2_loc,
-              COALESCE(SUM(CASE WHEN es.scope = 2 THEN ar.co2e_market::float ELSE 0 END), 0)   AS s2_mkt
+              COALESCE(SUM(CASE WHEN es.scope = 2 THEN ar.co2e_market::float ELSE 0 END), 0)   AS s2_mkt,
+              COALESCE(SUM(ar.co2e_biomass_co2::float), 0)                                     AS biomass_co2
        FROM factories f
        LEFT JOIN activity_records ar
               ON ar.factory_id = f.id AND ar.year = $1 AND ar.month BETWEEN $2 AND $3
@@ -125,7 +127,7 @@ export async function getReductionFromPlatform(
   const factories = orderFactories(
     (emitRes.rows as Array<{
       factory_code: string; name_zh: string; country_code: string;
-      s1: number; s2_loc: number; s2_mkt: number;
+      s1: number; s2_loc: number; s2_mkt: number; biomass_co2: number;
     }>).map((r) => finalizeFactory({ ...r, irec_kwh: recByFactory.get(r.factory_code) || 0 })),
   );
   const totals = sumTotals(factories);
@@ -230,11 +232,11 @@ export async function getReductionFromCsr(
   }
 
   // 逐廠聚合原始能源（僅取區間內的列）
-  type Acc = { purchasedKwh: number; solarKwh: number; s1: number };
+  type Acc = { purchasedKwh: number; solarKwh: number; s1: number; biomass_co2: number };
   const accByFactory = new Map<string, Acc>();
   const getAcc = (code: string) => {
     let a = accByFactory.get(code);
-    if (!a) { a = { purchasedKwh: 0, solarKwh: 0, s1: 0 }; accByFactory.set(code, a); }
+    if (!a) { a = { purchasedKwh: 0, solarKwh: 0, s1: 0, biomass_co2: 0 }; accByFactory.set(code, a); }
     return a;
   };
 
@@ -268,7 +270,9 @@ export async function getReductionFromCsr(
   fuelResults.forEach((calc, i) => {
     const j = fuelJobs[i];
     if (!calc) { missingFactor.add(j.source_code); return; }
-    getAcc(j.code).s1 += calc.co2e_total ?? 0;
+    const acc = getAcc(j.code);
+    acc.s1 += calc.co2e_total ?? 0;
+    acc.biomass_co2 += calc.co2e_biomass_co2 ?? 0;
   });
   if (missingFactor.size) {
     warnings.push(`下列排放源在 ${factorYear} 年查無「該廠」係數指定，其排放已略過（S1 可能低估）：${[...missingFactor].join('、')}。請於「排放係數管理」為對應廠別補上係數與指定。`);
@@ -322,7 +326,7 @@ export async function getReductionFromCsr(
 
     factories.push(finalizeFactory({
       factory_code: code, name_zh: fact.name_zh, country_code: fact.country_code,
-      s1: acc.s1, s2_loc, s2_mkt, irec_kwh: irec,
+      s1: acc.s1, s2_loc, s2_mkt, irec_kwh: irec, biomass_co2: acc.biomass_co2,
     }));
 
     greenIrec += irec;
