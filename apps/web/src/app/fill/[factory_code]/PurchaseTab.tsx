@@ -2,8 +2,8 @@
 
 import { useState, useRef } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
-import { HEADER_BG } from './tabTypes';
-import type { ActivityRecord } from './page';
+import { HEADER_BG, MONTHS } from './tabTypes';
+import type { ActivityRecord, EmissionSource, AssignedFactor } from './page';
 import LineItemsCell from './LineItemsCell';
 
 const FABRIC_CODE = '3-1-A';
@@ -42,7 +42,7 @@ interface PurchaseTabProps extends TabProps {
 }
 
 export default function PurchaseTab({
-  factory, year, emissionSources, selectedSourceIds, existingRecords, upstreamTons,
+  factory, year, emissionSources, selectedSourceIds, existingRecords, upstreamTons, assignedFactors, onReviewToggle,
 }: PurchaseTabProps) {
   // 布料（3-1-A）：is_always_active，不需在 BasicTab 勾選，直接顯示
   const fabricSource = emissionSources.find(
@@ -119,24 +119,19 @@ export default function PurchaseTab({
       {waterSource && (
         <div className="mt-6">
           <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-            外購水（年度用水量 × 係數）
+            外購水（每月用水量 × 係數）
           </h3>
-          <WaterRow
-            sourceId={waterSource.id}
-            sourceName={waterSource.name_zh}
-            sourceCode={waterSource.source_code}
-            unit={waterSource.default_unit ?? 'm3'}
+          <WaterMonthly
+            source={waterSource}
             factory={factory}
             year={year}
-            existingRec={existingRecords.find(
-              (r) => r.emission_source_id === waterSource.id && r.month === ANNUAL_MONTH
-            ) ?? null}
-            lineItemsCount={existingRecords.find(
-              (r) => r.emission_source_id === waterSource.id && r.month === ANNUAL_MONTH
-            )?.line_items_count ?? 0}
+            records={existingRecords.filter((r) => r.emission_source_id === waterSource.id)}
+            assignedFactor={assignedFactors?.find((f) => f.emission_source_id === waterSource.id)}
+            onReviewToggle={onReviewToggle}
           />
           <p className="text-xs text-gray-400 mt-2">
-            填年度總用水量，CO₂e 由「外購水」係數自動計算。需先於
+            逐月填入用水量（或以 ERP 範本匯入，多筆單據會自動加總；點「明細」查看單據），
+            CO₂e 由「外購水」係數自動計算。需先於
             <a href="/admin/factors" className="underline mx-0.5">係數設定</a>
             建立並指派 3-1-E 的排放係數（範疇三，kg CO₂e/m³）。
           </p>
@@ -146,136 +141,180 @@ export default function PurchaseTab({
   );
 }
 
-function WaterRow({
-  sourceId, sourceName, sourceCode, unit, factory, year, existingRec, lineItemsCount,
+// 外購水（3-1-E）逐月用水量表：版面比照其他月度來源（電力／固定燃燒），
+// 每月一列用量，多筆單據以「明細」下鑽；CO₂e = 用量 × scope3_factor ÷ 1000 即時計算。
+function WaterMonthly({
+  source, factory, year, records, assignedFactor, onReviewToggle,
 }: {
-  sourceId: string;
-  sourceName: string;
-  sourceCode: string;
-  unit: string;
+  source: EmissionSource;
   factory: TabProps['factory'];
   year: number;
-  existingRec: ActivityRecord | null;
-  lineItemsCount: number;
+  records: ActivityRecord[];
+  assignedFactor?: AssignedFactor;
+  onReviewToggle?: (id: string, newVal: boolean) => void;
 }) {
-  const [row, setRow] = useState<AnnualRow>({
-    id: existingRec?.id ?? null,
-    value: existingRec?.activity_value != null ? String(existingRec.activity_value) : '',
-    notes: existingRec?.notes ?? '',
-    co2e: existingRec?.co2e_total ?? null,
-    status: 'idle',
+  const unit = source.default_unit ?? 'm3';
+  const scope3 = assignedFactor?.scope3_factor ?? null;
+  // 範疇三：CO₂e(t) = 用量 × scope3_factor(kg/單位) ÷ 1000
+  const rowCo2e = (v: number): number | null =>
+    scope3 != null && v > 0 ? parseFloat((v * Number(scope3) / 1000).toFixed(4)) : null;
+
+  const [lv, setLv] = useState<Record<number, string>>(() => {
+    const init: Record<number, string> = {};
+    for (const r of records) init[r.month] = r.activity_value != null ? String(r.activity_value) : '';
+    return init;
   });
-  const rowRef = useRef(row);
+  const lvRef = useRef(lv);
+  const [recordIds, setRecordIds] = useState<Record<number, string | null>>(() => {
+    const init: Record<number, string | null> = {};
+    for (const r of records) init[r.month] = r.id;
+    return init;
+  });
+  const [reviewed, setReviewed] = useState<Record<number, boolean>>(() => {
+    const init: Record<number, boolean> = {};
+    for (const r of records) init[r.month] = r.is_reviewed ?? false;
+    return init;
+  });
+  const [status, setStatus] = useState<SaveStatus>('idle');
   const tmr = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function onChange(field: 'value' | 'notes', val: string) {
-    const next = { ...rowRef.current, [field]: val };
-    rowRef.current = next;
-    setRow(next);
+  // 月 → 單據明細筆數（>0 表該月為多張單據加總，顯示「查看明細」）
+  const liCountByMonth: Record<number, number> = {};
+  for (const r of records) liCountByMonth[r.month] = r.line_items_count ?? 0;
+
+  function onChange(month: number, val: string) {
+    const next = { ...lvRef.current, [month]: val };
+    lvRef.current = next;
+    setLv(next);
     if (tmr.current) clearTimeout(tmr.current);
     tmr.current = setTimeout(async () => {
-      const r = rowRef.current;
-      const numVal = r.value !== '' ? parseFloat(r.value) : null;
-      if (r.value !== '' && (numVal === null || isNaN(numVal))) return;
-      const saving = { ...rowRef.current, status: 'saving' as SaveStatus };
-      rowRef.current = saving; setRow(saving);
+      const v = lvRef.current[month];
+      const num = v === '' ? null : parseFloat(v);
+      if (v !== '' && (num === null || isNaN(num))) return;
+      setStatus('saving');
       try {
         const res = await fetch('/api/records/autosave', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            factory_id: factory.id, emission_source_id: sourceId, year, month: ANNUAL_MONTH,
-            activity_value: numVal, activity_unit: unit, notes: r.notes || null,
+            factory_id: factory.id, emission_source_id: source.id, year, month,
+            activity_value: num, activity_unit: unit,
           }),
         });
         if (!res.ok) throw new Error();
         const data = await res.json();
-        const saved = {
-          ...rowRef.current,
-          id: data.data?.id ?? rowRef.current.id,
-          co2e: data.data?.co2e_total ?? null,
-          status: 'saved' as SaveStatus,
-        };
-        rowRef.current = saved; setRow(saved);
-        setTimeout(() => {
-          const reset = { ...rowRef.current, status: 'idle' as SaveStatus };
-          rowRef.current = reset; setRow(reset);
-        }, 2000);
-      } catch {
-        const err = { ...rowRef.current, status: 'error' as SaveStatus };
-        rowRef.current = err; setRow(err);
-      }
+        setRecordIds((prev) => ({ ...prev, [month]: data.data.id }));
+        setStatus('saved');
+        setTimeout(() => setStatus('idle'), 2000);
+      } catch { setStatus('error'); }
     }, 1000);
   }
 
-  // 清空（activity_value→null，後端一併清 co2e）
-  async function clearRow() {
-    const id = rowRef.current.id;
-    const cleared = { ...rowRef.current, value: '', notes: '', co2e: null };
-    rowRef.current = cleared; setRow(cleared);
+  // 清空某月（activity_value→null，後端一併清 co2e）
+  async function clearMonth(month: number) {
+    const id = recordIds[month];
+    const next = { ...lvRef.current, [month]: '' };
+    lvRef.current = next; setLv(next);
     if (!id) return;
+    setStatus('saving');
     try {
-      await fetch(`/api/records/${id}`, {
+      const res = await fetch(`/api/records/${id}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ activity_value: null, notes: null }),
+        body: JSON.stringify({ activity_value: null }),
       });
-    } catch { /* 忽略；畫面已清 */ }
+      if (!res.ok) throw new Error();
+      setStatus('saved'); setTimeout(() => setStatus('idle'), 2000);
+    } catch { setStatus('error'); }
   }
 
+  async function toggleReview(month: number) {
+    const id = recordIds[month];
+    if (!id) return;
+    const newVal = !(reviewed[month] ?? false);
+    setReviewed((prev) => ({ ...prev, [month]: newVal }));
+    await fetch(`/api/records/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_reviewed: newVal }),
+    });
+    if (onReviewToggle) onReviewToggle(id, newVal);
+  }
+
+  const total = MONTHS.reduce((s, m) => s + (parseFloat(lv[m] ?? '') || 0), 0);
+  const totalCo2e = rowCo2e(total) ?? 0;
+
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-2xl">
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
-            <th className="px-4 py-2.5 text-left">採購品項</th>
-            <th className="px-4 py-2.5 text-right w-44">年度用水量 ({unit})</th>
-            <th className="px-4 py-2.5 text-right w-28">CO₂e (t)</th>
-            <th className="px-4 py-2.5 text-left w-40">備註</th>
-            <th className="px-4 py-2.5 text-center w-16">明細</th>
-            <th className="px-4 py-2.5 text-center w-8">狀</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr className="bg-white">
-            <td className="px-4 py-2">
-              <div className="font-medium text-gray-800">{sourceName}</div>
-              <div className="text-xs font-mono text-gray-400">{sourceCode}</div>
-            </td>
-            <td className="px-4 py-2">
-              <input
-                type="number" min="0" step="any" placeholder={`年度總用水量 (${unit})`}
-                value={row.value}
-                onChange={(e) => onChange('value', e.target.value)}
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-right focus:outline-none focus:ring-2 focus:ring-green-500"
-              />
-            </td>
-            <td className="px-4 py-2 text-right font-mono text-gray-600 text-xs">
-              {row.co2e != null ? row.co2e.toFixed(4) : '—'}
-            </td>
-            <td className="px-4 py-2">
-              <input
-                type="text" placeholder="備註"
-                value={row.notes}
-                onChange={(e) => onChange('notes', e.target.value)}
-                className="w-full border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
-              />
-            </td>
-            <td className="px-4 py-2 text-center">
-              <LineItemsCell recordId={row.id} count={lineItemsCount}
-                title={`${sourceName} 年度`} unit={unit} sourceCode={sourceCode} />
-            </td>
-            <td className="px-4 py-2 text-center text-xs whitespace-nowrap">
-              {row.status === 'saving' && '⏳'}
-              {row.status === 'saved' && '✅'}
-              {row.status === 'error' && '❌'}
-              <button onClick={clearRow} disabled={!row.id}
-                title="清空數值"
-                className={`ml-1 text-sm leading-none transition ${!row.id ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
-                ✕
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div className="max-w-2xl">
+      {status !== 'idle' && (
+        <div className="mb-1.5">
+          <span className={`text-xs ${status === 'saving' ? 'text-yellow-500' : status === 'saved' ? 'text-green-600' : 'text-red-500'}`}>
+            {status === 'saving' ? '⏳ 儲存中' : status === 'saved' ? '✅ 已儲存' : '❌ 失敗'}
+          </span>
+        </div>
+      )}
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="w-full text-sm">
+          <thead>
+            <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
+              <th className="px-4 py-2 text-left w-16">月份</th>
+              <th className="px-4 py-2 text-right w-44">用水量 ({unit})</th>
+              <th className="px-4 py-2 text-right w-28">CO₂e (t)</th>
+              <th className="px-3 py-2 text-center w-16">明細</th>
+              <th className="px-4 py-2 text-center w-16">查核</th>
+            </tr>
+          </thead>
+          <tbody>
+            {MONTHS.map((m) => {
+              const rec = records.find((r) => r.month === m);
+              const val = lv[m] ?? (rec?.activity_value != null ? String(rec.activity_value) : '');
+              const hasId = !!recordIds[m];
+              const isRev = reviewed[m] ?? false;
+              const co2e = rowCo2e(parseFloat(val) || 0);
+              return (
+                <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                  <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
+                  <td className="px-4 py-1.5">
+                    <input type="number" min="0" step="any" placeholder="輸入用水量"
+                      value={val}
+                      onChange={(e) => onChange(m, e.target.value)}
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </td>
+                  <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono">
+                    {co2e?.toFixed(4) ?? ((parseFloat(val) || 0) > 0 && rec?.co2e_total != null ? rec.co2e_total.toFixed(4) : '—')}
+                  </td>
+                  <td className="px-3 py-1.5 text-center">
+                    <LineItemsCell recordId={recordIds[m] ?? null} count={liCountByMonth[m] ?? 0}
+                      title={`${source.name_zh} ${m} 月`} unit={unit} sourceCode={source.source_code} />
+                  </td>
+                  <td className="px-2 py-1.5 text-center whitespace-nowrap">
+                    <button onClick={() => toggleReview(m)} disabled={!hasId}
+                      title={isRev ? '已查核（點擊取消）' : '點擊標記查核完成'}
+                      className={`text-base leading-none transition-all ${isRev ? 'text-green-500' : 'text-gray-300'} ${!hasId ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+                      {isRev ? '✅' : '⬜'}
+                    </button>
+                    <button onClick={() => clearMonth(m)} disabled={!hasId || isRev}
+                      title={isRev ? '已查核不可清空，請先取消查核' : '清空此月數值'}
+                      className={`ml-1.5 text-sm leading-none transition ${!hasId || isRev ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold">
+              <td className="px-4 py-2 text-gray-700">合計</td>
+              <td className="px-4 py-2 text-right font-mono text-gray-700">
+                {total.toLocaleString(undefined, { maximumFractionDigits: 10 })} {unit}
+              </td>
+              <td className="px-4 py-2 text-right font-mono text-gray-700">
+                {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
+              </td>
+              <td />
+              <td />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   );
 }
