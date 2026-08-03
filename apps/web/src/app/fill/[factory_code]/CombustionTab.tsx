@@ -103,11 +103,17 @@ export default function CombustionTab({
 }
 
 // ─── 活動數據 → 各氣體排放量（共用）────────────────────────────────
-function computeGas(kg: number, factor: AssignedFactor) {
+// 與伺服器 co2e-calc.ts 及 FuelTab 一致：液態/氣態燃料（體積單位）且有密度時，
+// 先 value × density → 質量(kg)，再 × NCV(MJ/kg)。發電機-柴油(L, 有密度)即走此鏈；
+// 鍋爐-柴油(1-1A-1, NCV 為 MJ/L 無密度)因 density>0 判斷不受影響。
+const VOLUME_UNITS = new Set(['L', 'l', 'KL', 'Nm3', 'Nm³', 'm3', 'm³']);
+function computeGas(value: number, factor: AssignedFactor, unit: string) {
   const GWP_CH4 = factor.gwp_ch4 ?? 27.9;
   const GWP_N2O = factor.gwp_n2o ?? 273.0;
   const ncv = factor.ncv ?? 0;
-  if (kg <= 0) return null;
+  if (value <= 0) return null;
+  const density = factor.density ?? 0;
+  const kg = (VOLUME_UNITS.has(unit) && density > 0) ? value * density : value;
   let co2_t: number, ch4_t: number, n2o_t: number;
   if (ncv > 0) {
     const tj = (kg * ncv) / 1_000_000;
@@ -391,7 +397,7 @@ function MonthlySection({
                   ? b * k
                   : (!edited && rec?.activity_value != null ? Number(rec.activity_value) : 0);
                 const computedKg = effectiveKg > 0 ? effectiveKg.toLocaleString(undefined, { maximumFractionDigits: 10 }) : '—';
-                const gasResult = assignedFactor ? computeGas(effectiveKg, assignedFactor) : null;
+                const gasResult = assignedFactor ? computeGas(effectiveKg, assignedFactor, source.default_unit) : null;
                 return (
                   <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                     <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
@@ -506,7 +512,7 @@ function MonthlySection({
               const val = lv[m] ?? (rec?.activity_value != null ? String(rec.activity_value) : '');
               const hasId = !!recordIds[m];
               const isRev = reviewed[m] ?? false;
-              const gasResult = assignedFactor ? computeGas(parseFloat(val) || 0, assignedFactor) : null;
+              const gasResult = assignedFactor ? computeGas(parseFloat(val) || 0, assignedFactor, source.default_unit) : null;
               return (
                 <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                   <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
@@ -738,7 +744,7 @@ function EventSection({
             <tbody>
               {rows.map((row, idx) => {
                 const gasResult = assignedFactor
-                  ? computeGas(parseFloat(row.activity_value) || 0, assignedFactor)
+                  ? computeGas(parseFloat(row.activity_value) || 0, assignedFactor, source.default_unit)
                   : null;
                 return (
                 <tr key={row.tempKey} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
