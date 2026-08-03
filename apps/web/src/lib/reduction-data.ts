@@ -35,7 +35,7 @@ function orderFactories<T extends { factory_code: string; country_code: string }
 
 function finalizeFactory(r: {
   factory_code: string; name_zh: string; country_code: string;
-  s1: number; s2_loc: number; s2_mkt: number;
+  s1: number; s2_loc: number; s2_mkt: number; irec_kwh: number;
 }): FactoryReduction {
   return {
     ...r,
@@ -52,8 +52,9 @@ function sumTotals(factories: FactoryReduction[]) {
       s2_mkt: acc.s2_mkt + f.s2_mkt,
       s1s2_loc: acc.s1s2_loc + f.s1s2_loc,
       s1s2_mkt: acc.s1s2_mkt + f.s1s2_mkt,
+      irec_kwh: acc.irec_kwh + f.irec_kwh,
     }),
-    { s1: 0, s2_loc: 0, s2_mkt: 0, s1s2_loc: 0, s1s2_mkt: 0 },
+    { s1: 0, s2_loc: 0, s2_mkt: 0, s1s2_loc: 0, s1s2_mkt: 0, irec_kwh: 0 },
   );
 }
 
@@ -79,7 +80,7 @@ export async function getReductionFromPlatform(
 ): Promise<ReductionResult> {
   const warnings: string[] = [];
 
-  const [emitRes, greenRes, prodRes, baselines] = await Promise.all([
+  const [emitRes, greenRes, prodRes, baselines, recPerFactoryRes] = await Promise.all([
     query(
       `SELECT f.factory_code, f.name_zh, f.country_code,
               COALESCE(SUM(CASE WHEN es.scope = 1 THEN ar.co2e_total::float ELSE 0 END), 0)    AS s1,
@@ -108,13 +109,24 @@ export async function getReductionFromPlatform(
       [year, monthFrom, monthTo],
     ),
     getBaselines(),
+    query(
+      `SELECT f.factory_code, COALESCE(SUM(rc.rec_kwh::float), 0) AS kwh
+       FROM rec_certificates rc JOIN factories f ON rc.factory_id = f.id
+       WHERE rc.year = $1 AND rc.month BETWEEN $2 AND $3
+       GROUP BY f.factory_code`,
+      [year, monthFrom, monthTo],
+    ),
   ]);
 
+  const recByFactory = new Map<string, number>(
+    (recPerFactoryRes.rows as Array<{ factory_code: string; kwh: number }>)
+      .map((r) => [r.factory_code, Number(r.kwh) || 0]),
+  );
   const factories = orderFactories(
     (emitRes.rows as Array<{
       factory_code: string; name_zh: string; country_code: string;
       s1: number; s2_loc: number; s2_mkt: number;
-    }>).map(finalizeFactory),
+    }>).map((r) => finalizeFactory({ ...r, irec_kwh: recByFactory.get(r.factory_code) || 0 })),
   );
   const totals = sumTotals(factories);
 
@@ -294,7 +306,7 @@ export async function getReductionFromCsr(
 
     factories.push(finalizeFactory({
       factory_code: code, name_zh: fact.name_zh, country_code: fact.country_code,
-      s1: acc.s1, s2_loc, s2_mkt,
+      s1: acc.s1, s2_loc, s2_mkt, irec_kwh: irec,
     }));
 
     greenIrec += irec;

@@ -1,34 +1,37 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { COUNTRY_LABELS, type ReductionResult, type FactoryReduction } from '@/lib/reduction-types';
+import { COUNTRY_LABELS, IREC_KWH_PER_CERT, type ReductionResult, type FactoryReduction } from '@/lib/reduction-types';
 
 const HEADER_BG = '#0C3D2E';
 const YEARS = [2023, 2024, 2025, 2026, 2027, 2028];
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 const COUNTRY_ORDER = ['TWN', 'CHN', 'NVN', 'SVN', 'CAB', 'SLV', 'BGD', 'IND'];
+const T2030_RATIO = 0.5; // 2030 相比 2020 減 50%，2050 減 100%
 
-// pathway 目標：2030 相比 2020 減 50%，2050 減 100%
-const T2030_RATIO = 0.5;
+type RowAgg = { s1: number; s2_loc: number; s2_mkt: number; s1s2_loc: number; s1s2_mkt: number; irec_kwh: number };
 
 const fmt2 = (v: number) => (v === 0 ? '—' : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const fmt0 = (v: number) => (v === 0 ? '—' : Math.round(v).toLocaleString());
+const certsFmt = (kwh: number) => (kwh === 0 ? '—' : (kwh / IREC_KWH_PER_CERT).toLocaleString(undefined, { maximumFractionDigits: 1 }));
 const pct = (v: number | null) => (v == null ? '—' : `${v.toFixed(1)}%`);
 
 export default function ReductionClient({ data }: { data: ReductionResult }) {
   const router = useRouter();
   const { source, year, monthFrom, monthTo, factorYear } = data;
 
-  function nav(patch: Record<string, string | number>) {
+  function buildParams(patch: Record<string, string | number> = {}) {
     const params = new URLSearchParams({
       source: data.source, year: String(data.year),
       monthFrom: String(data.monthFrom), monthTo: String(data.monthTo),
-      recSource: data.recSource,
-      factorYear: String(data.factorYear ?? data.year - 1),
+      recSource: data.recSource, factorYear: String(data.factorYear ?? data.year - 1),
     });
     for (const [k, v] of Object.entries(patch)) params.set(k, String(v));
-    router.push(`/reduction?${params.toString()}`);
+    return params;
+  }
+  function nav(patch: Record<string, string | number>) {
+    router.push(`/reduction?${buildParams(patch).toString()}`);
   }
 
   const b2020 = data.baselines.find((b) => b.base_year === 2020)?.intensity_market_kg ?? null;
@@ -37,7 +40,7 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
   const iloc = data.intensity_location_kg;
   const redVs = (base: number | null) => (base && base > 0 && im != null ? ((base - im) / base) * 100 : null);
 
-  // 依產區分組
+  // 依產區分組（供明細表 + 產區加總表）
   const byCountry = new Map<string, FactoryReduction[]>();
   for (const f of data.factories) {
     if (!byCountry.has(f.country_code)) byCountry.set(f.country_code, []);
@@ -47,6 +50,15 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
     ...COUNTRY_ORDER.filter((c) => byCountry.has(c)),
     ...[...byCountry.keys()].filter((c) => !COUNTRY_ORDER.includes(c)),
   ];
+  const regionAgg = (rows: FactoryReduction[]): RowAgg => rows.reduce(
+    (a, f) => ({
+      s1: a.s1 + f.s1, s2_loc: a.s2_loc + f.s2_loc, s2_mkt: a.s2_mkt + f.s2_mkt,
+      s1s2_loc: a.s1s2_loc + f.s1s2_loc, s1s2_mkt: a.s1s2_mkt + f.s1s2_mkt, irec_kwh: a.irec_kwh + f.irec_kwh,
+    }),
+    { s1: 0, s2_loc: 0, s2_mkt: 0, s1s2_loc: 0, s1s2_mkt: 0, irec_kwh: 0 },
+  );
+
+  const exportUrl = `/api/reduction/export?${buildParams().toString()}`;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -65,8 +77,7 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
 
           {/* 控制列 */}
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-            <Seg label="資料來源"
-              value={source}
+            <Seg label="資料來源" value={source}
               options={[['csr', 'CSR 匯出'], ['platform', 'GHG 平台']]}
               onChange={(v) => nav({ source: v, ...(v === 'platform' ? { recSource: 'platform' } : {}) })} />
             <label className="flex items-center gap-1.5 text-green-200">年度
@@ -87,8 +98,7 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
               </select>
             </label>
             {source === 'csr' && (<>
-              <Seg label="iREC"
-                value={data.recSource}
+              <Seg label="iREC" value={data.recSource}
                 options={[['platform', '平台帶入'], ['manual', '手動試算']]}
                 onChange={(v) => nav({ recSource: v })} />
               <label className="flex items-center gap-1.5 text-green-200">係數年度
@@ -99,6 +109,15 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
               </label>
             </>)}
           </div>
+
+          {/* 資料管理列：匯入 CSR / 匯出 Excel */}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {source === 'csr' && <ImportCsrButton year={year} onDone={() => router.refresh()} />}
+            <a href={exportUrl}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/40 text-white hover:bg-white/10 transition">
+              ⬇ 匯出 Excel（產區加總＋各廠明細）
+            </a>
+          </div>
         </div>
       </header>
 
@@ -107,6 +126,11 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 space-y-1">
             {data.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}
           </div>
+        )}
+
+        {/* 手動 iREC 試算輸入（CSR + 手動模式） */}
+        {source === 'csr' && data.recSource === 'manual' && (
+          <ManualIrecPanel year={year} factories={data.factories} onSaved={() => router.refresh()} />
         )}
 
         {/* KPI 卡 */}
@@ -130,50 +154,45 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
               <div className="text-3xl font-bold" style={{ color: HEADER_BG }}>{data.greenPower.ratio.toFixed(1)}%</div>
               <div className="text-xs text-gray-400 mt-1">(iREC + 太陽能) ÷ 總用電</div>
             </div>
-            <GreenCol label="iREC 憑證" kwh={data.greenPower.irec_kwh} />
+            <GreenCol label="iREC 憑證" kwh={data.greenPower.irec_kwh} sub={`${certsFmt(data.greenPower.irec_kwh)} 張`} />
             <GreenCol label="自發太陽能" kwh={data.greenPower.solar_kwh} />
             <GreenCol label="總用電" kwh={data.greenPower.total_kwh} muted />
           </div>
         </section>
 
-        {/* 各廠 / 產區碳排表 */}
+        {/* 表一：產區加總 */}
         <section>
-          <h2 className="text-base font-bold text-gray-800 mb-3 px-1">各廠區碳排（tCO₂e）· 產區加總</h2>
+          <h2 className="text-base font-bold text-gray-800 mb-3 px-1">① 各產區加總（tCO₂e）</h2>
           <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
             <table className="w-full border-collapse text-sm bg-white">
-              <thead>
-                <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
-                  <th className="px-4 py-2.5 text-left">廠 / 產區</th>
-                  <th className="px-3 py-2.5 text-right">S1</th>
-                  <th className="px-3 py-2.5 text-right">S2 地域</th>
-                  <th className="px-3 py-2.5 text-right">S2 市場</th>
-                  <th className="px-3 py-2.5 text-right">S1+S2 地域</th>
-                  <th className="px-3 py-2.5 text-right">S1+S2 市場</th>
-                </tr>
-              </thead>
+              <TableHead first="產區" />
               <tbody>
                 <Row bold bg="bg-blue-50/60" label="集團合計" f={data.totals} labelClass="text-[#1e3a5f]" />
-                {countries.map((c) => {
-                  const rows = byCountry.get(c)!;
-                  const sub = rows.reduce(
-                    (a, f) => ({
-                      s1: a.s1 + f.s1, s2_loc: a.s2_loc + f.s2_loc, s2_mkt: a.s2_mkt + f.s2_mkt,
-                      s1s2_loc: a.s1s2_loc + f.s1s2_loc, s1s2_mkt: a.s1s2_mkt + f.s1s2_mkt,
-                    }),
-                    { s1: 0, s2_loc: 0, s2_mkt: 0, s1s2_loc: 0, s1s2_mkt: 0 },
-                  );
-                  return (
-                    <FragmentGroup key={c}>
-                      <Row bold bg="bg-gray-100" label={`${COUNTRY_LABELS[c] ?? c} 產區加總`} f={sub} labelClass="text-gray-700" />
-                      {rows.map((f) => (
-                        <Row key={f.factory_code} label={f.factory_code} sublabel={f.name_zh} f={f} />
-                      ))}
-                    </FragmentGroup>
-                  );
-                })}
-                {data.factories.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">此條件下尚無資料</td></tr>
-                )}
+                {countries.map((c) => (
+                  <Row key={c} bold bg="bg-gray-50" label={COUNTRY_LABELS[c] ?? c} f={regionAgg(byCountry.get(c)!)} labelClass="text-gray-700" />
+                ))}
+                {data.factories.length === 0 && <EmptyRow />}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* 表二：各廠明細 */}
+        <section>
+          <h2 className="text-base font-bold text-gray-800 mb-3 px-1">② 各廠區碳排明細（tCO₂e）</h2>
+          <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+            <table className="w-full border-collapse text-sm bg-white">
+              <TableHead first="廠" />
+              <tbody>
+                {countries.map((c) => (
+                  <FragmentGroup key={c}>
+                    <Row bold bg="bg-gray-100" label={`${COUNTRY_LABELS[c] ?? c} 產區加總`} f={regionAgg(byCountry.get(c)!)} labelClass="text-gray-700" />
+                    {byCountry.get(c)!.map((f) => (
+                      <Row key={f.factory_code} label={f.factory_code} sublabel={f.name_zh} f={f} />
+                    ))}
+                  </FragmentGroup>
+                ))}
+                {data.factories.length === 0 && <EmptyRow />}
               </tbody>
             </table>
           </div>
@@ -192,6 +211,107 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
   );
 }
 
+// ── 匯入 CSR 按鈕 ────────────────────────────────────────────
+function ImportCsrButton({ year, onDone }: { year: number; onDone: () => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true); setMsg('匯入中…');
+    try {
+      const fd = new FormData();
+      fd.append('year', String(year));
+      fd.append('file', file);
+      const res = await fetch('/api/reduction/import-csr', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || '匯入失敗');
+      const { energyRows, prodRows, warnings } = json.data;
+      setMsg(`✅ 已匯入 ${year} 年：能源 ${energyRows} 筆、產能 ${prodRows} 筆${warnings?.length ? `（${warnings.length} 則提醒）` : ''}`);
+      onDone();
+    } catch (err) {
+      setMsg(`❌ ${err instanceof Error ? err.message : '匯入失敗'}`);
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  }
+
+  return (
+    <span className="flex items-center gap-2">
+      <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onFile} />
+      <button onClick={() => inputRef.current?.click()} disabled={busy}
+        className="px-3 py-1.5 rounded-lg text-xs font-medium text-white transition disabled:opacity-60"
+        style={{ backgroundColor: '#b45309' }}>
+        {busy ? '匯入中…' : `⬆ 匯入 CSR（覆寫 ${year} 年）`}
+      </button>
+      {msg && <span className="text-[11px] text-green-100">{msg}</span>}
+    </span>
+  );
+}
+
+// ── 手動 iREC 試算輸入 ───────────────────────────────────────
+function ManualIrecPanel({ year, factories, onSaved }: {
+  year: number; factories: FactoryReduction[]; onSaved: () => void;
+}) {
+  const [vals, setVals] = useState<Record<string, string>>(
+    Object.fromEntries(factories.map((f) => [f.factory_code, f.irec_kwh ? String(f.irec_kwh / IREC_KWH_PER_CERT) : '']))
+  );
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  async function saveAll() {
+    setSaving(true); setMsg('儲存中…');
+    try {
+      for (const f of factories) {
+        const raw = vals[f.factory_code];
+        const certs = raw === '' || raw == null ? 0 : Number(raw);
+        if (isNaN(certs)) continue;
+        await fetch('/api/csr-rec', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ year, factory_code: f.factory_code, certs }),
+        });
+      }
+      setMsg('✅ 已儲存，重新計算中…');
+      onSaved();
+    } catch {
+      setMsg('❌ 儲存失敗');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h2 className="text-base font-bold text-amber-900">手動 iREC 試算（各廠購買張數，1 張 = 1 MWh）</h2>
+          <p className="text-xs text-amber-700 mt-0.5">此模式改用手動輸入取代平台 iREC，供情境試算；儲存後即重算市場別與綠電占比。</p>
+        </div>
+        <button onClick={saveAll} disabled={saving}
+          className="px-5 py-2 rounded-lg text-white text-sm font-medium transition disabled:opacity-60"
+          style={{ backgroundColor: HEADER_BG }}>{saving ? '儲存中…' : '儲存並重算'}</button>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+        {factories.map((f) => (
+          <label key={f.factory_code} className="flex flex-col gap-1 bg-white rounded-lg border border-amber-100 p-2.5">
+            <span className="text-xs text-gray-600 font-mono">{f.factory_code}<span className="text-gray-400 ml-1">{f.name_zh}</span></span>
+            <div className="flex items-center gap-1">
+              <input type="number" min="0" step="any" value={vals[f.factory_code] ?? ''}
+                onChange={(e) => setVals((p) => ({ ...p, [f.factory_code]: e.target.value }))}
+                className="border border-gray-300 rounded px-2 py-1 text-sm font-mono w-full focus:outline-none focus:ring-2 focus:ring-green-500" />
+              <span className="text-xs text-gray-400 whitespace-nowrap">張</span>
+            </div>
+          </label>
+        ))}
+      </div>
+      {msg && <p className="text-xs text-amber-800 mt-3">{msg}</p>}
+    </section>
+  );
+}
+
 // ── 小元件 ──────────────────────────────────────────────────
 function rangeYears(from: number, to: number): number[] {
   const out: number[] = [];
@@ -199,8 +319,28 @@ function rangeYears(from: number, to: number): number[] {
   return out;
 }
 
-function FragmentGroup({ children }: { children: ReactNode }) {
+function FragmentGroup({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
+}
+
+function TableHead({ first }: { first: string }) {
+  return (
+    <thead>
+      <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
+        <th className="px-4 py-2.5 text-left">{first}</th>
+        <th className="px-3 py-2.5 text-right">S1</th>
+        <th className="px-3 py-2.5 text-right">S2 地域</th>
+        <th className="px-3 py-2.5 text-right">S2 市場</th>
+        <th className="px-3 py-2.5 text-right">S1+S2 地域</th>
+        <th className="px-3 py-2.5 text-right">S1+S2 市場</th>
+        <th className="px-3 py-2.5 text-right">iREC 張數</th>
+      </tr>
+    </thead>
+  );
+}
+
+function EmptyRow() {
+  return <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">此條件下尚無資料</td></tr>;
 }
 
 function Seg({ label, value, options, onChange }: {
@@ -210,7 +350,7 @@ function Seg({ label, value, options, onChange }: {
     <span className="flex items-center gap-1.5 text-green-200">{label}
       <span className="inline-flex rounded-lg overflow-hidden border border-white/30">
         {options.map(([v, lbl]) => (
-          <button key={v} onClick={() => onChange(v)}
+          <button key={v} type="button" onClick={() => onChange(v)}
             className="px-2.5 py-1 text-xs transition"
             style={value === v ? { backgroundColor: '#fff', color: HEADER_BG } : { color: '#fff' }}>
             {lbl}
@@ -236,18 +376,17 @@ function Kpi({ title, value, unit, sub, accent }: {
   );
 }
 
-function GreenCol({ label, kwh, muted }: { label: string; kwh: number; muted?: boolean }) {
+function GreenCol({ label, kwh, muted, sub }: { label: string; kwh: number; muted?: boolean; sub?: string }) {
   return (
     <div>
       <div className={`text-xl font-bold font-mono ${muted ? 'text-gray-500' : 'text-teal-700'}`}>{fmt0(kwh)}</div>
-      <div className="text-xs text-gray-400 mt-0.5">{label}（kWh）</div>
+      <div className="text-xs text-gray-400 mt-0.5">{label}（kWh）{sub && <span className="text-teal-600 ml-1">· {sub}</span>}</div>
     </div>
   );
 }
 
 function Row({ label, sublabel, f, bold, bg, labelClass }: {
-  label: string; sublabel?: string;
-  f: { s1: number; s2_loc: number; s2_mkt: number; s1s2_loc: number; s1s2_mkt: number };
+  label: string; sublabel?: string; f: RowAgg;
   bold?: boolean; bg?: string; labelClass?: string;
 }) {
   const td = `px-3 py-2 text-right font-mono ${bold ? 'font-semibold' : 'text-gray-700'}`;
@@ -261,6 +400,7 @@ function Row({ label, sublabel, f, bold, bg, labelClass }: {
       <td className={td}>{fmt2(f.s2_mkt)}</td>
       <td className={td}>{fmt2(f.s1s2_loc)}</td>
       <td className={td}>{fmt2(f.s1s2_mkt)}</td>
+      <td className={`${td} text-teal-700`}>{certsFmt(f.irec_kwh)}</td>
     </tr>
   );
 }

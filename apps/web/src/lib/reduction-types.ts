@@ -15,7 +15,11 @@ export interface FactoryReduction {
   s2_mkt: number;
   s1s2_loc: number;
   s1s2_mkt: number;
+  irec_kwh: number;   // 該廠 iREC 度數（張數 = irec_kwh / 1000，1 張 = 1 MWh）
 }
+
+// iREC 1 張 = 1 MWh = 1000 kWh
+export const IREC_KWH_PER_CERT = 1000;
 
 export interface GreenPower {
   irec_kwh: number;
