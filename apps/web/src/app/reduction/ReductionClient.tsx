@@ -15,7 +15,13 @@ type RowAgg = { s1: number; s2_loc: number; s2_mkt: number; s1s2_loc: number; s1
 const fmt2 = (v: number) => (v === 0 ? '—' : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const fmt0 = (v: number) => (v === 0 ? '—' : Math.round(v).toLocaleString());
 const certsFmt = (kwh: number) => (kwh === 0 ? '—' : (kwh / IREC_KWH_PER_CERT).toLocaleString(undefined, { maximumFractionDigits: 1 }));
-const pct = (v: number | null) => (v == null ? '—' : `${v.toFixed(1)}%`);
+
+// 相比基準變化：(當前 − 基準) ÷ 基準 × 100。負 = 減碳(變好)，正 = 增加(變差)。
+function changeDisplay(v: number | null): { text: string; cls: string } {
+  if (v == null) return { text: '—', cls: '' };
+  if (v <= 0) return { text: `減碳 ${Math.abs(v).toFixed(1)}%`, cls: 'text-green-700' };
+  return { text: `增加 ${v.toFixed(1)}%`, cls: 'text-red-600' };
+}
 
 export default function ReductionClient({ data }: { data: ReductionResult }) {
   const router = useRouter();
@@ -32,13 +38,17 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
   }
   function nav(patch: Record<string, string | number>) {
     router.push(`/reduction?${buildParams(patch).toString()}`);
+    router.refresh(); // 強制重新取伺服器資料（避免只改 query 時 router cache 未更新）
   }
 
   const b2020 = data.baselines.find((b) => b.base_year === 2020)?.intensity_market_kg ?? null;
   const b2025 = data.baselines.find((b) => b.base_year === 2025)?.intensity_market_kg ?? null;
   const im = data.intensity_market_kg;
   const iloc = data.intensity_location_kg;
-  const redVs = (base: number | null) => (base && base > 0 && im != null ? ((base - im) / base) * 100 : null);
+  // 變化% = (當前 − 基準) ÷ 基準；負值代表減碳
+  const chgVs = (base: number | null) => (base && base > 0 && im != null ? ((im - base) / base) * 100 : null);
+  const c2020 = changeDisplay(chgVs(b2020));
+  const c2025 = changeDisplay(chgVs(b2025));
 
   // 依產區分組（供明細表 + 產區加總表）
   const byCountry = new Map<string, FactoryReduction[]>();
@@ -137,9 +147,9 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
         <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Kpi title="市場別強度" value={im == null ? '—' : im.toFixed(4)} unit="kgCO₂e/標打"
             sub={`期間 S1+S2(市) ÷ 標打產能（${fmt0(data.production)} 標打）`} accent />
-          <Kpi title="相比 2020 減碳" value={pct(redVs(b2020))} unit={b2020 != null ? `基準 ${b2020}` : ''}
+          <Kpi title="相比 2020 基準" value={c2020.text} valueClassName={c2020.cls} unit={b2020 != null ? `基準 ${b2020}` : ''}
             sub="市場別 · 2020 原定基準年" />
-          <Kpi title="相比 2025 減碳" value={pct(redVs(b2025))} unit={b2025 != null ? `基準 ${b2025}` : ''}
+          <Kpi title="相比 2025 基準" value={c2025.text} valueClassName={c2025.cls} unit={b2025 != null ? `基準 ${b2025}` : ''}
             sub="市場別 · 2025 預計基準年" />
         </section>
         <p className="-mt-4 text-xs text-gray-400">
@@ -376,14 +386,15 @@ function Seg({ label, value, options, onChange }: {
   );
 }
 
-function Kpi({ title, value, unit, sub, accent }: {
-  title: string; value: string; unit?: string; sub?: string; accent?: boolean;
+function Kpi({ title, value, unit, sub, accent, valueClassName }: {
+  title: string; value: string; unit?: string; sub?: string; accent?: boolean; valueClassName?: string;
 }) {
   return (
     <div className={`rounded-xl border shadow-sm p-5 ${accent ? 'border-green-200 bg-green-50/40' : 'border-gray-200 bg-white'}`}>
       <div className="text-xs text-gray-500">{title}</div>
       <div className="mt-1 flex items-baseline gap-2">
-        <span className="text-2xl font-bold font-mono" style={{ color: HEADER_BG }}>{value}</span>
+        <span className={`text-2xl font-bold font-mono ${valueClassName ?? ''}`}
+          style={valueClassName ? undefined : { color: HEADER_BG }}>{value}</span>
         {unit && <span className="text-xs text-gray-400">{unit}</span>}
       </div>
       {sub && <div className="text-[11px] text-gray-400 mt-1.5">{sub}</div>}
