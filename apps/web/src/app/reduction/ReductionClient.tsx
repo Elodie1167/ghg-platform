@@ -162,11 +162,11 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
           <div className="flex flex-wrap items-end gap-8">
             <div>
               <div className="text-3xl font-bold" style={{ color: HEADER_BG }}>{data.greenPower.ratio.toFixed(1)}%</div>
-              <div className="text-xs text-gray-400 mt-1">(iREC + 太陽能) ÷ 總用電</div>
+              <div className="text-xs text-gray-400 mt-1">iREC ÷ 總電量（非再生＋再生）</div>
             </div>
-            <GreenCol label="iREC 憑證" kwh={data.greenPower.irec_kwh} sub={`${certsFmt(data.greenPower.irec_kwh)} 張`} />
-            <GreenCol label="自發太陽能" kwh={data.greenPower.solar_kwh} />
-            <GreenCol label="總用電" kwh={data.greenPower.total_kwh} muted />
+            <GreenCol label="iREC 憑證（分子）" kwh={data.greenPower.irec_kwh} sub={`${certsFmt(data.greenPower.irec_kwh)} 張`} />
+            <GreenCol label="自發太陽能（參考）" kwh={data.greenPower.solar_kwh} />
+            <GreenCol label="總電量（分母）" kwh={data.greenPower.total_kwh} muted />
           </div>
         </section>
 

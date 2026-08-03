@@ -328,8 +328,8 @@ export async function getReductionFromCsr(
   const greenPower: GreenPower = {
     irec_kwh: greenIrec,
     solar_kwh: greenSolar,
-    total_kwh: greenTotal,
-    ratio: greenTotal > 0 ? ((greenIrec + greenSolar) / greenTotal) * 100 : 0,
+    total_kwh: greenTotal, // 總電量 = 外購(非再生) + 自發太陽能(再生)
+    ratio: greenTotal > 0 ? (greenIrec / greenTotal) * 100 : 0, // iREC ÷ 總電量
   };
 
   return {
