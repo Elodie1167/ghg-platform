@@ -245,7 +245,7 @@ function ImportCsrButton({ year, onDone }: { year: number; onDone: () => void })
       <button onClick={() => inputRef.current?.click()} disabled={busy}
         className="px-3 py-1.5 rounded-lg text-xs font-medium text-white transition disabled:opacity-60"
         style={{ backgroundColor: '#b45309' }}>
-        {busy ? '匯入中…' : `⬆ 匯入 CSR（覆寫 ${year} 年）`}
+        {busy ? '匯入中…' : `⬆ 匯入CSR能源明細表（覆寫 ${year} 年）`}
       </button>
       {msg && <span className="text-[11px] text-green-100">{msg}</span>}
     </span>
@@ -283,28 +283,43 @@ function ManualIrecPanel({ year, factories, onSaved }: {
     }
   }
 
+  // 依產區分組：一列一個產區
+  const byCC = new Map<string, FactoryReduction[]>();
+  for (const f of factories) {
+    if (!byCC.has(f.country_code)) byCC.set(f.country_code, []);
+    byCC.get(f.country_code)!.push(f);
+  }
+  const regions = [
+    ...COUNTRY_ORDER.filter((c) => byCC.has(c)),
+    ...[...byCC.keys()].filter((c) => !COUNTRY_ORDER.includes(c)),
+  ];
+
   return (
     <section className="bg-amber-50 border border-amber-200 rounded-xl p-5">
       <div className="flex items-center justify-between mb-3">
         <div>
           <h2 className="text-base font-bold text-amber-900">手動 iREC 試算（各廠購買張數，1 張 = 1 MWh）</h2>
-          <p className="text-xs text-amber-700 mt-0.5">此模式改用手動輸入取代平台 iREC，供情境試算；儲存後即重算市場別與綠電占比。</p>
+          <p className="text-xs text-amber-700 mt-0.5">此模式改用手動輸入取代平台 iREC，供情境試算；儲存後即重算市場別與綠電占比。一列為一個產區。</p>
         </div>
         <button onClick={saveAll} disabled={saving}
           className="px-5 py-2 rounded-lg text-white text-sm font-medium transition disabled:opacity-60"
           style={{ backgroundColor: HEADER_BG }}>{saving ? '儲存中…' : '儲存並重算'}</button>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {factories.map((f) => (
-          <label key={f.factory_code} className="flex flex-col gap-1 bg-white rounded-lg border border-amber-100 p-2.5">
-            <span className="text-xs text-gray-600 font-mono">{f.factory_code}<span className="text-gray-400 ml-1">{f.name_zh}</span></span>
-            <div className="flex items-center gap-1">
-              <input type="number" min="0" step="any" value={vals[f.factory_code] ?? ''}
-                onChange={(e) => setVals((p) => ({ ...p, [f.factory_code]: e.target.value }))}
-                className="border border-gray-300 rounded px-2 py-1 text-sm font-mono w-full focus:outline-none focus:ring-2 focus:ring-green-500" />
-              <span className="text-xs text-gray-400 whitespace-nowrap">張</span>
-            </div>
-          </label>
+      <div className="divide-y divide-amber-200 border-t border-amber-200">
+        {regions.map((cc) => (
+          <div key={cc} className="flex flex-wrap items-center gap-2 py-2.5">
+            <div className="w-16 shrink-0 text-sm font-bold text-amber-900">{COUNTRY_LABELS[cc] ?? cc}</div>
+            {byCC.get(cc)!.map((f) => (
+              <label key={f.factory_code} title={f.name_zh}
+                className="flex items-center gap-1.5 bg-white rounded-lg border border-amber-100 px-2.5 py-1.5">
+                <span className="text-xs text-gray-600 font-mono whitespace-nowrap">{f.factory_code}</span>
+                <input type="number" min="0" step="any" value={vals[f.factory_code] ?? ''}
+                  onChange={(e) => setVals((p) => ({ ...p, [f.factory_code]: e.target.value }))}
+                  className="border border-gray-300 rounded px-2 py-0.5 text-sm font-mono w-20 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                <span className="text-xs text-gray-400">張</span>
+              </label>
+            ))}
+          </div>
         ))}
       </div>
       {msg && <p className="text-xs text-amber-800 mt-3">{msg}</p>}
