@@ -180,9 +180,13 @@ export async function getReductionFromCsr(
     query(`SELECT id, factory_code, name_zh, country_code FROM factories`),
     query(`SELECT id, source_code, scope, is_biomass, substance FROM emission_sources`),
     query(
-      `SELECT factory_code, month, source_code, activity_value::float AS activity_value, activity_unit
-       FROM csr_energy WHERE year = $1`,
-      [year],
+      // 依區間先於 SQL 聚合（月=0 視為全年），大幅減少 calcCo2e 呼叫次數
+      `SELECT factory_code, source_code, activity_unit,
+              SUM(activity_value::float) AS activity_value
+       FROM csr_energy
+       WHERE year = $1 AND (month = 0 OR month BETWEEN $2 AND $3)
+       GROUP BY factory_code, source_code, activity_unit`,
+      [year, monthFrom, monthTo],
     ),
     query(
       `SELECT factory_code, month, standard_units::float AS standard_units
@@ -234,12 +238,12 @@ export async function getReductionFromCsr(
     return a;
   };
 
+  // 先分流電力/太陽能（直接累加）與範疇一燃料（收集後平行 calcCo2e）
   const missingFactor = new Set<string>();
+  const fuelJobs: Array<{ code: string; source_code: string; p: ReturnType<typeof calcCo2e> }> = [];
   for (const row of energyRes.rows as Array<{
-    factory_code: string; month: number; source_code: string;
-    activity_value: number; activity_unit: string;
+    factory_code: string; source_code: string; activity_value: number; activity_unit: string;
   }>) {
-    if (!inRange(row.month)) continue;
     const fact = factByCode.get(row.factory_code);
     if (!fact) continue;
     const acc = getAcc(row.factory_code);
@@ -247,52 +251,64 @@ export async function getReductionFromCsr(
     if (row.source_code === ELEC_CODE) { acc.purchasedKwh += val; continue; }
     if (row.source_code === SOLAR_CODE) { acc.solarKwh += val; continue; }
 
-    // 範疇一燃料 → calcCo2e（Scope1 分支不觸及 activity_records，安全）
     const src = srcByCode.get(row.source_code);
     if (!src) continue;
-    const calc = await calcCo2e({
-      factory_id: fact.id,
-      emission_source_id: src.id,
-      country_code: fact.country_code,
-      year: factorYear,
-      activity_value: val,
-      activity_unit: row.activity_unit,
-      scope: src.scope,
-      is_biomass: src.is_biomass,
-      source_code: src.source_code,
-      substance: src.substance ?? null,
+    // 範疇一燃料 → calcCo2e（Scope1 分支不觸及 activity_records，安全）；已於 SQL 聚合，逐(廠,源)一次
+    fuelJobs.push({
+      code: row.factory_code, source_code: row.source_code,
+      p: calcCo2e({
+        factory_id: fact.id, emission_source_id: src.id, country_code: fact.country_code,
+        year: factorYear, activity_value: val, activity_unit: row.activity_unit,
+        scope: src.scope, is_biomass: src.is_biomass, source_code: src.source_code,
+        substance: src.substance ?? null,
+      }),
     });
-    if (!calc) { missingFactor.add(row.source_code); continue; }
-    acc.s1 += calc.co2e_total ?? 0;
   }
+  const fuelResults = await Promise.all(fuelJobs.map((j) => j.p));
+  fuelResults.forEach((calc, i) => {
+    const j = fuelJobs[i];
+    if (!calc) { missingFactor.add(j.source_code); return; }
+    getAcc(j.code).s1 += calc.co2e_total ?? 0;
+  });
   if (missingFactor.size) {
     warnings.push(`下列排放源在 ${factorYear} 年查無「該廠」係數指定，其排放已略過（S1 可能低估）：${[...missingFactor].join('、')}。請於「排放係數管理」為對應廠別補上係數與指定。`);
   }
 
-  // 每廠電力係數（gridEf / residual），依 factorYear
+  // 每廠電力係數（gridEf / residual），依 factorYear — 平行查詢
   const elecSrc = srcByCode.get(ELEC_CODE);
+  const efByCode = new Map<string, { grid: number; residual: number; found: boolean }>();
+  await Promise.all([...accByFactory].map(async ([code, acc]) => {
+    const fact = factByCode.get(code)!;
+    if (!elecSrc || (acc.purchasedKwh <= 0 && acc.solarKwh <= 0)) {
+      efByCode.set(code, { grid: 0, residual: 0, found: true });
+      return;
+    }
+    const ef = await query(
+      `SELECT ef.grid_emission_factor::float AS grid, ef.market_residual_factor::float AS residual
+       FROM emission_factors ef
+       JOIN emission_factor_assignments efa ON efa.emission_factor_id = ef.id
+       WHERE efa.factory_id = $1
+         AND ef.emission_source_id = COALESCE(
+               (SELECT factor_source_id FROM emission_sources WHERE id = $2), $2)
+         AND ef.year <= $3
+       ORDER BY ef.year DESC LIMIT 1`,
+      [fact.id, elecSrc.id, factorYear],
+    );
+    efByCode.set(code, {
+      grid: Number(ef.rows[0]?.grid) || 0,
+      residual: Number(ef.rows[0]?.residual) || 0,
+      found: ef.rows.length > 0,
+    });
+  }));
+
   const factories: FactoryReduction[] = [];
   let greenIrec = 0, greenSolar = 0, greenTotal = 0;
 
   for (const [code, acc] of accByFactory) {
     const fact = factByCode.get(code)!;
-    let gridEf = 0, residual = 0;
-    if (elecSrc && (acc.purchasedKwh > 0 || acc.solarKwh > 0)) {
-      const ef = await query(
-        `SELECT ef.grid_emission_factor::float AS grid, ef.market_residual_factor::float AS residual
-         FROM emission_factors ef
-         JOIN emission_factor_assignments efa ON efa.emission_factor_id = ef.id
-         WHERE efa.factory_id = $1
-           AND ef.emission_source_id = COALESCE(
-                 (SELECT factor_source_id FROM emission_sources WHERE id = $2), $2)
-           AND ef.year <= $3
-         ORDER BY ef.year DESC LIMIT 1`,
-        [fact.id, elecSrc.id, factorYear],
-      );
-      gridEf = Number(ef.rows[0]?.grid) || 0;
-      residual = Number(ef.rows[0]?.residual) || 0;
-      if (!ef.rows.length) warnings.push(`${code} 在 ${factorYear} 年查無電力係數。`);
-    }
+    const efc = efByCode.get(code)!;
+    if (!efc.found) warnings.push(`${code} 在 ${factorYear} 年查無電力係數。`);
+    const gridEf = efc.grid, residual = efc.residual;
     const isCHN = fact.country_code === 'CHN';
     const irec = recByFactory.get(code) || 0;
 
