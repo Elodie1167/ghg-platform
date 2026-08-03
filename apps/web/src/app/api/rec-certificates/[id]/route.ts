@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
 
 const PatchSchema = z.object({
   month: z.number().int().min(1).max(12).optional(),
@@ -56,6 +57,8 @@ export async function PATCH(
     if (result.rows.length === 0) {
       return NextResponse.json({ data: null, error: '找不到此 REC 記錄' }, { status: 404 });
     }
+    // iREC 變動 → 重算該廠該年範疇二
+    await recomputeScope2ForFactoryYear(result.rows[0].factory_id, result.rows[0].year);
     return NextResponse.json({ data: result.rows[0], error: null });
   } catch (err) {
     console.error('[PATCH /api/rec-certificates/[id]]', err);
@@ -71,12 +74,14 @@ export async function DELETE(
   const { id } = await params;
   try {
     const result = await query(
-      `DELETE FROM rec_certificates WHERE id = $1 RETURNING id`,
+      `DELETE FROM rec_certificates WHERE id = $1 RETURNING id, factory_id, year`,
       [id],
     );
     if (result.rows.length === 0) {
       return NextResponse.json({ data: null, error: '找不到此 REC 記錄' }, { status: 404 });
     }
+    // iREC 移除 → 重算該廠該年範疇二（扣減量回補）
+    await recomputeScope2ForFactoryYear(result.rows[0].factory_id, result.rows[0].year);
     return NextResponse.json({ data: { id }, error: null });
   } catch (err) {
     console.error('[DELETE /api/rec-certificates/[id]]', err);

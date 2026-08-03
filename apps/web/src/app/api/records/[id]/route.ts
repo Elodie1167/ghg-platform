@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
-import { calcCo2e } from '@/lib/co2e-calc';
+import { calcCo2e, recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
 
 // 未設定時（Vercel serverless）留空，直接走 TypeScript 備援
 const FASTAPI_URL = process.env.FASTAPI_URL ?? '';
@@ -168,6 +168,7 @@ export async function PUT(
 
     // 若 activity_value 或 meter_number 有變動，觸發重新計算
     const needsCalc = updates.activity_value !== undefined || updates.meter_number !== undefined;
+    let recordScope: number | null = null;
     if (needsCalc && updatedRow.activity_value != null) {
       const srcRow = await query(
         `SELECT es.scope, es.is_biomass, es.source_code, f.country_code
@@ -177,6 +178,7 @@ export async function PUT(
       );
       if (srcRow.rows.length) {
         const { scope, is_biomass, source_code: srcCode, substance, country_code } = srcRow.rows[0];
+        recordScope = scope;
         const bio_fraction_raw = updatedRow.meter_number ? parseFloat(updatedRow.meter_number) : 0;
         const bio_fraction = isNaN(bio_fraction_raw) ? 0 : bio_fraction_raw;
         const calcParams = {
@@ -235,6 +237,13 @@ export async function PUT(
       updatedRow.ch4_t = null;
       updatedRow.n2o_t = null;
       updatedRow.hfc_t = null;
+      const s = await query(`SELECT scope FROM emission_sources WHERE id = $1`, [updatedRow.emission_source_id]);
+      recordScope = s.rows[0]?.scope ?? null;
+    }
+
+    // 範疇二（外購電力）電量異動 → 依年度基礎重算整年各月分攤
+    if (needsCalc && recordScope === 2) {
+      await recomputeScope2ForFactoryYear(updatedRow.factory_id, updatedRow.year);
     }
 
     return NextResponse.json({ data: updatedRow, error: null });
@@ -260,9 +269,12 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    // 確認記錄存在且未審查
+    // 確認記錄存在且未審查（一併取回範疇/廠/年，供刪除後範疇二重算）
     const existing = await query(
-      'SELECT id, is_reviewed FROM activity_records WHERE id = $1',
+      `SELECT ar.id, ar.is_reviewed, ar.factory_id, ar.year, es.scope
+       FROM activity_records ar
+       JOIN emission_sources es ON ar.emission_source_id = es.id
+       WHERE ar.id = $1`,
       [id],
     );
 
@@ -281,6 +293,11 @@ export async function DELETE(
     }
 
     await query('DELETE FROM activity_records WHERE id = $1', [id]);
+
+    // 範疇二（外購電力）刪除 → 依年度基礎重算整年各月分攤
+    if (existing.rows[0].scope === 2) {
+      await recomputeScope2ForFactoryYear(existing.rows[0].factory_id, existing.rows[0].year);
+    }
 
     return NextResponse.json({ data: { id }, error: null });
   } catch (err) {

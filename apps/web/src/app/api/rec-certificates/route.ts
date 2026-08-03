@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
 
 const CreateRecSchema = z.object({
   factory_id: z.string().uuid(),
@@ -71,6 +72,8 @@ export async function POST(req: NextRequest) {
                  certificate_no, notes, created_at`,
       [factory_id, year, month, rec_kwh, generation_type ?? null, certificate_no ?? null, notes ?? null],
     );
+    // iREC 變動 → 重算該廠該年範疇二（市場別扣減量），彙總才會即時反映
+    await recomputeScope2ForFactoryYear(factory_id, year);
     return NextResponse.json({ data: result.rows[0], error: null }, { status: 201 });
   } catch (err) {
     console.error('[POST /api/rec-certificates]', err);

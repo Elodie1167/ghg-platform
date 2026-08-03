@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
-import { calcCo2e } from '@/lib/co2e-calc';
+import { calcCo2e, recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
 
 // ── FastAPI 計算服務 URL ───────────────────────────────────────────
 // 未設定時（Vercel serverless）留空，直接走 TypeScript 備援
@@ -217,6 +217,7 @@ export async function POST(req: NextRequest) {
 
     // Step 2：計算 CO₂e（FastAPI 優先，失敗時 TypeScript 備援）
     let calc: CalcResult | null = null;
+    let recordScope: number | null = null;
     if (activity_value != null) {
       const srcRow = await query(
         `SELECT es.scope, es.is_biomass, es.source_code, es.substance, f.country_code
@@ -226,6 +227,7 @@ export async function POST(req: NextRequest) {
       );
       if (srcRow.rows.length) {
         const { scope, is_biomass, source_code: srcCode, substance, country_code } = srcRow.rows[0];
+        recordScope = scope;
         const bio_fraction = meter_number ? parseFloat(meter_number) : 0;
         const fastApiPayload = {
           emission_source_id, factory_id, country_code, year, month,
@@ -266,6 +268,11 @@ export async function POST(req: NextRequest) {
           newId,
         ],
       );
+    }
+
+    // 範疇二（外購電力）新增 → 依年度基礎重算整年各月分攤，維持一致
+    if (recordScope === 2) {
+      await recomputeScope2ForFactoryYear(factory_id, year);
     }
 
     // Step 4：回傳完整記錄

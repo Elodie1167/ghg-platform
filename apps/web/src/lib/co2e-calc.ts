@@ -79,11 +79,26 @@ export async function calcCo2e(params: {
        FROM rec_certificates WHERE factory_id = $1 AND year = $2`,
       [params.factory_id, params.year],
     );
-    const recKwh = Number(recRow.rows[0]?.total) || 0;
+    const annualRec = Number(recRow.rows[0]?.total) || 0;
+    // 年度基礎（GHG Protocol 年度盤查）：iREC 抵扣為「全年電量 − 全年憑證」，
+    // 再依各月電量占比分攤到每月，避免舊版「每月各扣一次全年 REC」的重複扣。
+    // 全年電量取同一排放源（外購電力，恆為 kWh，UNIT_CONV=1，與本筆 value 同基準）。
+    const annRow = await query(
+      `SELECT COALESCE(SUM(activity_value::float), 0) AS total
+       FROM activity_records
+       WHERE factory_id = $1 AND year = $2 AND emission_source_id = $3
+         AND activity_value IS NOT NULL AND activity_value > 0`,
+      [params.factory_id, params.year, params.emission_source_id],
+    );
+    const annualKwh = Number(annRow.rows[0]?.total) || 0;
+    const monthKwh = value;
+    // 本月分攤 REC = 全年 REC × (本月電量 / 全年電量)；加總後 = max(0, 全年電量 − 全年REC)
+    const monthRecAlloc = annualKwh > 0 ? annualRec * (monthKwh / annualKwh) : 0;
+    const marketBase = Math.max(0, monthKwh - monthRecAlloc);
     const co2e_location = r4(value * gridEf / 1000);
     const co2e_market = params.country_code === 'CHN'
-      ? r4(Math.max(0, (value - recKwh) * (f.market_residual_factor ?? 0)) / 1000)
-      : r4(Math.max(0, (value - recKwh) * gridEf) / 1000);
+      ? r4(marketBase * (f.market_residual_factor ?? 0) / 1000)
+      : r4(marketBase * gridEf / 1000);
     return {
       co2e_total: co2e_location, co2e_location, co2e_market, co2e_biomass_co2: null,
       emission_factor_id: f.id, warnings: [],
@@ -168,4 +183,62 @@ export async function calcCo2e(params: {
     emission_factor_id: f.id, warnings: [],
     co2_t: r4(co2_kg / 1000), ch4_t: r4(ch4_kg / 1000), n2o_t: r4(n2o_kg / 1000), hfc_t,
   };
+}
+
+/**
+ * 重算某廠某年「全部範疇二（外購電力）」紀錄的 co2e。
+ * 因 iREC 採年度基礎＋各月占比分攤，任一月電量或任一筆 REC 變動都會改變
+ * 其他月的分攤結果，故電量/REC 異動後須整年一起重算。僅寫 DB，不再對外呼叫，
+ * 無遞迴風險。
+ */
+export async function recomputeScope2ForFactoryYear(
+  factory_id: string,
+  year: number,
+): Promise<void> {
+  const recs = await query(
+    `SELECT ar.id, ar.emission_source_id, ar.activity_value::float AS av, ar.activity_unit,
+            es.scope, es.is_biomass, es.source_code, es.substance, f.country_code
+     FROM activity_records ar
+     JOIN emission_sources es ON ar.emission_source_id = es.id
+     JOIN factories f ON ar.factory_id = f.id
+     WHERE ar.factory_id = $1 AND ar.year = $2 AND es.scope = 2`,
+    [factory_id, year],
+  );
+  for (const r of recs.rows) {
+    if (r.av == null || Number(r.av) <= 0) {
+      await query(
+        `UPDATE activity_records
+         SET co2e_location = NULL, co2e_market = NULL, co2e_total = NULL,
+             co2e_biomass_co2 = NULL, emission_factor_id = NULL,
+             co2_t = NULL, ch4_t = NULL, n2o_t = NULL, hfc_t = NULL, updated_at = NOW()
+         WHERE id = $1`,
+        [r.id],
+      );
+      continue;
+    }
+    const calc = await calcCo2e({
+      factory_id,
+      emission_source_id: r.emission_source_id,
+      country_code: r.country_code,
+      year,
+      activity_value: Number(r.av),
+      activity_unit: r.activity_unit,
+      scope: r.scope,
+      is_biomass: r.is_biomass,
+      source_code: r.source_code,
+      substance: r.substance ?? null,
+    });
+    if (calc) {
+      await query(
+        `UPDATE activity_records
+         SET co2e_location = $1, co2e_market = $2, co2e_total = $3,
+             co2e_biomass_co2 = $4, emission_factor_id = $5,
+             co2_t = $6, ch4_t = $7, n2o_t = $8, hfc_t = $9, updated_at = NOW()
+         WHERE id = $10`,
+        [calc.co2e_location, calc.co2e_market, calc.co2e_total,
+         calc.co2e_biomass_co2, calc.emission_factor_id,
+         calc.co2_t ?? null, calc.ch4_t ?? null, calc.n2o_t ?? null, calc.hfc_t ?? null, r.id],
+      );
+    }
+  }
 }
