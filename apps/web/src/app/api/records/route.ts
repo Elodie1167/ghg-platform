@@ -140,7 +140,8 @@ export async function GET(req: NextRequest) {
         ar.reviewed_at,
         ar.import_source,
         ar.created_at,
-        ar.updated_at
+        ar.updated_at,
+        (SELECT COUNT(*)::int FROM activity_line_items li WHERE li.activity_record_id = ar.id) AS line_items_count
       FROM activity_records ar
       JOIN factories f ON ar.factory_id = f.id
       JOIN emission_sources es ON ar.emission_source_id = es.id
