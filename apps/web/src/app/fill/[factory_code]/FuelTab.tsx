@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
-import { MONTHS, HEADER_BG, BTN_BG } from './tabTypes';
+import { MONTHS, HEADER_BG, BTN_BG, computeGas, fmtGas } from './tabTypes';
 import type { EmissionSource, ActivityRecord, AssignedFactor } from './page';
 import LineItemsCell from './LineItemsCell';
 
@@ -20,34 +20,10 @@ interface EventRow {
   ch4_t: number | null;
   n2o_t: number | null;
   hfc_t: number | null;
+  biomass_co2_t: number | null;
   is_reviewed: boolean;
   line_items_count: number;
   saveStatus: SaveStatus;
-}
-
-// 與伺服器 co2e-calc.ts 一致：液態/氣態燃料（體積單位）且有密度時，
-// 先 value × density → 質量(kg)，再 × NCV(MJ/kg)。公務車-柴油即走此鏈。
-const VOLUME_UNITS = new Set(['L', 'l', 'KL', 'Nm3', 'Nm³', 'm3', 'm³']);
-function computeGas(value: number, factor: AssignedFactor, unit: string) {
-  const GWP_CH4 = factor.gwp_ch4 ?? 27.9;
-  const GWP_N2O = factor.gwp_n2o ?? 273.0;
-  const ncv = factor.ncv ?? 0;
-  if (value <= 0) return null;
-  const density = factor.density ?? 0;
-  const kg = (VOLUME_UNITS.has(unit) && density > 0) ? value * density : value;
-  let co2_t: number, ch4_t: number, n2o_t: number;
-  if (ncv > 0) {
-    const tj = (kg * ncv) / 1_000_000;
-    co2_t = parseFloat((tj * (factor.factor_co2 ?? 0) / 1000).toFixed(4));
-    ch4_t = parseFloat((tj * (factor.factor_ch4 ?? 0) / 1000).toFixed(4));
-    n2o_t = parseFloat((tj * (factor.factor_n2o ?? 0) / 1000).toFixed(4));
-  } else {
-    co2_t = parseFloat((kg * (factor.factor_co2 ?? 0) / 1000).toFixed(4));
-    ch4_t = parseFloat((kg * (factor.factor_ch4 ?? 0) / 1000).toFixed(4));
-    n2o_t = parseFloat((kg * (factor.factor_n2o ?? 0) / 1000).toFixed(4));
-  }
-  const co2e_t = parseFloat((co2_t + ch4_t * GWP_CH4 + n2o_t * GWP_N2O).toFixed(4));
-  return { co2_t, ch4_t, n2o_t, co2e_t };
 }
 
 const FUEL_SOURCE_CODES = ['1-2A-1', '1-2A-2', '1-2A-4', '1-2A-5', '1-2A-6'];
@@ -162,6 +138,7 @@ function FuelSection({
       ch4_t: r.ch4_t ?? null,
       n2o_t: r.n2o_t ?? null,
       hfc_t: r.hfc_t ?? null,
+      biomass_co2_t: r.co2e_biomass_co2 ?? null,
       is_reviewed: r.is_reviewed ?? false,
       line_items_count: r.line_items_count ?? 0,
       saveStatus: 'idle' as SaveStatus,
@@ -181,7 +158,7 @@ function FuelSection({
       tempKey, id: null,
       month: new Date().getMonth() + 1,
       date_from: '', sub_location: '', activity_value: '', meter_number: '', notes: '',
-      co2e_total: null, co2_t: null, ch4_t: null, n2o_t: null, hfc_t: null,
+      co2e_total: null, co2_t: null, ch4_t: null, n2o_t: null, hfc_t: null, biomass_co2_t: null,
       is_reviewed: false, line_items_count: 0, saveStatus: 'idle',
     }]);
   }
@@ -256,8 +233,19 @@ function FuelSection({
     setRows((p) => p.filter((r) => r.tempKey !== tempKey));
   }
 
+  // 每列即時氣體（有輸入用即時值，否則回退資料庫已存值），合計與列顯示一致
+  const rowGas = rows.map((r) => ({
+    r,
+    g: assignedFactor
+      ? computeGas(parseFloat(r.activity_value) || 0, assignedFactor, source.default_unit, hasBioFactor, parseFloat(r.meter_number) || 0)
+      : null,
+  }));
   const totalVol = rows.reduce((s, r) => s + (parseFloat(r.activity_value) || 0), 0);
-  const totalCo2e = rows.reduce((s, r) => s + (r.co2e_total ?? 0), 0);
+  const totalCo2e = rowGas.reduce((s, { r, g }) => s + (g?.co2e_t ?? r.co2e_total ?? 0), 0);
+  const totalCo2 = rowGas.reduce((s, { r, g }) => s + (g?.co2_t ?? r.co2_t ?? 0), 0);
+  const totalCh4 = rowGas.reduce((s, { r, g }) => s + (g?.ch4_t ?? r.ch4_t ?? 0), 0);
+  const totalN2o = rowGas.reduce((s, { r, g }) => s + (g?.n2o_t ?? r.n2o_t ?? 0), 0);
+  const totalBiomassCo2 = rowGas.reduce((s, { r, g }) => s + (g?.biomass_co2_t ?? r.biomass_co2_t ?? 0), 0);
 
   return (
     <div className="mb-8">
@@ -301,10 +289,15 @@ function FuelSection({
                 <th className="px-3 py-2.5 text-right w-28">用量 ({source.default_unit})</th>
                 {hasBioFactor && <th className="px-3 py-2.5 text-right w-24">生質占比 %</th>}
                 <th className="px-3 py-2.5 text-left w-32">備註（費用等）</th>
-                <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
-                <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CO₂ (t)</th>
+                <th className="px-3 py-2.5 text-right w-24">CO₂e (t)
+                  {hasBioFactor && <span className="block text-[10px] font-normal text-green-200">計入 S1</span>}
+                </th>
+                {!hasBioFactor && <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CO₂ (t)</th>}
                 <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CH₄ (t)</th>
                 <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>N₂O (t)</th>
+                {hasBioFactor && <th className="px-2 py-2.5 text-right w-24 text-amber-900" style={{ backgroundColor: '#fde68a' }}>生質CO₂ (t)
+                  <span className="block text-[10px] font-normal text-amber-700">另計·不入 S1</span>
+                </th>}
                 <th className="px-3 py-2.5 text-center w-16">明細</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
                 <th className="px-3 py-2.5 text-center w-8">狀</th>
@@ -314,7 +307,7 @@ function FuelSection({
             <tbody>
               {rows.map((row, idx) => {
                 const gasResult = assignedFactor
-                  ? computeGas(parseFloat(row.activity_value) || 0, assignedFactor, source.default_unit)
+                  ? computeGas(parseFloat(row.activity_value) || 0, assignedFactor, source.default_unit, hasBioFactor, parseFloat(row.meter_number) || 0)
                   : null;
                 return (
                 <tr key={row.tempKey} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
@@ -362,15 +355,22 @@ function FuelSection({
                   <td className="px-3 py-1.5 text-right text-gray-400 text-xs font-mono">
                     {gasResult?.co2e_t?.toFixed(4) ?? (row.co2e_total != null ? row.co2e_total.toFixed(4) : '—')}
                   </td>
-                  <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
-                    {(gasResult?.co2_t ?? row.co2_t)?.toFixed(4) ?? '—'}
-                  </td>
+                  {!hasBioFactor && (
+                    <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
+                      {(gasResult?.co2_t ?? row.co2_t)?.toFixed(4) ?? '—'}
+                    </td>
+                  )}
                   <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
                     {(gasResult?.ch4_t ?? row.ch4_t)?.toFixed(4) ?? '—'}
                   </td>
                   <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
                     {(gasResult?.n2o_t ?? row.n2o_t)?.toFixed(4) ?? '—'}
                   </td>
+                  {hasBioFactor && (
+                    <td className="px-2 py-1.5 text-right text-xs font-mono text-amber-800" style={{ backgroundColor: '#fef3c7' }}>
+                      {(gasResult?.biomass_co2_t ?? row.biomass_co2_t)?.toFixed(4) ?? '—'}
+                    </td>
+                  )}
                   <td className="px-2 py-1.5 text-center">
                     <LineItemsCell recordId={row.id} count={row.line_items_count}
                       title={`${source.name_zh} ${row.month} 月`} unit={source.default_unit} sourceCode={source.source_code} />
@@ -409,9 +409,10 @@ function FuelSection({
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
                 </td>
-                <td />
-                <td />
-                <td />
+                {!hasBioFactor && <td className="px-2 py-2 text-right font-mono text-gray-500 text-xs" style={{ backgroundColor: '#fefce8' }}>{fmtGas(totalCo2)}</td>}
+                <td className="px-2 py-2 text-right font-mono text-gray-500 text-xs" style={{ backgroundColor: '#fefce8' }}>{fmtGas(totalCh4)}</td>
+                <td className="px-2 py-2 text-right font-mono text-gray-500 text-xs" style={{ backgroundColor: '#fefce8' }}>{fmtGas(totalN2o)}</td>
+                {hasBioFactor && <td className="px-2 py-2 text-right font-mono text-amber-800 text-xs" style={{ backgroundColor: '#fef3c7' }}>{fmtGas(totalBiomassCo2)}</td>}
                 <td colSpan={4} />
               </tr>
             </tfoot>

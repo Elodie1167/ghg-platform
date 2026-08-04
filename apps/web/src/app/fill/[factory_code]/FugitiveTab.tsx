@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, Component, type ReactNode, type ErrorInfo } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
-import { MONTHS, HEADER_BG, BTN_BG } from './tabTypes';
+import { MONTHS, HEADER_BG, BTN_BG, fmtGas } from './tabTypes';
 import type { EmissionSource, ActivityRecord } from './page';
 import LineItemsCell from './LineItemsCell';
 
@@ -647,6 +647,7 @@ function EventFugitiveSection({
     ? rows.reduce((s, r) => s + (parseFloat(r.unit_count) || 0) * (parseFloat(r.activity_value) || 0), 0)
     : rows.reduce((s, r) => s + (parseFloat(r.activity_value) || 0), 0);
   const totalCo2e = rows.reduce((s, r) => s + (r.co2e_total ?? 0), 0);
+  const totalHfc = rows.reduce((s, r) => s + (r.hfc_t ?? 0), 0);
 
   return (
     <div className="mb-8">
@@ -761,7 +762,7 @@ function EventFugitiveSection({
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
                 </td>
-                <td />
+                <td className="px-2 py-2 text-right font-mono text-gray-500 text-xs" style={{ backgroundColor: '#fefce8' }}>{fmtGas(totalHfc)}</td>
                 <td colSpan={4} />
               </tr>
             </tfoot>
