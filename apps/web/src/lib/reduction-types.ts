@@ -17,6 +17,11 @@ export interface FactoryReduction {
   s1s2_mkt: number;
   irec_kwh: number;    // 該廠 iREC 度數（張數 = irec_kwh / 1000，1 張 = 1 MWh）
   biomass_co2: number; // 生質 CO₂（另計，依 GHG Protocol 不計入 S1）tCO₂
+  // ── 情境試算（projection）用原始欄位，僅 CSR 路徑帶入；平台路徑為 undefined ──
+  market_elec_kwh?: number; // 實際期間市場別電量（未封頂/未扣 iREC）：CHN? 外購+太陽能 : 外購
+  mkt_factor?: number;      // 有效市場別係數 kgCO2e/kWh：CHN? 市場剩餘係數 : 電網係數
+  purchased_kwh?: number;   // 外購電力度數（綠電占比投影用）
+  solar_kwh?: number;       // 自發太陽能度數（綠電占比投影用）
 }
 
 // iREC 1 張 = 1 MWh = 1000 kWh
@@ -49,6 +54,7 @@ export interface ReductionResult {
   baselines: BaselineIntensity[];
   greenPower: GreenPower;
   warnings: string[];
+  csrActualMonths?: number; // CSR 該年實際有能源資料的相異月份數（投影「實際月數」預設值）
 }
 
 export const COUNTRY_LABELS: Record<string, string> = {

@@ -36,6 +36,7 @@ function orderFactories<T extends { factory_code: string; country_code: string }
 function finalizeFactory(r: {
   factory_code: string; name_zh: string; country_code: string;
   s1: number; s2_loc: number; s2_mkt: number; irec_kwh: number; biomass_co2: number;
+  market_elec_kwh?: number; mkt_factor?: number; purchased_kwh?: number; solar_kwh?: number;
 }): FactoryReduction {
   return {
     ...r,
@@ -178,7 +179,7 @@ export async function getReductionFromCsr(
   const inRange = (m: number) => m === 0 || (m >= monthFrom && m <= monthTo);
 
   // 主檔
-  const [factRes, srcRes, energyRes, prodRes, baselines] = await Promise.all([
+  const [factRes, srcRes, energyRes, prodRes, baselines, actualMonthsRes] = await Promise.all([
     query(`SELECT id, factory_code, name_zh, country_code FROM factories`),
     query(`SELECT id, source_code, scope, is_biomass, substance FROM emission_sources`),
     query(
@@ -196,7 +197,14 @@ export async function getReductionFromCsr(
       [year],
     ),
     getBaselines(),
+    // 投影「實際月數」預設值：CSR 該年區間內有能源資料的相異月份數（不計 month=0 整年式）
+    query(
+      `SELECT COUNT(DISTINCT month) AS n FROM csr_energy
+       WHERE year = $1 AND month BETWEEN $2 AND $3`,
+      [year, monthFrom, monthTo],
+    ),
   ]);
+  const csrActualMonths = Number(actualMonthsRes.rows[0]?.n) || 0;
 
   const factByCode = new Map(
     (factRes.rows as Array<{ id: string; factory_code: string; name_zh: string; country_code: string }>)
@@ -327,6 +335,10 @@ export async function getReductionFromCsr(
     factories.push(finalizeFactory({
       factory_code: code, name_zh: fact.name_zh, country_code: fact.country_code,
       s1: acc.s1, s2_loc, s2_mkt, irec_kwh: irec, biomass_co2: acc.biomass_co2,
+      market_elec_kwh: marketElec,
+      mkt_factor: isCHN ? residual : gridEf,
+      purchased_kwh: acc.purchasedKwh,
+      solar_kwh: acc.solarKwh,
     }));
 
     greenIrec += irec;
@@ -357,6 +369,6 @@ export async function getReductionFromCsr(
     factories: orderedFactories, totals, production,
     intensity_market_kg: intensity(totals.s1s2_mkt, production),
     intensity_location_kg: intensity(totals.s1s2_loc, production),
-    baselines, greenPower, warnings,
+    baselines, greenPower, warnings, csrActualMonths,
   };
 }

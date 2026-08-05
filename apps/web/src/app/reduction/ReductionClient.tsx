@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { COUNTRY_LABELS, IREC_KWH_PER_CERT, type ReductionResult, type FactoryReduction } from '@/lib/reduction-types';
 
@@ -26,6 +26,9 @@ function changeDisplay(v: number | null): { text: string; cls: string } {
 export default function ReductionClient({ data }: { data: ReductionResult }) {
   const router = useRouter();
   const { source, year, monthFrom, monthTo, factorYear } = data;
+  const [projOn, setProjOn] = useState(false);
+  // 投影僅 CSR 路徑（需 market_elec_kwh 等原始欄位；平台路徑為 undefined）
+  const projectable = source === 'csr' && data.factories.some((f) => f.market_elec_kwh !== undefined);
 
   function buildParams(patch: Record<string, string | number> = {}) {
     const params = new URLSearchParams({
@@ -128,6 +131,12 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
               className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/40 text-white hover:bg-white/10 transition">
               ⬇ 匯出 Excel（產區加總＋各廠明細）
             </a>
+            {projectable && (
+              <button type="button" onClick={() => setProjOn((v) => !v)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/40 text-white hover:bg-white/10 transition">
+                {projOn ? '▲ 收合情境試算' : '🧮 情境試算（推估至目標月／年底 iREC 缺口）'}
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -156,6 +165,11 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
         <p className="-mt-4 text-xs text-gray-400">
           地域別強度 = {iloc == null ? '—' : `${iloc.toFixed(4)} kgCO₂e/標打`}（僅供參考，基準年僅有市場別、地域別不比基準）
         </p>
+
+        {/* 情境試算（CSR，前端即時，不寫入資料庫） */}
+        {projOn && projectable && (
+          <ProjectionPanel data={data} b2020={b2020} b2025={b2025} />
+        )}
 
         {/* 綠電占比 */}
         <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
@@ -338,6 +352,301 @@ function ManualIrecPanel({ year, factories, onSaved }: {
   );
 }
 
+// ── 情境試算（projection）───────────────────────────────────
+// 前端即時線性外推，不寫入資料庫。能源／產出／S1／S2 隨活動量等比放大；
+// iREC 以「年度規劃量」另按 ÷12×目標月 攤提（與能源不同基準）。市場別 S2 因逐廠
+// 有 max(0, 電量−iREC) 封頂，必須逐廠重算再加總，故需 market_elec_kwh、mkt_factor。
+
+type ProjRow = {
+  s1: number; s2_loc: number; s2_mkt: number; s1s2_mkt: number;
+  irecKwh: number; purchased: number; solar: number; clamped: boolean;
+};
+
+// scale = 目標月/實際月；irecKwh = 已攤提後的度數（呼叫端算好）
+function projectFactory(f: FactoryReduction, scale: number, irecKwh: number): ProjRow {
+  const s1 = f.s1 * scale;
+  const s2_loc = f.s2_loc * scale;
+  const mktBase = Math.max(0, (f.market_elec_kwh ?? 0) * scale - irecKwh);
+  const s2_mkt = (mktBase * (f.mkt_factor ?? 0)) / 1000;
+  return {
+    s1, s2_loc, s2_mkt, s1s2_mkt: s1 + s2_mkt, irecKwh,
+    purchased: (f.purchased_kwh ?? 0) * scale, solar: (f.solar_kwh ?? 0) * scale,
+    clamped: mktBase === 0 && irecKwh > 0,
+  };
+}
+
+// 2025 基準路徑於指定年度線性內插：2025→b2025、2030→b2020×0.5、2050→0
+function pathwayTargetAt(yr: number, b2020: number | null, b2025: number | null): number | null {
+  if (b2020 == null || b2025 == null) return null;
+  const t2030 = b2020 * (1 - T2030_RATIO);
+  if (yr <= 2025) return b2025;
+  if (yr <= 2030) return b2025 + ((t2030 - b2025) * (yr - 2025)) / 5;
+  if (yr <= 2050) return t2030 + ((0 - t2030) * (yr - 2030)) / 20;
+  return 0;
+}
+
+function ProjectionPanel({ data, b2020, b2025 }: {
+  data: ReductionResult; b2020: number | null; b2025: number | null;
+}) {
+  const factories = data.factories;
+  const [actualM, setActualM] = useState(String(data.csrActualMonths || (data.monthTo - data.monthFrom + 1)));
+  const [targetM, setTargetM] = useState('9');
+  const [annualCerts, setAnnualCerts] = useState<Record<string, string>>({});
+  const [targetMode, setTargetMode] = useState<'pathway' | 'manual'>('pathway');
+  const [manualTarget, setManualTarget] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const aM = Math.max(1, Number(actualM) || 0);
+  const tM = Math.max(0, Number(targetM) || 0);
+  const scale = tM / aM;
+  const certsOf = (code: string) => Number(annualCerts[code]) || 0;
+  const irecKwhTarget = (code: string) => certsOf(code) * IREC_KWH_PER_CERT * (tM / 12);
+
+  // ── 目標月投影 ──
+  const proj = useMemo(() => {
+    let s1 = 0, s1s2_mkt = 0, s2_mkt = 0, greenIrec = 0, greenTotal = 0;
+    const clamped: string[] = [];
+    const rows = factories.map((f) => {
+      const r = projectFactory(f, scale, irecKwhTarget(f.factory_code));
+      s1 += r.s1; s1s2_mkt += r.s1s2_mkt; s2_mkt += r.s2_mkt;
+      greenIrec += r.irecKwh; greenTotal += r.purchased + r.solar;
+      if (r.clamped) clamped.push(f.factory_code);
+      return { f, r };
+    });
+    const production = data.production * scale;
+    const intensity = production > 0 ? (s1s2_mkt * 1000) / production : null;
+    const greenRatio = greenTotal > 0 ? (greenIrec / greenTotal) * 100 : 0;
+    return { rows, s1, s2_mkt, s1s2_mkt, production, intensity, greenRatio, greenIrec, greenTotal, clamped };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [factories, scale, tM, annualCerts, data.production]);
+
+  // ── 年底(12月)缺口 ──
+  const gap = useMemo(() => {
+    const scale12 = 12 / aM;
+    let s1_12 = 0, s1s2_mkt_12 = 0, s2_mkt_12 = 0;
+    for (const f of factories) {
+      const r = projectFactory(f, scale12, certsOf(f.factory_code) * IREC_KWH_PER_CERT); // 全年 iREC
+      s1_12 += r.s1; s1s2_mkt_12 += r.s1s2_mkt; s2_mkt_12 += r.s2_mkt;
+    }
+    const prod12 = data.production * scale12;
+    const T = targetMode === 'pathway' ? pathwayTargetAt(data.year, b2020, b2025) : (manualTarget === '' ? null : Number(manualTarget));
+    // 加權平均市場別係數（實際期間電量加權）
+    let wNum = 0, wDen = 0;
+    for (const f of factories) { wNum += (f.mkt_factor ?? 0) * (f.market_elec_kwh ?? 0); wDen += f.market_elec_kwh ?? 0; }
+    const wbar = wDen > 0 ? wNum / wDen : 0;
+    if (T == null || prod12 <= 0) return { T, prod12, s1s2_mkt_12, s1_12, s2_mkt_12, wbar, allowed: null as number | null, gap_t: null as number | null, feasible: true, certs: null as number | null };
+    const allowed = (T * prod12) / 1000; // 允許之 S1+S2(市) tCO₂e
+    const gap_t = s1s2_mkt_12 - allowed;
+    const feasible = allowed > s1_12; // 即使 S2 歸零仍 > 允許 → 單靠 iREC 無法達標
+    const certs = gap_t > 0 && feasible && wbar > 0 ? (gap_t * 1000) / wbar / IREC_KWH_PER_CERT : gap_t <= 0 ? 0 : null;
+    return { T, prod12, s1s2_mkt_12, s1_12, s2_mkt_12, wbar, allowed, gap_t, feasible, certs };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [factories, aM, annualCerts, targetMode, manualTarget, b2020, b2025, data.year, data.production]);
+
+  const projChg = (base: number | null) => (base && base > 0 && proj.intensity != null ? ((proj.intensity - base) / base) * 100 : null);
+  const pc2020 = changeDisplay(projChg(b2020));
+  const pc2025 = changeDisplay(projChg(b2025));
+
+  // ── 依產區分組（iREC 輸入格）──
+  const byCC = new Map<string, FactoryReduction[]>();
+  for (const f of factories) { if (!byCC.has(f.country_code)) byCC.set(f.country_code, []); byCC.get(f.country_code)!.push(f); }
+  const regions = [
+    ...COUNTRY_ORDER.filter((c) => byCC.has(c)),
+    ...[...byCC.keys()].filter((c) => !COUNTRY_ORDER.includes(c)),
+  ];
+
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      const XLSX = await import('xlsx');
+      const r2 = (v: number) => Math.round(v * 100) / 100;
+      const meta: (string | number)[][] = [
+        ['減碳績效追蹤 — 情境試算匯出'],
+        ['資料來源', 'CSR 匯出'], ['年度', data.year],
+        ['實際資料月數', aM], ['投影目標月數', tM], ['放大倍率 (目標/實際)', r2(scale)],
+        ['目標基準來源', targetMode === 'pathway' ? '依減碳路徑自動' : '手動輸入'],
+        ['目標市場別強度 T (kgCO₂e/標打)', gap.T == null ? '—' : r2(gap.T)],
+        ['投影市場別強度 (kgCO₂e/標打)', proj.intensity == null ? '—' : r2(proj.intensity)],
+        ['年底(12月)投影 S1+S2(市) tCO₂e', r2(gap.s1s2_mkt_12)],
+        ['年底缺口 tCO₂e', gap.gap_t == null ? '—' : r2(gap.gap_t)],
+        ['年底約需額外 iREC (張，近似)', gap.certs == null ? (gap.feasible ? '—' : '單靠iREC無法達標') : Math.ceil(gap.certs)],
+        ['備註', 'AI 試算，情境模擬結果需永續發展部確認，非最終結論'],
+      ];
+      const irecPlan: (string | number)[][] = [['廠代碼', '名稱', '產區', '年度規劃 iREC (張)']];
+      for (const f of factories) irecPlan.push([f.factory_code, f.name_zh, COUNTRY_LABELS[f.country_code] ?? f.country_code, certsOf(f.factory_code)]);
+
+      const header = ['S1', 'S2 市場', 'S1+S2 市場', '投影 iREC 度數', '封頂'];
+      const facRows: (string | number)[][] = [[`各廠明細（投影至 ${tM} 月，tCO₂e）`], ['廠代碼', '名稱', '產區', ...header]];
+      const region = new Map<string, { s1: number; s2_mkt: number; s1s2_mkt: number; irecKwh: number }>();
+      for (const { f, r } of proj.rows) {
+        facRows.push([f.factory_code, f.name_zh, COUNTRY_LABELS[f.country_code] ?? f.country_code,
+          r2(r.s1), r2(r.s2_mkt), r2(r.s1s2_mkt), Math.round(r.irecKwh), r.clamped ? '是' : '']);
+        const cur = region.get(f.country_code) ?? { s1: 0, s2_mkt: 0, s1s2_mkt: 0, irecKwh: 0 };
+        cur.s1 += r.s1; cur.s2_mkt += r.s2_mkt; cur.s1s2_mkt += r.s1s2_mkt; cur.irecKwh += r.irecKwh;
+        region.set(f.country_code, cur);
+      }
+      const regRows: (string | number)[][] = [[`產區加總（投影至 ${tM} 月，tCO₂e）`], ['產區', 'S1', 'S2 市場', 'S1+S2 市場', '投影 iREC 度數']];
+      regRows.push(['集團合計', r2(proj.s1), r2(proj.s2_mkt), r2(proj.s1s2_mkt), Math.round(proj.greenIrec)]);
+      for (const [cc, t] of region) regRows.push([COUNTRY_LABELS[cc] ?? cc, r2(t.s1), r2(t.s2_mkt), r2(t.s1s2_mkt), Math.round(t.irecKwh)]);
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(meta), '試算摘要');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(regRows), '產區加總(投影)');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(facRows), '各廠明細(投影)');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(irecPlan), 'iREC規劃');
+      XLSX.writeFile(wb, `reduction_projection_${data.year}_${aM}to${tM}m.xlsx`);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const monthOnlyLump = data.csrActualMonths === 0;
+
+  return (
+    <section className="bg-blue-50/40 border border-blue-200 rounded-xl p-5 space-y-5">
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-base font-bold text-[#1e3a5f]">🧮 情境試算（推估至目標月）</h2>
+          <p className="text-xs text-blue-800/70 mt-0.5">
+            以實際期間資料線性外推：能源／產出／S1／S2 按 <b>÷實際月×目標月</b> 放大；iREC 以年度規劃量按 <b>÷12×目標月</b> 攤提（基準不同）。全在前端即時計算，<b>不寫入資料庫</b>。
+          </p>
+        </div>
+        <button onClick={exportExcel} disabled={exporting}
+          className="px-4 py-2 rounded-lg text-white text-sm font-medium transition disabled:opacity-60 shrink-0"
+          style={{ backgroundColor: HEADER_BG }}>{exporting ? '匯出中…' : '⬇ 另存試算 Excel'}</button>
+      </div>
+
+      {monthOnlyLump && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+          ⚠️ 該年 CSR 能源為整年式（month=0）或查無月度資料，無法自動偵測實際月數；請手動確認「實際月數」，月度線性外推可能失真。
+        </div>
+      )}
+
+      {/* 控制列 */}
+      <div className="flex flex-wrap items-end gap-4">
+        <NumField label="實際資料月數" hint={`偵測 ${data.csrActualMonths ?? '—'} 個月`} value={actualM} onChange={setActualM} />
+        <NumField label="投影目標月數" hint="例：至 9 月填 9" value={targetM} onChange={setTargetM} />
+        <div className="text-xs text-blue-800/70 pb-1.5">放大倍率 <b className="font-mono text-sm">{isFinite(scale) ? scale.toFixed(3) : '—'}×</b></div>
+      </div>
+
+      {/* 投影 KPI */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="rounded-xl border border-blue-200 bg-white shadow-sm p-4">
+          <div className="text-xs text-gray-500">投影市場別強度</div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-2xl font-bold font-mono text-[#1e3a5f]">{proj.intensity == null ? '—' : proj.intensity.toFixed(4)}</span>
+            <span className="text-xs text-gray-400">kgCO₂e/標打</span>
+          </div>
+          <div className="text-[11px] text-gray-400 mt-1.5">
+            實際（{aM} 月）= {data.intensity_market_kg == null ? '—' : data.intensity_market_kg.toFixed(4)} → 投影（{tM} 月）
+          </div>
+        </div>
+        <div className="rounded-xl border border-blue-200 bg-white shadow-sm p-4">
+          <div className="text-xs text-gray-500">投影相比 2020 基準</div>
+          <div className={`mt-1 text-2xl font-bold font-mono ${pc2020.cls}`}>{pc2020.text}</div>
+          <div className="text-[11px] text-gray-400 mt-1.5">{b2020 != null ? `基準 ${b2020}` : ''}</div>
+        </div>
+        <div className="rounded-xl border border-blue-200 bg-white shadow-sm p-4">
+          <div className="text-xs text-gray-500">投影相比 2025 基準</div>
+          <div className={`mt-1 text-2xl font-bold font-mono ${pc2025.cls}`}>{pc2025.text}</div>
+          <div className="text-[11px] text-gray-400 mt-1.5">{b2025 != null ? `基準 ${b2025}` : ''}</div>
+        </div>
+      </div>
+
+      {/* 各廠年度規劃 iREC 輸入 */}
+      <div>
+        <div className="text-sm font-bold text-[#1e3a5f] mb-1">各廠年度規劃 iREC（張，1 張 = 1 MWh）</div>
+        <p className="text-xs text-blue-800/70 mb-2">此為<b>全年</b>規劃量；投影至目標月時自動按 ÷12×{tM || '?'} 攤提。留空 = 0。</p>
+        <div className="divide-y divide-blue-100 border-t border-blue-100">
+          {regions.map((cc) => (
+            <div key={cc} className="flex flex-wrap items-center gap-2 py-2.5">
+              <div className="w-16 shrink-0 text-sm font-bold text-[#1e3a5f]">{COUNTRY_LABELS[cc] ?? cc}</div>
+              {byCC.get(cc)!.map((f) => {
+                const isClamped = proj.clamped.includes(f.factory_code);
+                return (
+                  <label key={f.factory_code} title={f.name_zh}
+                    className={`flex items-center gap-1.5 bg-white rounded-lg border px-2.5 py-1.5 ${isClamped ? 'border-amber-300' : 'border-blue-100'}`}>
+                    <span className="text-xs text-gray-600 font-mono whitespace-nowrap">{f.factory_code}</span>
+                    <input type="number" min="0" step="any" value={annualCerts[f.factory_code] ?? ''}
+                      onChange={(e) => setAnnualCerts((p) => ({ ...p, [f.factory_code]: e.target.value }))}
+                      className="border border-gray-300 rounded px-2 py-0.5 text-sm font-mono w-20 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <span className="text-xs text-gray-400">張</span>
+                    {isClamped && <span className="text-[10px] text-amber-600" title="攤提後 iREC 超過市場電量，超買無效">超買</span>}
+                  </label>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 路徑圖（含投影點） */}
+      <div className="bg-white rounded-xl border border-blue-100 p-4">
+        <div className="text-sm font-bold text-[#1e3a5f] mb-2">減碳路徑圖（含情境投影點）</div>
+        <PathwayChart b2020={b2020} b2025={b2025} actualYear={data.year} actual={data.intensity_market_kg} projected={proj.intensity} />
+      </div>
+
+      {/* 年底 iREC 缺口 */}
+      <div className="bg-white rounded-xl border border-blue-100 p-4 space-y-3">
+        <div className="text-sm font-bold text-[#1e3a5f]">年底（12 月）達標缺口 — 還需補多少 iREC</div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Seg label="目標來源" value={targetMode}
+            options={[['pathway', '依減碳路徑自動'], ['manual', '手動輸入']]}
+            onChange={(v) => setTargetMode(v as 'pathway' | 'manual')} />
+          {targetMode === 'manual'
+            ? <NumField label="目標市場別強度 T" hint="kgCO₂e/標打" value={manualTarget} onChange={setManualTarget} />
+            : <div className="text-xs text-gray-500 pb-1.5">路徑推算 {data.year} 年應達 <b className="font-mono text-sm text-[#1e3a5f]">{gap.T == null ? '—' : gap.T.toFixed(4)}</b> kgCO₂e/標打</div>}
+        </div>
+        <GapResult gap={gap} />
+        <p className="text-[11px] text-gray-400">
+          缺口以年底（12 月）視野推估：允許排放 = T × 年化標打產能。約需 iREC 以「各廠市場別係數之電量加權平均」換算，為<b>近似值</b>——未計各廠係數差異與逐廠封頂，實際採購請依廠別逐一核算。
+        </p>
+      </div>
+
+      <div className="text-[11px] leading-relaxed bg-amber-400/15 border border-amber-300/40 rounded-lg px-3 py-2 text-amber-800">
+        ⚠️ AI 試算，情境模擬結果（投影強度、減碳%、iREC 缺口）需<b>永續發展部確認</b>，非最終結論。
+      </div>
+    </section>
+  );
+}
+
+function GapResult({ gap }: { gap: { T: number | null; gap_t: number | null; feasible: boolean; certs: number | null; allowed: number | null; s1s2_mkt_12: number } }) {
+  if (gap.T == null) return <div className="text-sm text-gray-500">請選擇或輸入目標強度以計算缺口。</div>;
+  if (gap.allowed == null) return <div className="text-sm text-gray-500">查無標打產能，無法計算缺口。</div>;
+  if (!gap.feasible) {
+    return (
+      <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+        ⚠️ 即使市場別 S2 全數以 iREC 抵銷歸零，年底 S1 仍高於允許排放 —— <b>單靠 iREC 無法達標，需同時削減 Scope 1</b>。
+        <div className="text-xs text-red-500 mt-1">年底投影 S1+S2(市) {gap.s1s2_mkt_12.toFixed(1)} tCO₂e ｜ 允許 {gap.allowed.toFixed(1)} tCO₂e</div>
+      </div>
+    );
+  }
+  if ((gap.gap_t ?? 0) <= 0) {
+    return (
+      <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+        ✅ 依目前規劃，年底投影已達標（無需額外 iREC）。
+        <div className="text-xs text-green-600 mt-1">年底投影 S1+S2(市) {gap.s1s2_mkt_12.toFixed(1)} tCO₂e ≤ 允許 {gap.allowed.toFixed(1)} tCO₂e</div>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-800">
+      約需額外 <b className="font-mono text-lg text-[#1e3a5f]">{gap.certs == null ? '—' : Math.ceil(gap.certs).toLocaleString()}</b> 張 iREC（近似）才能於年底達標。
+      <div className="text-xs text-blue-600 mt-1">缺口 {gap.gap_t!.toFixed(1)} tCO₂e ｜ 年底投影 {gap.s1s2_mkt_12.toFixed(1)} → 允許 {gap.allowed.toFixed(1)} tCO₂e</div>
+    </div>
+  );
+}
+
+function NumField({ label, hint, value, onChange }: { label: string; hint?: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <label className="flex flex-col gap-0.5">
+      <span className="text-xs text-gray-600">{label}{hint && <span className="text-gray-400 ml-1">({hint})</span>}</span>
+      <input type="number" min="0" step="any" value={value} onChange={(e) => onChange(e.target.value)}
+        className="border border-gray-300 rounded-lg px-2.5 py-1 text-sm font-mono w-28 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+    </label>
+  );
+}
+
 // ── 小元件 ──────────────────────────────────────────────────
 function rangeYears(from: number, to: number): number[] {
   const out: number[] = [];
@@ -435,8 +744,9 @@ function Row({ label, sublabel, f, bold, bg, labelClass }: {
 }
 
 // ── 減碳路徑圖（純 SVG 折線）──────────────────────────────────
-function PathwayChart({ b2020, b2025, actualYear, actual }: {
+function PathwayChart({ b2020, b2025, actualYear, actual, projected }: {
   b2020: number | null; b2025: number | null; actualYear: number; actual: number | null;
+  projected?: number | null;
 }) {
   const W = 820, H = 340;
   const padL = 56, padR = 24, padT = 20, padB = 36;
@@ -445,7 +755,7 @@ function PathwayChart({ b2020, b2025, actualYear, actual }: {
   const Y0 = 2020, Y1 = 2050;
 
   const t2030 = b2020 != null ? b2020 * (1 - T2030_RATIO) : null;
-  const yMax = Math.max(b2020 ?? 0, b2025 ?? 0, actual ?? 0, 1) * 1.15;
+  const yMax = Math.max(b2020 ?? 0, b2025 ?? 0, actual ?? 0, projected ?? 0, 1) * 1.15;
 
   const xs = (yr: number) => padL + ((yr - Y0) / (Y1 - Y0)) * plotW;
   const ys = (v: number) => padT + plotH - (v / yMax) * plotH;
@@ -484,6 +794,14 @@ function PathwayChart({ b2020, b2025, actualYear, actual }: {
           </text>
         </>)}
 
+        {projected != null && (<>
+          <circle cx={xs(actualYear)} cy={ys(projected)} r="5" fill="#fff" stroke="#2563eb" strokeWidth="2" />
+          <text x={xs(actualYear)} y={ys(projected) + (actual != null && projected > actual ? 16 : -10)}
+            textAnchor="middle" fontSize="10" fill="#2563eb" fontWeight="700">
+            {projected.toFixed(2)}
+          </text>
+        </>)}
+
         <line x1={padL} y1={padT} x2={padL} y2={padT + plotH} stroke="#cbd5e1" />
         <line x1={padL} y1={padT + plotH} x2={W - padR} y2={padT + plotH} stroke="#cbd5e1" />
         <text x={padL} y={12} fontSize="10" fill="#9ca3af">kgCO₂e/標打</text>
@@ -492,6 +810,9 @@ function PathwayChart({ b2020, b2025, actualYear, actual }: {
         <span className="inline-flex items-center gap-1.5"><span className="inline-block w-4 h-0.5" style={{ backgroundColor: '#0C3D2E' }} />2020 基準路徑</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block w-4 h-0.5" style={{ backgroundColor: '#0d9488' }} />2025 基準路徑</span>
         <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: '#f59e0b' }} />實際（市場別）</span>
+        {projected != null && (
+          <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-full border-2" style={{ borderColor: '#2563eb', backgroundColor: '#fff' }} />情境模擬（投影至目標月）</span>
+        )}
       </div>
     </div>
   );
