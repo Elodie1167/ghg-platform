@@ -419,6 +419,12 @@ function FuelSection({
           </table>
         </div>
       )}
+      {hasBioFactor && rows.length > 0 && (
+        <p className="text-xs text-gray-500 mt-2">
+          生質占比 %：混掺生質燃料（如 B40 填 40）用。CO₂e（計入 S1）= 化石 CO₂ + CH₄ × GWP<sub>CH₄</sub> + N₂O × GWP<sub>N₂O</sub>。
+          <span className="text-amber-700">生質占比對應的 CO₂ 屬生質碳循環，另計、不計入 S1。</span>
+        </p>
+      )}
     </div>
   );
 }

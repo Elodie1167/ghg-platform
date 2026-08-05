@@ -864,6 +864,12 @@ function EventSection({
           </table>
         </div>
       )}
+      {hasBioFactor && rows.length > 0 && (
+        <p className="text-xs text-gray-500 mt-2">
+          CO₂e（計入 S1）= CH₄ × GWP<sub>CH₄</sub> + N₂O × GWP<sub>N₂O</sub>。
+          <span className="text-amber-700">生質 CO₂ 屬生質碳循環，另計、不計入 S1。</span>
+        </p>
+      )}
     </div>
   );
 }
