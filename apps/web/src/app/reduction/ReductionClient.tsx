@@ -555,8 +555,16 @@ function ProjectionPanel({ data, b2020, b2025 }: {
 
       {/* 各廠年度規劃 iREC 輸入 */}
       <div>
-        <div className="text-sm font-bold text-[#1e3a5f] mb-1">各廠年度規劃 iREC（張，1 張 = 1 MWh）</div>
-        <p className="text-xs text-blue-800/70 mb-2">此為<b>全年</b>規劃量；投影至目標月時自動按 ÷12×{tM || '?'} 攤提。留空 = 0。</p>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+          <div className="text-sm font-bold text-[#1e3a5f]">各廠年度規劃 iREC（張，1 張 = 1 MWh）</div>
+          <button type="button" onClick={() => setAnnualCerts(Object.fromEntries(
+            factories.map((f) => [f.factory_code, String(Math.round((f.irec_kwh / aM * 12 / IREC_KWH_PER_CERT) * 100) / 100)]),
+          ))}
+            className="px-2.5 py-1 rounded-lg text-xs font-medium border border-blue-300 text-[#1e3a5f] bg-white hover:bg-blue-50 transition">
+            ⤵ 帶入 GHG 平台目前 iREC 量
+          </button>
+        </div>
+        <p className="text-xs text-blue-800/70 mb-2">此為<b>全年</b>規劃量；投影至目標月時自動按 ÷12×{tM || '?'} 攤提。留空 = 0。可先按上方按鈕帶入目前實際 iREC（依實際月數年化換算），再手動調整。</p>
         <div className="divide-y divide-blue-100 border-t border-blue-100">
           {regions.map((cc) => (
             <div key={cc} className="flex flex-wrap items-center gap-2 py-2.5">

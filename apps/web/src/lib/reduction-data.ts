@@ -233,9 +233,19 @@ export async function getReductionFromCsr(
       `SELECT factory_code, month, rec_kwh::float AS rec_kwh FROM csr_rec WHERE year = $1`,
       [year],
     );
+    let lumpProrated = false;
     for (const row of r.rows as Array<{ factory_code: string; month: number; rec_kwh: number }>) {
       if (!inRange(row.month)) continue;
-      recByFactory.set(row.factory_code, (recByFactory.get(row.factory_code) || 0) + (Number(row.rec_kwh) || 0));
+      let kwh = Number(row.rec_kwh) || 0;
+      // 年度合計式（month=0）的手動 iREC：依 CSR 實際月數攤提，避免用全年度量套用在不足一年的區間
+      if (row.month === 0 && csrActualMonths > 0) {
+        kwh = kwh * (csrActualMonths / 12);
+        lumpProrated = true;
+      }
+      recByFactory.set(row.factory_code, (recByFactory.get(row.factory_code) || 0) + kwh);
+    }
+    if (lumpProrated) {
+      warnings.push(`手動 iREC 為年度合計，已依 CSR 實際月數（${csrActualMonths}/12）攤提後計入市場別強度。`);
     }
   }
 
