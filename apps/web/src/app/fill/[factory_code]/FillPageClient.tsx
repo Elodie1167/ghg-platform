@@ -114,10 +114,20 @@ export default function FillPageClient({
   assignedFactors,
   recMwh,
 }: Props) {
-  // Build a lookup: emission_source_id → assigned factor for quick access in tabs
-  const factorBySourceId = Object.fromEntries(
+  // Build a lookup: emission_source_id → assigned factor for quick access in tabs.
+  // 共用係數的來源（如太陽能 2-1-B 的 factor_source_id 指到 2-1-A）本身沒有自己的
+  // emission_factor_assignments，要 fallback 到它 factor_source_id 指向的那筆，
+  // 否則「適用係數」面板找不到對應係數而整列不顯示。
+  const factorByEmissionSourceId = Object.fromEntries(
     assignedFactors.map((f) => [f.emission_source_id, f]),
   ) as Record<string, AssignedFactor>;
+  const factorBySourceId: Record<string, AssignedFactor> = {};
+  for (const s of emissionSources) {
+    const direct = factorByEmissionSourceId[s.id];
+    const shared = s.factor_source_id ? factorByEmissionSourceId[s.factor_source_id] : undefined;
+    const f = direct ?? shared;
+    if (f) factorBySourceId[s.id] = f;
+  }
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>('basic');
 
@@ -550,7 +560,7 @@ export default function FillPageClient({
   // 外購電力（2-1-A）與太陽能（2-1-B）欄位完全相同，共用同一張多帳單表格。
   // 太陽能係數於 DB 以 factor_source_id 共用 2-1-A：中國帶市場剩餘係數、
   // 台灣（及其他國別）帶電網排放係數；iREC 憑證只抵扣外購電力，不套用到太陽能。
-  function BillTable({ source, isSolar }: { source: EmissionSource; isSolar: boolean }) {
+  function BillTable({ source, isSolar, onTotalChange }: { source: EmissionSource; isSolar: boolean; onTotalChange?: (kwh: number) => void }) {
     const [rows, setRows] = useState<ElecRow[]>(() =>
       existingRecords
         .filter((r) => r.emission_source_id === source.id)
@@ -660,13 +670,12 @@ export default function FillPageClient({
     }
 
     const totalKwh = rows.reduce((s, r) => s + (parseFloat(r.activity_value) || 0), 0);
-    // 係數單位 tCO₂e/MWh：CO₂e = kWh ÷ 1000 × 係數（即時計算，不等伺服器）
-    // 外購電力用電網係數；太陽能中國用市場剩餘係數、其餘國別退回電網係數
-    // （與伺服器 lib/co2e-calc.ts 範疇二分支對齊）。
+    useEffect(() => { onTotalChange?.(totalKwh); }, [totalKwh]);
+    // 係數單位 tCO₂e/MWh：CO₂e = kWh ÷ 1000 × 係數（即時計算，不等伺服器；不含 iREC 抵扣，
+    // iREC 合併市電+太陽能扣抵後的市場別數字見下方「碳排放量計算」面板）。
+    // 地域別一律用電網係數（市電／太陽能皆同）；此處單列預覽用地域別係數。
     const elecFactorRow = assignedFactors.find((f) => f.source_code === ELEC_SOURCE_CODE);
-    const previewFactor = (isSolar && factory.country_code === 'CHN'
-      ? elecFactorRow?.market_residual_factor
-      : elecFactorRow?.grid_emission_factor) ?? null;
+    const previewFactor = elecFactorRow?.grid_emission_factor ?? null;
     const rowCo2e = (kwh: number): number | null =>
       previewFactor != null && kwh > 0 ? parseFloat((kwh / 1000 * Number(previewFactor)).toFixed(4)) : null;
     const totalCo2e = rowCo2e(totalKwh) ?? 0;
@@ -821,22 +830,10 @@ export default function FillPageClient({
               </table>
             </div>
             <p className="text-xs text-gray-400 mt-2">
-              輸入停止 1 秒後自動儲存。CO₂e = 用電量(kWh) ÷ 1000 ×{' '}
-              {isSolar
-                ? (factory.country_code === 'CHN' ? '市場剩餘係數' : '電網排放係數')
-                : '電力係數'}
-              (tCO₂e/MWh)，即時計算。
-              {isSolar && ' 太陽能不參與 iREC 憑證抵扣，也不計入 3.3 T&D 輸配電損失。'}
+              輸入停止 1 秒後自動儲存。CO₂e（地域別預覽）= 用電量(kWh) ÷ 1000 × 電網排放係數(tCO₂e/MWh)。
+              {isSolar && ' 太陽能不計入 3.3 T&D 輸配電損失；市場別（含 iREC 抵扣）見下方「碳排放量計算」。'}
             </p>
           </>
-        )}
-        {!isSolar && (
-          <RECPanel
-            factoryId={factory.id}
-            year={year}
-            totalElecKwh={totalKwh}
-            gridFactor={elecFactorRow?.grid_emission_factor ?? null}
-          />
         )}
         {liRecord && (
           <LineItemsModal
@@ -858,10 +855,18 @@ export default function FillPageClient({
       return <p className="text-gray-500 py-8 text-center">找不到電力排放源（代碼 2-1-A）</p>;
     }
     const showSolar = !!solarSource && selectedSourceIds.has(solarSource.id);
+    const [gridKwh, setGridKwh] = useState(0);
+    const [solarKwh, setSolarKwh] = useState(0);
+    const elecFactorRow = assignedFactors.find((f) => f.source_code === ELEC_SOURCE_CODE);
+    const gridFactor = elecFactorRow?.grid_emission_factor ?? null;
+    // 市場別係數：中國用剩餘係數、其他國別退回電網係數（市電＋太陽能共用同一筆係數列）
+    const marketFactor = (factory.country_code === 'CHN'
+      ? elecFactorRow?.market_residual_factor
+      : elecFactorRow?.grid_emission_factor) ?? null;
     return (
       <div>
-        <BillTable source={elecSource} isSolar={false} />
-        {showSolar && <BillTable source={solarSource!} isSolar />}
+        <BillTable source={elecSource} isSolar={false} onTotalChange={setGridKwh} />
+        {showSolar && <BillTable source={solarSource!} isSolar onTotalChange={setSolarKwh} />}
         {!showSolar && solarSource && (
           <p className="text-xs text-gray-400 mt-8 border-t border-gray-100 pt-4">
             如本廠有太陽能發電，請至
@@ -871,6 +876,14 @@ export default function FillPageClient({
             勾選「太陽能（2-1-B）」後回此頁填報。
           </p>
         )}
+        {/* iREC 抵扣以「市電＋太陽能」合計電量計算：市場別 = max(0,合計電量−iREC)÷1000×市場係數 */}
+        <RECPanel
+          factoryId={factory.id}
+          year={year}
+          totalElecKwh={gridKwh + solarKwh}
+          gridFactor={gridFactor}
+          marketFactor={marketFactor}
+        />
       </div>
     );
   }
@@ -1874,6 +1887,7 @@ export default function FillPageClient({
                   <th className="py-1.5 font-semibold">CH₄ EF</th>
                   <th className="py-1.5 font-semibold">N₂O EF</th>
                   <th className="py-1.5 font-semibold">電網 EF</th>
+                  <th className="py-1.5 font-semibold">市場剩餘 EF</th>
                   <th className="py-1.5 font-semibold">S3 EF</th>
                   <th className="py-1.5 font-semibold">NCV</th>
                   <th className="py-1.5 text-left font-semibold pl-3">來源</th>
@@ -1888,6 +1902,7 @@ export default function FillPageClient({
                     <td className="py-1.5 text-right font-mono">{fmtNum(factor!.factor_ch4)}</td>
                     <td className="py-1.5 text-right font-mono">{fmtNum(factor!.factor_n2o)}</td>
                     <td className="py-1.5 text-right font-mono">{fmtNum(factor!.grid_emission_factor)}</td>
+                    <td className="py-1.5 text-right font-mono">{fmtNum(factor!.market_residual_factor)}</td>
                     <td className="py-1.5 text-right font-mono">{fmtNum(factor!.scope3_factor)}</td>
                     <td className="py-1.5 text-right font-mono pl-3">
                       {factor!.ncv != null ? `${factor!.ncv} ${factor!.ncv_unit ?? ''}` : '—'}

@@ -75,30 +75,30 @@ export async function calcCo2e(params: {
   if (params.scope === 2) {
     const gridEf = f.grid_emission_factor ?? 0;
     const monthKwh = value;
-    // iREC 憑證只抵扣「外購電力」(2-1-A)。太陽能(2-1-B)等其他範疇二來源不參與分攤，
-    // 否則同一批憑證會在兩個排放源各扣一次（重複抵扣）。
-    let monthRecAlloc = 0;
-    if (params.source_code === '2-1-A') {
-      const recRow = await query(
-        `SELECT COALESCE(SUM(rec_kwh::float), 0) AS total
-         FROM rec_certificates WHERE factory_id = $1 AND year = $2`,
-        [params.factory_id, params.year],
-      );
-      const annualRec = Number(recRow.rows[0]?.total) || 0;
-      // 年度基礎（GHG Protocol 年度盤查）：iREC 抵扣為「全年電量 − 全年憑證」，
-      // 再依各月電量占比分攤到每月，避免舊版「每月各扣一次全年 REC」的重複扣。
-      // 全年電量取同一排放源（外購電力，恆為 kWh，UNIT_CONV=1，與本筆 value 同基準）。
-      const annRow = await query(
-        `SELECT COALESCE(SUM(activity_value::float), 0) AS total
-         FROM activity_records
-         WHERE factory_id = $1 AND year = $2 AND emission_source_id = $3
-           AND activity_value IS NOT NULL AND activity_value > 0`,
-        [params.factory_id, params.year, params.emission_source_id],
-      );
-      const annualKwh = Number(annRow.rows[0]?.total) || 0;
-      // 本月分攤 REC = 全年 REC × (本月電量 / 全年電量)；加總後 = max(0, 全年電量 − 全年REC)
-      monthRecAlloc = annualKwh > 0 ? annualRec * (monthKwh / annualKwh) : 0;
-    }
+    // 太陽能(2-1-B)與外購電力(2-1-A)共用同一筆係數（factor_source_id 指向 2-1-A）。
+    // iREC 抵扣要看「市電＋太陽能」合計電量，不能只看單一排放源，
+    // 否則兩者各自計算會導致同一批憑證被重複扣或漏扣。
+    // 年度基礎（GHG Protocol）：市場別 = max(0, 全年合計電量 − 全年REC) × 剩餘/電網係數，
+    // 依各月電量占「合計電量」的占比分攤到每筆紀錄。
+    const recRow = await query(
+      `SELECT COALESCE(SUM(rec_kwh::float), 0) AS total
+       FROM rec_certificates WHERE factory_id = $1 AND year = $2`,
+      [params.factory_id, params.year],
+    );
+    const annualRec = Number(recRow.rows[0]?.total) || 0;
+    const annRow = await query(
+      `SELECT COALESCE(SUM(ar.activity_value::float), 0) AS total
+       FROM activity_records ar
+       JOIN emission_sources es ON es.id = ar.emission_source_id
+       WHERE ar.factory_id = $1 AND ar.year = $2
+         AND COALESCE(es.factor_source_id, es.id) = COALESCE(
+               (SELECT factor_source_id FROM emission_sources WHERE id = $3), $3)
+         AND ar.activity_value IS NOT NULL AND ar.activity_value > 0`,
+      [params.factory_id, params.year, params.emission_source_id],
+    );
+    const annualKwh = Number(annRow.rows[0]?.total) || 0;
+    // 本月分攤 REC = 全年 REC × (本月電量 / 合計全年電量)
+    const monthRecAlloc = annualKwh > 0 ? annualRec * (monthKwh / annualKwh) : 0;
     const marketBase = Math.max(0, monthKwh - monthRecAlloc);
     const co2e_location = r4(value * gridEf / 1000);
     const co2e_market = params.country_code === 'CHN'

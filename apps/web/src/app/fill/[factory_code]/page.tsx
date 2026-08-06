@@ -28,6 +28,7 @@ export interface EmissionSource {
   default_unit: string;
   is_biomass: boolean;
   is_always_active: boolean;
+  factor_source_id: string | null;
 }
 
 export interface ActivityRecord {
@@ -138,7 +139,7 @@ export default async function FillPage({
   const allFactories: FactoryListItem[] = allFactoriesResult.rows;
 
   const sourcesResult = await query(
-    `SELECT id, source_code, name_zh, name_en, scope, category, default_unit, is_biomass, is_always_active
+    `SELECT id, source_code, name_zh, name_en, scope, category, default_unit, is_biomass, is_always_active, factor_source_id
      FROM emission_sources
      ORDER BY scope ASC, source_code ASC`,
   );

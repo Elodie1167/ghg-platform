@@ -18,15 +18,18 @@ interface RecRow {
 interface Props {
   factoryId: string;
   year: number;
-  /** total electricity consumed (kWh) from bill rows */
+  /** total electricity consumed (kWh) from bill rows — 市電＋太陽能合計 */
   totalElecKwh: number;
-  /** grid emission factor (tCO₂e / MWh) */
+  /** grid emission factor (tCO₂e / MWh) — 地域別用 */
   gridFactor: number | null;
+  /** 市場別用係數：中國為市場剩餘係數，其餘國別退回電網係數（未傳則退回 gridFactor） */
+  marketFactor?: number | null;
 }
 
 const MONTHS = [1,2,3,4,5,6,7,8,9,10,11,12];
 
-export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: Props) {
+export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor, marketFactor }: Props) {
+  const mktFactor = marketFactor ?? gridFactor;
   const [rows, setRows] = useState<RecRow[]>([]);
   const [loading, setLoading] = useState(true);
   const rowsRef = useRef(rows);
@@ -135,9 +138,10 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
   const totalRecKwh = totalRecMwh * 1000;
 
   // 係數單位為 tCO₂e/MWh，活動數據為 kWh → 先 ÷1000 轉 MWh 再乘係數
+  // 地域別一律用電網係數；市場別＝max(0,合計電量−iREC)÷1000×市場係數（中國為剩餘係數）
   const s2Loc  = gridFactor != null ? totalElecKwh / 1000 * gridFactor : null;
-  const s2Mkt  = (gridFactor != null && s2Loc != null)
-    ? Math.max(0, (totalElecKwh - totalRecKwh) / 1000 * gridFactor)
+  const s2Mkt  = mktFactor != null
+    ? Math.max(0, (totalElecKwh - totalRecKwh) / 1000 * mktFactor)
     : null;
   const deducted = s2Loc != null && s2Mkt != null ? s2Loc - s2Mkt : null;
 
@@ -301,9 +305,11 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor }: 
         )}
         {gridFactor != null && (
           <p className="text-xs text-gray-400 mt-2">
-            電力係數：{gridFactor} tCO₂e/MWh ｜
-            S2 地域 = 用電量(kWh) ÷ 1000 × 係數 ｜
-            S2 市場 = max(0, (用電量 − iREC 購入量) ÷ 1000 × 係數)
+            用電量＝市電＋太陽能合計 ｜ 電網係數：{gridFactor} tCO₂e/MWh
+            {mktFactor != null && mktFactor !== gridFactor && `｜ 市場剩餘係數：${mktFactor} tCO₂e/MWh`}
+            <br />
+            S2 地域 = 合計電量(kWh) ÷ 1000 × 電網係數 ｜
+            S2 市場 = max(0, (合計電量 − iREC 購入量) ÷ 1000 × {mktFactor != null && mktFactor !== gridFactor ? '市場剩餘係數' : '電網係數'})
           </p>
         )}
       </div>
