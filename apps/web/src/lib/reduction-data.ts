@@ -82,7 +82,11 @@ export async function getReductionFromPlatform(
 ): Promise<ReductionResult> {
   const warnings: string[] = [];
 
-  const [emitRes, greenRes, prodRes, baselines, recPerFactoryRes] = await Promise.all([
+  // iREC 為全年一次性採購（隔年年初依用量補齊），不論記錄在哪個月份，一律取「全年」總量，
+  // 再依所選月份數（monthTo-monthFrom+1）÷12 攤提到查詢區間 —— 與 getReductionFromCsr 一致。
+  const monthsSelected = monthTo - monthFrom + 1;
+
+  const [emitRes, totalKwhRes, prodRes, baselines, recPerFactoryRes] = await Promise.all([
     query(
       `SELECT f.factory_code, f.name_zh, f.country_code,
               COALESCE(SUM(CASE WHEN es.scope = 1 THEN ar.co2e_total::float ELSE 0 END), 0)    AS s1,
@@ -97,14 +101,11 @@ export async function getReductionFromPlatform(
       [year, monthFrom, monthTo],
     ),
     query(
-      `SELECT
-         COALESCE((SELECT SUM(rec_kwh::float) FROM rec_certificates
-                   WHERE year = $1 AND month BETWEEN $2 AND $3), 0) AS irec_kwh,
-         COALESCE((SELECT SUM(ar.activity_value::float)
-                   FROM activity_records ar
-                   JOIN emission_sources es ON ar.emission_source_id = es.id
-                   WHERE es.source_code = $4 AND ar.year = $1 AND ar.month BETWEEN $2 AND $3), 0) AS total_kwh`,
-      [year, monthFrom, monthTo, ELEC_CODE],
+      `SELECT COALESCE(SUM(ar.activity_value::float), 0) AS total_kwh
+       FROM activity_records ar
+       JOIN emission_sources es ON ar.emission_source_id = es.id
+       WHERE es.source_code = $1 AND ar.year = $2 AND ar.month BETWEEN $3 AND $4`,
+      [ELEC_CODE, year, monthFrom, monthTo],
     ),
     query(
       `SELECT COALESCE(SUM(standard_units::float), 0) AS production
@@ -115,16 +116,19 @@ export async function getReductionFromPlatform(
     query(
       `SELECT f.factory_code, COALESCE(SUM(rc.rec_kwh::float), 0) AS kwh
        FROM rec_certificates rc JOIN factories f ON rc.factory_id = f.id
-       WHERE rc.year = $1 AND rc.month BETWEEN $2 AND $3
+       WHERE rc.year = $1
        GROUP BY f.factory_code`,
-      [year, monthFrom, monthTo],
+      [year],
     ),
   ]);
 
   const recByFactory = new Map<string, number>(
     (recPerFactoryRes.rows as Array<{ factory_code: string; kwh: number }>)
-      .map((r) => [r.factory_code, Number(r.kwh) || 0]),
+      .map((r) => [r.factory_code, (Number(r.kwh) || 0) * (monthsSelected / 12)]),
   );
+  if (monthsSelected < 12) {
+    warnings.push(`iREC 為全年一次性採購，已依所選月份數（${monthsSelected}/12）攤提後計入市場別強度。`);
+  }
   const factories = orderFactories(
     (emitRes.rows as Array<{
       factory_code: string; name_zh: string; country_code: string;
@@ -149,8 +153,8 @@ export async function getReductionFromPlatform(
     }
   }
 
-  const irec = Number(greenRes.rows[0]?.irec_kwh) || 0;
-  const total = Number(greenRes.rows[0]?.total_kwh) || 0;
+  const irec = [...recByFactory.values()].reduce((a, v) => a + v, 0);
+  const total = Number(totalKwhRes.rows[0]?.total_kwh) || 0;
   const greenPower: GreenPower = {
     irec_kwh: irec,
     solar_kwh: 0, // 平台目前無自發太陽能度數資料
@@ -215,38 +219,32 @@ export async function getReductionFromCsr(
       .map((s) => [s.source_code, s]),
   );
 
-  // iREC 來源（度數，依區間）
+  // iREC 為全年一次性採購（隔年年初依用量補齊，不分月份購買），一律取「全年」總量，
+  // 再依所選月份數（monthTo-monthFrom+1）÷12 攤提到查詢區間 —— 不論平台帶入或手動輸入。
+  const monthsSelected = monthTo - monthFrom + 1;
   const recByFactory = new Map<string, number>();
   if (recSource === 'platform') {
     const r = await query(
       `SELECT f.factory_code, COALESCE(SUM(rc.rec_kwh::float), 0) AS kwh
        FROM rec_certificates rc JOIN factories f ON rc.factory_id = f.id
-       WHERE rc.year = $1 AND rc.month BETWEEN $2 AND $3
+       WHERE rc.year = $1
        GROUP BY f.factory_code`,
-      [year, monthFrom, monthTo],
+      [year],
     );
     for (const row of r.rows as Array<{ factory_code: string; kwh: number }>) {
-      recByFactory.set(row.factory_code, Number(row.kwh) || 0);
+      recByFactory.set(row.factory_code, (Number(row.kwh) || 0) * (monthsSelected / 12));
     }
   } else {
     const r = await query(
-      `SELECT factory_code, month, rec_kwh::float AS rec_kwh FROM csr_rec WHERE year = $1`,
+      `SELECT factory_code, COALESCE(SUM(rec_kwh::float), 0) AS kwh FROM csr_rec WHERE year = $1 GROUP BY factory_code`,
       [year],
     );
-    let lumpProrated = false;
-    for (const row of r.rows as Array<{ factory_code: string; month: number; rec_kwh: number }>) {
-      if (!inRange(row.month)) continue;
-      let kwh = Number(row.rec_kwh) || 0;
-      // 年度合計式（month=0）的手動 iREC：依 CSR 實際月數攤提，避免用全年度量套用在不足一年的區間
-      if (row.month === 0 && csrActualMonths > 0) {
-        kwh = kwh * (csrActualMonths / 12);
-        lumpProrated = true;
-      }
-      recByFactory.set(row.factory_code, (recByFactory.get(row.factory_code) || 0) + kwh);
+    for (const row of r.rows as Array<{ factory_code: string; kwh: number }>) {
+      recByFactory.set(row.factory_code, (Number(row.kwh) || 0) * (monthsSelected / 12));
     }
-    if (lumpProrated) {
-      warnings.push(`手動 iREC 為年度合計，已依 CSR 實際月數（${csrActualMonths}/12）攤提後計入市場別強度。`);
-    }
+  }
+  if (monthsSelected < 12) {
+    warnings.push(`iREC 為全年一次性採購，已依所選月份數（${monthsSelected}/12）攤提後計入市場別強度。`);
   }
 
   // 逐廠聚合原始能源（僅取區間內的列）

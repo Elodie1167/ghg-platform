@@ -1,12 +1,10 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { COUNTRY_LABELS, IREC_KWH_PER_CERT, type ReductionResult, type FactoryReduction } from '@/lib/reduction-types';
 
 const HEADER_BG = '#0C3D2E';
-const YEARS = [2023, 2024, 2025, 2026, 2027, 2028];
-const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 const COUNTRY_ORDER = ['TWN', 'CHN', 'NVN', 'SVN', 'CAB', 'SLV', 'BGD', 'IND'];
 const T2030_RATIO = 0.5; // 2030 相比 2020 減 50%，2050 減 100%
 
@@ -39,9 +37,10 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
     for (const [k, v] of Object.entries(patch)) params.set(k, String(v));
     return params;
   }
-  function nav(patch: Record<string, string | number>) {
-    router.push(`/reduction?${buildParams(patch).toString()}`);
-    router.refresh(); // 強制重新取伺服器資料（避免只改 query 時 router cache 未更新）
+  // 重新試算 → 回到設定引導（不帶 ready，page.tsx 便會改渲染 SetupWizard）
+  function restart() {
+    router.push('/reduction');
+    router.refresh();
   }
 
   const b2020 = data.baselines.find((b) => b.base_year === 2020)?.intensity_market_kg ?? null;
@@ -89,48 +88,24 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
             </div>
           </div>
 
-          {/* 控制列 */}
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-            <Seg label="資料來源" value={source}
-              options={[['csr', 'CSR 匯出'], ['platform', 'GHG 平台']]}
-              onChange={(v) => nav({ source: v, ...(v === 'platform' ? { recSource: 'platform' } : {}) })} />
-            <label className="flex items-center gap-1.5 text-green-200">年度
-              <select value={year} onChange={(e) => nav({ year: e.target.value })}
-                className="bg-white/10 text-white border border-white/30 rounded-lg px-2 py-1 text-sm">
-                {YEARS.map((y) => <option key={y} value={y} className="text-black">{y}</option>)}
-              </select>
-            </label>
-            <label className="flex items-center gap-1.5 text-green-200">月份
-              <select value={monthFrom} onChange={(e) => nav({ monthFrom: e.target.value })}
-                className="bg-white/10 text-white border border-white/30 rounded-lg px-2 py-1 text-sm">
-                {MONTHS.map((m) => <option key={m} value={m} className="text-black">{m}</option>)}
-              </select>
-              <span>–</span>
-              <select value={monthTo} onChange={(e) => nav({ monthTo: e.target.value })}
-                className="bg-white/10 text-white border border-white/30 rounded-lg px-2 py-1 text-sm">
-                {MONTHS.map((m) => <option key={m} value={m} className="text-black">{m}</option>)}
-              </select>
-            </label>
-            {source === 'csr' && (<>
-              <Seg label="iREC" value={data.recSource}
-                options={[['platform', '平台帶入'], ['manual', '手動試算']]}
-                onChange={(v) => nav({ recSource: v })} />
-              <label className="flex items-center gap-1.5 text-green-200">係數年度
-                <select value={factorYear ?? year - 1} onChange={(e) => nav({ factorYear: e.target.value })}
-                  className="bg-white/10 text-white border border-white/30 rounded-lg px-2 py-1 text-sm">
-                  {rangeYears(2020, year).map((y) => <option key={y} value={y} className="text-black">{y}</option>)}
-                </select>
-              </label>
-            </>)}
+          {/* 目前試算條件（唯讀；要改請按「重新試算減碳績效」回到設定引導） */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <Chip label="資料來源" value={source === 'csr' ? 'CSR 匯出' : 'GHG 平台'} />
+            <Chip label="年度" value={String(year)} />
+            <Chip label="月份" value={`${monthFrom}–${monthTo} 月（${monthTo - monthFrom + 1} 個月）`} />
+            {source === 'csr' && <>
+              <Chip label="iREC" value={data.recSource === 'platform' ? 'GHG 平台帶入' : '手動輸入'} />
+              <Chip label="係數年度" value={String(factorYear ?? year - 1)} />
+            </>}
           </div>
 
-          {/* 資料管理列：匯入 CSR / 匯出 Excel */}
+          {/* 操作列：重新試算 / 情境試算 */}
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            {source === 'csr' && <ImportCsrButton year={year} onDone={() => router.refresh()} />}
-            <a href={exportUrl}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/40 text-white hover:bg-white/10 transition">
-              ⬇ 匯出 Excel（產區加總＋各廠明細）
-            </a>
+            <button type="button" onClick={restart}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/95 hover:bg-white transition"
+              style={{ color: HEADER_BG }}>
+              ↻ 重新試算減碳績效
+            </button>
             {projectable && (
               <button type="button" onClick={() => setProjOn((v) => !v)}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/40 text-white hover:bg-white/10 transition">
@@ -194,6 +169,16 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
           </p>
         </section>
 
+        {/* 匯出列：緊貼兩張碳排數據表上方，看表時即可直接下載 */}
+        <div className="flex flex-wrap items-center justify-between gap-3 -mb-2">
+          <p className="text-xs text-gray-500">以下兩表為所選條件之碳排數據（tCO₂e）</p>
+          <a href={exportUrl}
+            className="px-4 py-2 rounded-lg text-white text-sm font-medium transition shadow-sm"
+            style={{ backgroundColor: HEADER_BG }}>
+            ⬇ 匯出 Excel（產區加總＋各廠明細）
+          </a>
+        </div>
+
         {/* 表一：產區加總 */}
         <section>
           <h2 className="text-base font-bold text-gray-800 mb-3 px-1">① 各產區加總（tCO₂e）</h2>
@@ -236,56 +221,31 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
   );
 }
 
-// ── 匯入 CSR 按鈕 ────────────────────────────────────────────
-function ImportCsrButton({ year, onDone }: { year: number; onDone: () => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState('');
-
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setBusy(true); setMsg('匯入中…');
-    try {
-      const fd = new FormData();
-      fd.append('year', String(year));
-      fd.append('file', file);
-      const res = await fetch('/api/reduction/import-csr', { method: 'POST', body: fd });
-      const json = await res.json();
-      if (!res.ok || json.error) throw new Error(json.error || '匯入失敗');
-      const { energyRows, prodRows, warnings } = json.data;
-      setMsg(`✅ 已匯入 ${year} 年：能源 ${energyRows} 筆、產能 ${prodRows} 筆${warnings?.length ? `（${warnings.length} 則提醒）` : ''}`);
-      onDone();
-    } catch (err) {
-      setMsg(`❌ ${err instanceof Error ? err.message : '匯入失敗'}`);
-    } finally {
-      setBusy(false);
-      if (inputRef.current) inputRef.current.value = '';
-    }
-  }
-
-  return (
-    <span className="flex items-center gap-2">
-      <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onFile} />
-      <button onClick={() => inputRef.current?.click()} disabled={busy}
-        className="px-3 py-1.5 rounded-lg text-xs font-medium text-white transition disabled:opacity-60"
-        style={{ backgroundColor: '#b45309' }}>
-        {busy ? '匯入中…' : `⬆ 匯入CSR能源明細表（覆寫 ${year} 年）`}
-      </button>
-      {msg && <span className="text-[11px] text-green-100">{msg}</span>}
-    </span>
-  );
-}
-
 // ── 手動 iREC 試算輸入 ───────────────────────────────────────
 function ManualIrecPanel({ year, factories, onSaved }: {
   year: number; factories: FactoryReduction[]; onSaved: () => void;
 }) {
-  const [vals, setVals] = useState<Record<string, string>>(
-    Object.fromEntries(factories.map((f) => [f.factory_code, f.irec_kwh ? String(f.irec_kwh / IREC_KWH_PER_CERT) : '']))
-  );
+  // 輸入框需顯示「全年」已存張數（不受目前所選月份攤提影響），故另向 GET /api/csr-rec 取值，
+  // 不可直接用 f.irec_kwh（那已依所選月份數 ÷12 攤提，只供市場別強度計算用）。
+  const [vals, setVals] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/csr-rec?year=${year}`).then((r) => r.json()).then((res) => {
+      if (cancelled) return;
+      const byCode = new Map<string, number>(
+        (res.data ?? []).map((d: { factory_code: string; certs: number }) => [d.factory_code, d.certs]),
+      );
+      setVals(Object.fromEntries(factories.map((f) => {
+        const certs = byCode.get(f.factory_code);
+        return [f.factory_code, certs ? String(certs) : ''];
+      })));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year]);
 
   async function saveAll() {
     setSaving(true); setMsg('儲存中…');
@@ -401,6 +361,22 @@ function ProjectionPanel({ data, b2020, b2025 }: {
   const scale = tM / aM;
   const certsOf = (code: string) => Number(annualCerts[code]) || 0;
   const irecKwhTarget = (code: string) => certsOf(code) * IREC_KWH_PER_CERT * (tM / 12);
+
+  // 帶入 GHG 平台目前 iREC 量：抓「全年」已登錄的 rec_certificates 總量（不受頁首所選月份攤提影響），
+  // 因這裡的「年度規劃 iREC」欄位本身即代表全年一次性採購量。
+  async function fillFromPlatform() {
+    try {
+      const res = await fetch(`/api/rec-certificates?year=${data.year}`);
+      const json = await res.json();
+      const sums = new Map<string, number>();
+      for (const row of (json.data ?? []) as Array<{ factory_code: string; rec_kwh: number }>) {
+        sums.set(row.factory_code, (sums.get(row.factory_code) || 0) + (Number(row.rec_kwh) || 0));
+      }
+      setAnnualCerts(Object.fromEntries(
+        factories.map((f) => [f.factory_code, String(Math.round((sums.get(f.factory_code) || 0) / IREC_KWH_PER_CERT * 100) / 100)]),
+      ));
+    } catch { /* 忽略：維持原輸入值 */ }
+  }
 
   // ── 目標月投影 ──
   const proj = useMemo(() => {
@@ -557,14 +533,12 @@ function ProjectionPanel({ data, b2020, b2025 }: {
       <div>
         <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
           <div className="text-sm font-bold text-[#1e3a5f]">各廠年度規劃 iREC（張，1 張 = 1 MWh）</div>
-          <button type="button" onClick={() => setAnnualCerts(Object.fromEntries(
-            factories.map((f) => [f.factory_code, String(Math.round((f.irec_kwh / IREC_KWH_PER_CERT) * 100) / 100)]),
-          ))}
+          <button type="button" onClick={fillFromPlatform}
             className="px-2.5 py-1 rounded-lg text-xs font-medium border border-blue-300 text-[#1e3a5f] bg-white hover:bg-blue-50 transition">
             ⤵ 帶入 GHG 平台目前 iREC 量
           </button>
         </div>
-        <p className="text-xs text-blue-800/70 mb-2">此為<b>全年</b>規劃量；投影至目標月時自動按 ÷12×{tM || '?'} 攤提。留空 = 0。可先按上方按鈕帶入目前實際 iREC（依目前查詢區間的實際張數，不重新年化），再手動調整。</p>
+        <p className="text-xs text-blue-800/70 mb-2">此為<b>全年</b>規劃量；投影至目標月時自動按 ÷12×{tM || '?'} 攤提。留空 = 0。可先按上方按鈕帶入 GHG 平台 {data.year} 年全年已登錄 iREC（不受頁首所選月份影響），再手動調整。</p>
         <div className="divide-y divide-blue-100 border-t border-blue-100">
           {regions.map((cc) => (
             <div key={cc} className="flex flex-wrap items-center gap-2 py-2.5">
@@ -656,10 +630,14 @@ function NumField({ label, hint, value, onChange }: { label: string; hint?: stri
 }
 
 // ── 小元件 ──────────────────────────────────────────────────
-function rangeYears(from: number, to: number): number[] {
-  const out: number[] = [];
-  for (let y = to; y >= from; y--) out.push(y);
-  return out;
+/** 頁首唯讀條件標籤（試算條件由設定引導決定，此處僅呈現） */
+function Chip({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 border border-white/25 px-2.5 py-1">
+      <span className="text-green-300">{label}</span>
+      <span className="text-white font-medium">{value}</span>
+    </span>
+  );
 }
 
 function FragmentGroup({ children }: { children: React.ReactNode }) {
