@@ -54,6 +54,7 @@ const TABS = [
 type TabId = typeof TABS[number]['id'];
 
 const ELEC_SOURCE_CODE = '2-1-A';
+const SOLAR_SOURCE_CODE = '2-1-B';
 
 const CUSTOM_SOURCE_ORDER: Record<string, number> = {
   // 固定燃燒：鍋爐類 → 廚房 → 發電機 → 其他
@@ -208,6 +209,7 @@ export default function FillPageClient({
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localValuesRef = useRef(localValues);
   const elecSource = emissionSources.find((s) => s.source_code === ELEC_SOURCE_CODE);
+  const solarSource = emissionSources.find((s) => s.source_code === SOLAR_SOURCE_CODE);
 
   const autosave = useCallback(
     async (emission_source_id: string, month: number, value: string, notes: string) => {
@@ -545,14 +547,13 @@ export default function FillPageClient({
   }
 
   // ─── ElecTab（多帳單版） ─────────────────────────────────────
-  function ElecTab() {
-    if (!elecSource) {
-      return <p className="text-gray-500 py-8 text-center">找不到電力排放源（代碼 2-1-A）</p>;
-    }
-
+  // 外購電力（2-1-A）與太陽能（2-1-B）欄位完全相同，共用同一張多帳單表格。
+  // 太陽能係數於 DB 以 factor_source_id 共用 2-1-A：中國帶市場剩餘係數、
+  // 台灣（及其他國別）帶電網排放係數；iREC 憑證只抵扣外購電力，不套用到太陽能。
+  function BillTable({ source, isSolar }: { source: EmissionSource; isSolar: boolean }) {
     const [rows, setRows] = useState<ElecRow[]>(() =>
       existingRecords
-        .filter((r) => r.emission_source_id === elecSource!.id)
+        .filter((r) => r.emission_source_id === source.id)
         .map((r) => ({
           tempKey: r.id,
           id: r.id,
@@ -597,7 +598,7 @@ export default function FillPageClient({
       const numVal = row.activity_value !== '' ? parseFloat(row.activity_value) : null;
       const payload = {
         factory_id: factory.id,
-        emission_source_id: elecSource!.id,
+        emission_source_id: source.id,
         year,
         month: row.month,
         activity_value: (numVal != null && !isNaN(numVal)) ? numVal : null,
@@ -659,18 +660,29 @@ export default function FillPageClient({
     }
 
     const totalKwh = rows.reduce((s, r) => s + (parseFloat(r.activity_value) || 0), 0);
-    // 電力係數單位 tCO₂e/MWh：CO₂e = kWh ÷ 1000 × 係數（即時計算，不等伺服器）
-    const elecGridFactor = assignedFactors.find((f) => f.source_code === '2-1-A')?.grid_emission_factor ?? null;
+    // 係數單位 tCO₂e/MWh：CO₂e = kWh ÷ 1000 × 係數（即時計算，不等伺服器）
+    // 外購電力用電網係數；太陽能中國用市場剩餘係數、其餘國別退回電網係數
+    // （與伺服器 lib/co2e-calc.ts 範疇二分支對齊）。
+    const elecFactorRow = assignedFactors.find((f) => f.source_code === ELEC_SOURCE_CODE);
+    const previewFactor = (isSolar && factory.country_code === 'CHN'
+      ? elecFactorRow?.market_residual_factor
+      : elecFactorRow?.grid_emission_factor) ?? null;
     const rowCo2e = (kwh: number): number | null =>
-      elecGridFactor != null && kwh > 0 ? parseFloat((kwh / 1000 * Number(elecGridFactor)).toFixed(4)) : null;
+      previewFactor != null && kwh > 0 ? parseFloat((kwh / 1000 * Number(previewFactor)).toFixed(4)) : null;
     const totalCo2e = rowCo2e(totalKwh) ?? 0;
 
     return (
-      <div>
+      <div className={isSolar ? 'mt-10' : ''}>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-800">範疇 2 — 電力消耗</h2>
-            <p className="text-sm text-gray-500 mt-0.5">每月可有多張帳單（3 個計費區間 × 多電表）</p>
+            <h2 className="text-lg font-semibold text-gray-800">
+              {isSolar ? '範疇 2 — 太陽能' : '範疇 2 — 電力消耗'}
+            </h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {isSolar
+                ? `每月可有多筆紀錄（多案場 × 多電表）；${factory.country_code === 'CHN' ? '中國採市場剩餘係數' : '採電網排放係數'}`
+                : '每月可有多張帳單（3 個計費區間 × 多電表）'}
+            </p>
           </div>
           <button onClick={addRow}
             className="px-4 py-2 rounded-lg text-white text-sm font-medium transition hover:opacity-90"
@@ -681,7 +693,7 @@ export default function FillPageClient({
 
         {rows.length === 0 ? (
           <div className="text-center py-20 text-gray-400">
-            <p className="text-base mb-4">尚無電力帳單資料</p>
+            <p className="text-base mb-4">{isSolar ? '尚無太陽能發電資料' : '尚無電力帳單資料'}</p>
             <button onClick={addRow}
               className="px-6 py-2 rounded-lg text-white text-sm"
               style={{ backgroundColor: '#0C3D2E' }}>
@@ -762,7 +774,7 @@ export default function FillPageClient({
                       </td>
                       <td className="px-2 py-1.5 text-center">
                         {row.id
-                          ? <button type="button" onClick={() => setLiRecord({ id: row.id!, title: `電力 ${row.month} 月` })}
+                          ? <button type="button" onClick={() => setLiRecord({ id: row.id!, title: `${source.name_zh} ${row.month} 月` })}
                               className="text-blue-600 hover:text-blue-800 text-xs underline">查看</button>
                           : <span className="text-gray-300 text-xs">—</span>}
                       </td>
@@ -809,18 +821,23 @@ export default function FillPageClient({
               </table>
             </div>
             <p className="text-xs text-gray-400 mt-2">
-              輸入停止 1 秒後自動儲存。CO₂e = 用電量(kWh) ÷ 1000 × 電力係數(tCO₂e/MWh)，即時計算。
+              輸入停止 1 秒後自動儲存。CO₂e = 用電量(kWh) ÷ 1000 ×{' '}
+              {isSolar
+                ? (factory.country_code === 'CHN' ? '市場剩餘係數' : '電網排放係數')
+                : '電力係數'}
+              (tCO₂e/MWh)，即時計算。
+              {isSolar && ' 太陽能不參與 iREC 憑證抵扣，也不計入 3.3 T&D 輸配電損失。'}
             </p>
           </>
         )}
-        <RECPanel
-          factoryId={factory.id}
-          year={year}
-          totalElecKwh={totalKwh}
-          gridFactor={
-            assignedFactors.find((f) => f.source_code === '2-1-A')?.grid_emission_factor ?? null
-          }
-        />
+        {!isSolar && (
+          <RECPanel
+            factoryId={factory.id}
+            year={year}
+            totalElecKwh={totalKwh}
+            gridFactor={elecFactorRow?.grid_emission_factor ?? null}
+          />
+        )}
         {liRecord && (
           <LineItemsModal
             recordId={liRecord.id}
@@ -830,6 +847,29 @@ export default function FillPageClient({
             readOnly
             onClose={() => setLiRecord(null)}
           />
+        )}
+      </div>
+    );
+  }
+
+  // ─── ElecTab：外購電力 ＋（有勾選時）太陽能 ─────────────────
+  function ElecTab() {
+    if (!elecSource) {
+      return <p className="text-gray-500 py-8 text-center">找不到電力排放源（代碼 2-1-A）</p>;
+    }
+    const showSolar = !!solarSource && selectedSourceIds.has(solarSource.id);
+    return (
+      <div>
+        <BillTable source={elecSource} isSolar={false} />
+        {showSolar && <BillTable source={solarSource!} isSolar />}
+        {!showSolar && solarSource && (
+          <p className="text-xs text-gray-400 mt-8 border-t border-gray-100 pt-4">
+            如本廠有太陽能發電，請至
+            <button onClick={() => setActiveTab('basic')} className="text-green-600 underline mx-1">
+              基本資訊 → 電力來源
+            </button>
+            勾選「太陽能（2-1-B）」後回此頁填報。
+          </p>
         )}
       </div>
     );

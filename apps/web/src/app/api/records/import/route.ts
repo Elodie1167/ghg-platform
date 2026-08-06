@@ -220,9 +220,11 @@ function parseWorkbook(wb: XLSX.WorkBook): ParsedRow[] {
   const all: ParsedRow[] = [];
 
   const sheetMap: Record<string, () => ParsedRow[]> = {
+    // col B = 外購電力（電網）、col C = 太陽能；兩者分開存，避免混為一筆
     'S2_電力': () =>
       parseMonthlySheet(wb.Sheets['S2_電力'], [
         { col: 1, source_code: '2-1-A', unit: 'kWh' },
+        { col: 2, source_code: '2-1-B', unit: 'kWh' },
       ]),
 
     'S1_燃料固定': () =>
