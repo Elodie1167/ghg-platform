@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { query } from '@/lib/db';
 import { recomputeRecordFromLineItems } from '@/lib/line-items';
+import { recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
 
 // ─────────────────────────────────────────────────────────────────
 // 型別定義
@@ -364,12 +365,12 @@ export async function POST(req: NextRequest) {
 
   // 查詢 emission_sources source_code → id 映射
   const sourcesResult = await query(
-    'SELECT id, source_code, default_unit FROM emission_sources',
+    'SELECT id, source_code, default_unit, scope FROM emission_sources',
   );
-  const sourceMap = new Map<string, { id: string; default_unit: string }>(
-    sourcesResult.rows.map((r: { source_code: string; id: string; default_unit: string }) => [
+  const sourceMap = new Map<string, { id: string; default_unit: string; scope: number }>(
+    sourcesResult.rows.map((r: { source_code: string; id: string; default_unit: string; scope: number }) => [
       r.source_code,
-      { id: r.id, default_unit: r.default_unit },
+      { id: r.id, default_unit: r.default_unit, scope: r.scope },
     ]),
   );
 
@@ -418,6 +419,13 @@ export async function POST(req: NextRequest) {
       errors.push(`${row.source_code} 月份 ${row.month}：寫入失敗`);
       skipped++;
     }
+  }
+
+  // 本迴圈只寫入 activity_value，不計算 co2e（範疇二市電/太陽能有 iREC 年度分攤，
+  // 需整年一起算）；範疇二來源匯入後統一重算一次，避免 co2e_market 停留在舊值/0。
+  const scope2Touched = parsedRows.some((r) => sourceMap.get(r.source_code)?.scope === 2);
+  if (scope2Touched) {
+    await recomputeScope2ForFactoryYear(factory_id, year);
   }
 
   // ── 單據明細（每列一張單）：依 (源×月) 分組，重建明細後回算月加總 + CO₂e ──

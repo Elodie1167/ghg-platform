@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { query } from '@/lib/db';
 import { recomputeRecordFromLineItems } from '@/lib/line-items';
+import { recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
 
 // ERP 原生檔直匯：使用者已選定「排放源」與「工廠」，
 // 故忽略檔內 Item Name（品名）與 PO 前綴（廠內棟別），所有列都歸到選定的源×廠。
@@ -58,10 +59,11 @@ export async function POST(req: NextRequest) {
   }
   const year = parseInt(yearStr, 10);
 
-  const src = await query(`SELECT id, default_unit FROM emission_sources WHERE source_code = $1`, [source_code]);
+  const src = await query(`SELECT id, default_unit, scope FROM emission_sources WHERE source_code = $1`, [source_code]);
   if (!src.rows.length) return NextResponse.json({ data: null, error: `找不到排放源 ${source_code}` }, { status: 404 });
   const sourceId: string = src.rows[0].id;
   const defaultUnit: string = src.rows[0].default_unit ?? '';
+  const sourceScope: number = src.rows[0].scope;
 
   // 讀成 rows[][]
   const nameLower = file.name.toLowerCase();
@@ -152,6 +154,12 @@ export async function POST(req: NextRequest) {
     await recomputeRecordFromLineItems(recordId);
     lineItemsImported += items.length;
     months.push(month);
+  }
+
+  // recomputeRecordFromLineItems 只重算「這一筆」，範疇二市電/太陽能有 iREC
+  // 年度分攤，改動任一筆的電量都會牽動同年度其他月份/來源的市場別，需整年重算。
+  if (sourceScope === 2 && months.length > 0) {
+    await recomputeScope2ForFactoryYear(factory_id, year);
   }
 
   // 匯入成功後，將該排放源自動加入本廠「已勾選」清單，
