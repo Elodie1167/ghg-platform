@@ -185,6 +185,15 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
           </div>
         </section>
 
+        {/* 減碳路徑圖 */}
+        <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <h2 className="text-base font-bold text-gray-800 mb-3">減碳路徑圖（市場別 kgCO₂e/標打，2020–2050）</h2>
+          <PathwayChart b2020={b2020} b2025={b2025} actualYear={year} actual={im} />
+          <p className="text-xs text-gray-400 mt-2">
+            兩條基準線皆收斂至 2030 減 50%、2050 減 100%（歸零）｜ 綠點為所選條件之市場別實際強度 ｜ AI 試算，需永續發展部確認
+          </p>
+        </section>
+
         {/* 表一：產區加總 */}
         <section>
           <h2 className="text-base font-bold text-gray-800 mb-3 px-1">① 各產區加總（tCO₂e）</h2>
@@ -221,15 +230,6 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
               </tbody>
             </table>
           </div>
-        </section>
-
-        {/* 減碳路徑圖 */}
-        <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h2 className="text-base font-bold text-gray-800 mb-3">減碳路徑圖（市場別 kgCO₂e/標打，2020–2050）</h2>
-          <PathwayChart b2020={b2020} b2025={b2025} actualYear={year} actual={im} />
-          <p className="text-xs text-gray-400 mt-2">
-            兩條基準線皆收斂至 2030 減 50%、2050 減 100%（歸零）｜ 綠點為所選條件之市場別實際強度 ｜ AI 試算，需永續發展部確認
-          </p>
         </section>
       </main>
     </div>
@@ -558,13 +558,13 @@ function ProjectionPanel({ data, b2020, b2025 }: {
         <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
           <div className="text-sm font-bold text-[#1e3a5f]">各廠年度規劃 iREC（張，1 張 = 1 MWh）</div>
           <button type="button" onClick={() => setAnnualCerts(Object.fromEntries(
-            factories.map((f) => [f.factory_code, String(Math.round((f.irec_kwh / aM * 12 / IREC_KWH_PER_CERT) * 100) / 100)]),
+            factories.map((f) => [f.factory_code, String(Math.round((f.irec_kwh / IREC_KWH_PER_CERT) * 100) / 100)]),
           ))}
             className="px-2.5 py-1 rounded-lg text-xs font-medium border border-blue-300 text-[#1e3a5f] bg-white hover:bg-blue-50 transition">
             ⤵ 帶入 GHG 平台目前 iREC 量
           </button>
         </div>
-        <p className="text-xs text-blue-800/70 mb-2">此為<b>全年</b>規劃量；投影至目標月時自動按 ÷12×{tM || '?'} 攤提。留空 = 0。可先按上方按鈕帶入目前實際 iREC（依實際月數年化換算），再手動調整。</p>
+        <p className="text-xs text-blue-800/70 mb-2">此為<b>全年</b>規劃量；投影至目標月時自動按 ÷12×{tM || '?'} 攤提。留空 = 0。可先按上方按鈕帶入目前實際 iREC（依目前查詢區間的實際張數，不重新年化），再手動調整。</p>
         <div className="divide-y divide-blue-100 border-t border-blue-100">
           {regions.map((cc) => (
             <div key={cc} className="flex flex-wrap items-center gap-2 py-2.5">
