@@ -32,6 +32,12 @@ export default async function Home() {
           </div>
           <div className="flex items-center gap-4">
             <Link
+              href="/admin/factories"
+              className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
+            >
+              工廠設定 →
+            </Link>
+            <Link
               href="/admin/factors"
               className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
             >

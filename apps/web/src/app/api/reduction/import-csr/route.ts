@@ -46,24 +46,23 @@ const MONTHS: Record<string, number> = {
   jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
 };
 
-// CSR 各廠本地名 → 平台 factory_code 對應（對照「實際」factories 表 20 廠，已含 V23 合併）。
-//   key = `${Country}|${FactoryCode}`。多個 CSR 廠可對到同一平台廠（合併廠），匯入時「加總」。
-//   已關廠（CHN|JR、PHL|LR1/LR2）與樣品中心（SVN|南越樣品中心）不列入，匯入時略過。
-const CSR_FACTORY_MAP: Record<string, string> = {
-  'BGD|MK': 'BGD_MK',
-  // 柬埔寨 MK1/MK2/MK5 合併為 CAB_MK
-  'CAB|MK1': 'CAB_MK', 'CAB|MK2': 'CAB_MK', 'CAB|MK5': 'CAB_MK', 'CAB|MOHA': 'CAB_MOHA',
-  'CHN|JY': 'CHN_JY', 'CHN|MZ': 'CHN_MZ', 'CHN|佳陽樣品中心': 'CHN_JY_SP',
-  'CHN|Shanghai': 'CHN_SH', 'Shanghai|理陽': 'CHN_SH', // 上海聚陽 + 理陽 → CHN_SH
-  'IND|Demak': 'IND_DMK', 'IND|GLR1': 'IND_GLR1', 'IND|GLR2': 'IND_GLR2',
-  'IND|Sargen': 'IND_GLS', 'IND|Starlight': 'IND_STL',
-  // 北越 MK1/MK2 合併為 NVN_MK
-  'NVN|MK1': 'NVN_MK', 'NVN|MK2': 'NVN_MK', 'NVN|河內辦公室': 'NVN_HN',
-  'SLV|MK': 'SLV_MK',
-  'SVN|Leader': 'SVN_LDR', 'SVN|Triple': 'SVN_TRP',
-  'Taiwan|Chiayi': 'TWN_CHY', 'Taiwan|TPE': 'TWN_TPE',
-  'Taiwan|吉時': 'TWN_ECO', 'Taiwan|聚益': 'TWN_ECO', // 吉時 + 聚益 → TWN_ECO
-};
+// CSR 各廠本地名 → 平台 factory_code 對照已移入 DB（factory_csr_aliases，V32），
+// 由 /admin/factories 維護，新增或改廠不必再改這支程式。
+//   key = `${csr_country}|${csr_factory}`，多個 CSR 廠可對到同一平台廠（合併廠），匯入時加總。
+//   is_ignored = 刻意略過（已關廠等）。與「漏設定」區分開來：前者靜默，後者列入警告，
+//   否則兩者都只是「不在對照表裡」，漏設定會被靜默吃掉而無從察覺。
+interface CsrAlias { factory_code: string | null; is_ignored: boolean }
+
+async function loadCsrAliases(): Promise<Map<string, CsrAlias>> {
+  const res = await query(
+    `SELECT csr_country, csr_factory, factory_code, is_ignored FROM factory_csr_aliases`,
+  );
+  const map = new Map<string, CsrAlias>();
+  for (const r of res.rows) {
+    map.set(`${r.csr_country}|${r.csr_factory}`, { factory_code: r.factory_code, is_ignored: r.is_ignored });
+  }
+  return map;
+}
 
 function cellNum(sheet: XLSX.WorkSheet, r: number, c: number): number {
   const v = sheet[XLSX.utils.encode_cell({ r, c })]?.v;
@@ -102,7 +101,8 @@ export async function POST(req: NextRequest) {
 
   const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1:A1');
   const warnings: string[] = [];
-  const unmapped = new Set<string>();
+  const unmapped = new Set<string>();   // 查無對照設定 → 要讓使用者知道
+  const csrAliases = await loadCsrAliases();
   let curCountry = '';
   let energyRows = 0;
   let prodRows = 0;
@@ -121,8 +121,10 @@ export async function POST(req: NextRequest) {
     if (!month) continue; // 非月份列（合計等）略過
 
     const key = `${curCountry}|${factory}`;
-    const platformCode = CSR_FACTORY_MAP[key];
-    if (!platformCode) { unmapped.add(key); continue; }
+    const alias = csrAliases.get(key);
+    if (!alias) { unmapped.add(key); continue; }             // 對照表查無設定 → 列入警告
+    if (alias.is_ignored || !alias.factory_code) continue;   // 刻意略過，不打擾使用者
+    const platformCode = alias.factory_code;
 
     const production = cellNum(sheet, r, COL.production);
     if (production) {
@@ -153,7 +155,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (unmapped.size) {
-    warnings.push(`下列 CSR 廠別未對應平台廠代碼，已略過（已關廠或無對應）：${[...unmapped].join('、')}`);
+    warnings.push(
+      `下列 CSR 廠別在對照表中查無設定，已略過：${[...unmapped].join('、')}。`
+      + '若需匯入請到 /admin/factories 的「CSR 廠名對照」新增；若本就該略過，請設為「刻意略過」。',
+    );
   }
 
   // CSR 匯入完成 → 觸發該年度異常比對重跑（GOV_CSR_GHG_MISMATCH 等）。
