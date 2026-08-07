@@ -94,10 +94,10 @@ export const MERGED_CAT: Record<string, string> = {
 export const FACTORY_ORDER = [
   'TWN_TPE', 'TWN_CHY', 'TWN_ECO',
   'IND_DMK', 'IND_GLR1', 'IND_GLR2', 'IND_GLS', 'IND_STL',
-  'NVN_HN', 'NVN_MK1', 'NVN_MK2',
+  'NVN_HN', 'NVN_MK1', 'NVN_MK2', 'NVN_MK',
   'SVN_LDR', 'SVN_TRP',
-  'CAB_MK1', 'CAB_MK2', 'CAB_MK5', 'CAB_MOHA',
-  'CHN_JY', 'CHN_JY_SP', 'CHN_SH', 'CHN_HY',
+  'CAB_MK1', 'CAB_MK2', 'CAB_MK5', 'CAB_MOHA', 'CAB_MK',
+  'CHN_JY', 'CHN_JY_SP', 'CHN_SH', 'CHN_HY', 'CHN_MZ',
   'SLV_MK', 'BGD_MK',
 ];
 
