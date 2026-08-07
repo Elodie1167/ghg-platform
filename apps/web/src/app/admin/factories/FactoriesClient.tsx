@@ -235,7 +235,9 @@ function FactoriesTab({ factories, countries, call, busy }: {
                   <td className="px-3 py-2 font-mono text-xs">{f.factory_code}</td>
                   <td className="px-3 py-2">
                     {f.name_zh}
-                    {f.name_en && <span className="text-xs text-gray-400 ml-1">{f.name_en}</span>}
+                    {f.name_en && f.name_en !== f.name_zh && (
+                      <span className="text-xs text-gray-400 ml-1">{f.name_en}</span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     {newCountry
