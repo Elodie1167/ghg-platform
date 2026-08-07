@@ -1,47 +1,22 @@
-﻿import { query } from '@/lib/db';
-import Link from 'next/link';
+﻿import Link from 'next/link';
+import { getCountries, getFactories, orderCountryCodes } from '@/lib/factory-registry';
+import type { RegistryFactory } from '@/lib/registry-types';
 
-interface Factory {
-  id: string;
-  factory_code: string;
-  name_zh: string;
-  name_en: string;
-  country_code: string;
-  region: string | null;
-}
-
-const COUNTRY_LABELS: Record<string, string> = {
-  TWN: '台灣',
-  CHN: '中國',
-  NVN: '北越',
-  SVN: '南越',
-  CAB: '柬埔寨',
-  SLV: '薩爾瓦多',
-  BGD: '孟加拉',
-  IND: '印尼',
-};
-
-const COUNTRY_ORDER = ['BGD', 'CAB', 'CHN', 'IND', 'NVN', 'SVN', 'SLV', 'TWN'];
+export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const result = await query(
-    `SELECT id, factory_code, name_zh, name_en, country_code, region
-     FROM factories
-     ORDER BY country_code ASC, factory_code ASC`,
-  );
-  const factories: Factory[] = result.rows;
+  // 名冊已排好序（產區順序 → 廠順序），停用的廠不出現在填報入口
+  const [factories, countryList] = await Promise.all([getFactories(), getCountries()]);
+  const countryLabels: Record<string, string> = {};
+  for (const c of countryList) countryLabels[c.country_code] = c.name_zh;
 
-  const grouped = new Map<string, Factory[]>();
+  const grouped = new Map<string, RegistryFactory[]>();
   for (const f of factories) {
     if (!grouped.has(f.country_code)) grouped.set(f.country_code, []);
     grouped.get(f.country_code)!.push(f);
   }
 
-  const countries = [...grouped.keys()].sort((a, b) => {
-    const ia = COUNTRY_ORDER.indexOf(a);
-    const ib = COUNTRY_ORDER.indexOf(b);
-    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-  });
+  const countries = orderCountryCodes(grouped.keys(), countryList);
 
   const currentYear = new Date().getFullYear();
 
@@ -102,7 +77,7 @@ export default async function Home() {
                   {cc}
                 </span>
                 <h2 className="text-base font-semibold text-gray-700">
-                  {COUNTRY_LABELS[cc] ?? cc}
+                  {countryLabels[cc] ?? cc}
                 </h2>
                 <span className="text-xs text-gray-400">{facs.length} 廠</span>
               </div>
@@ -141,5 +116,3 @@ export default async function Home() {
     </div>
   );
 }
-
-export const dynamic = 'force-dynamic';

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { getReductionFromPlatform, getReductionFromCsr } from '@/lib/reduction-data';
-import { COUNTRY_LABELS, IREC_KWH_PER_CERT, type FactoryReduction } from '@/lib/reduction-types';
+import { IREC_KWH_PER_CERT, type FactoryReduction } from '@/lib/reduction-types';
+import { getCountryLabels } from '@/lib/factory-registry';
 
 // GET /api/reduction/export — 匯出各廠區碳排（產區加總 + 各廠明細）為 Excel
 export async function GET(req: NextRequest) {
@@ -15,9 +16,12 @@ export async function GET(req: NextRequest) {
   const factorYear = Number(sp.get('factorYear')) || year - 1;
 
   try {
-    const d = source === 'platform'
-      ? await getReductionFromPlatform(year, monthFrom, monthTo)
-      : await getReductionFromCsr(year, monthFrom, monthTo, recSource, factorYear);
+    const [d, countryLabels] = await Promise.all([
+      source === 'platform'
+        ? getReductionFromPlatform(year, monthFrom, monthTo)
+        : getReductionFromCsr(year, monthFrom, monthTo, recSource, factorYear),
+      getCountryLabels(),
+    ]);
 
     const r2 = (v: number) => Math.round(v * 100) / 100;
     const certs = (kwh: number) => Math.round((kwh / IREC_KWH_PER_CERT) * 100) / 100;
@@ -34,13 +38,13 @@ export async function GET(req: NextRequest) {
     const regionRows: (string | number)[][] = [['產區', ...header]];
     regionRows.push(['集團合計', r2(d.totals.s1), r2(d.totals.s2_loc), r2(d.totals.s2_mkt), r2(d.totals.s1s2_loc), r2(d.totals.s1s2_mkt), certs(d.totals.irec_kwh), r2(d.totals.biomass_co2)]);
     for (const [cc, t] of regionMap) {
-      regionRows.push([COUNTRY_LABELS[cc] ?? cc, r2(t.s1), r2(t.s2_loc), r2(t.s2_mkt), r2(t.s1s2_loc), r2(t.s1s2_mkt), certs(t.irec_kwh), r2(t.biomass_co2)]);
+      regionRows.push([countryLabels[cc] ?? cc, r2(t.s1), r2(t.s2_loc), r2(t.s2_mkt), r2(t.s1s2_loc), r2(t.s1s2_mkt), certs(t.irec_kwh), r2(t.biomass_co2)]);
     }
 
     // 各廠明細
     const facRows: (string | number)[][] = [['廠代碼', '名稱', '產區', ...header]];
     for (const f of d.factories as FactoryReduction[]) {
-      facRows.push([f.factory_code, f.name_zh, COUNTRY_LABELS[f.country_code] ?? f.country_code,
+      facRows.push([f.factory_code, f.name_zh, countryLabels[f.country_code] ?? f.country_code,
         r2(f.s1), r2(f.s2_loc), r2(f.s2_mkt), r2(f.s1s2_loc), r2(f.s1s2_mkt), certs(f.irec_kwh), r2(f.biomass_co2)]);
     }
 

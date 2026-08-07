@@ -7,6 +7,7 @@ import {
   type RecSource,
 } from '@/lib/reduction-data';
 import { query } from '@/lib/db';
+import { getCountries, getFactories } from '@/lib/factory-registry';
 import type { ScopeKey, Basis } from '@/lib/reduction-types';
 import ReductionClient from './ReductionClient';
 import SetupWizard from './SetupWizard';
@@ -36,7 +37,13 @@ export default async function ReductionPage({
 
   // 未經設定引導（ready≠1）→ 先跳設定精靈，不計算也不打 DB，避免呈現未確認條件的數字
   if (sp.ready !== '1') {
-    return <SetupWizard defaultYear={thisYear} defaultFactorYear={thisYear - 1} />;
+    return (
+      <SetupWizard
+        defaultYear={thisYear}
+        defaultFactorYear={thisYear - 1}
+        countries={await getCountries()}
+      />
+    );
   }
 
   const source: ReductionSource = sp.source === 'platform' ? 'platform' : 'csr';
@@ -54,12 +61,14 @@ export default async function ReductionPage({
   const scopes = (sp.scopes ? sp.scopes.split(',').map(Number) : [1, 2, 3]).filter((s) => [1, 2, 3].includes(s)) as ScopeKey[];
   const basis: Basis = sp.basis === 'location' ? 'location' : 'market';
 
-  const [data, yearly, factoriesRes] = await Promise.all([
+  const [data, yearly, allFactories, countryList] = await Promise.all([
     source === 'platform'
       ? getReductionFromPlatform(year, monthFrom, monthTo)
       : getReductionFromCsr(year, monthFrom, monthTo, recSource, factorYear),
     getYearlySeries(source, Math.min(yearFrom, year), year, recSource, (y) => y - 1),
-    query(`SELECT factory_code, name_zh, country_code FROM factories ORDER BY country_code, factory_code`),
+    // 停用廠若該年度仍有資料就照列，避免歷史年度少廠
+    getFactories({ year }),
+    getCountries(),
   ]);
   data.yearly = yearly;
 
@@ -74,7 +83,10 @@ export default async function ReductionPage({
       data={data}
       anomalyOpenCount={anomalyOpenCount}
       anomalyYear={year}
-      allFactories={factoriesRes.rows as { factory_code: string; name_zh: string; country_code: string }[]}
+      allFactories={allFactories.map(({ factory_code, name_zh, country_code }) => ({
+        factory_code, name_zh, country_code,
+      }))}
+      countries={countryList}
       filters={{ yearFrom: Math.min(yearFrom, year), countryCode, factoryCode, scopes, basis }}
     />
   );

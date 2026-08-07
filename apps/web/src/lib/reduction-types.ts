@@ -94,10 +94,9 @@ export interface ReductionResult {
   yearly: YearlyPoint[];
 }
 
-export const COUNTRY_LABELS: Record<string, string> = {
-  TWN: '台灣', CHN: '中國', NVN: '北越', SVN: '南越',
-  CAB: '柬埔寨', SLV: '薩爾瓦多', BGD: '孟加拉', IND: '印尼',
-};
+// 產區標籤已移至 DB（countries 表，V32）。需要時：
+//   server → lib/factory-registry.getCountryLabels()
+//   client → 由 server 傳 countries prop + registry-types.countryLabelsOf()
 
 // CSR_Detail「Data」工作表能源欄 → 平台 source_code 對應（新版：車用/非車用已分欄）。
 //   煤、天然氣、生質燃料依指示不匯入（無廠使用 / 無明確對應）。

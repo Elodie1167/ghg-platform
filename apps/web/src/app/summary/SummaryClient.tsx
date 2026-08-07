@@ -23,29 +23,19 @@ const SCOPE_NAMES: Record<number, string> = {
   3: '範疇三 Scope 3',
 };
 
-const FACTORY_ORDER = [
-  'TWN_TPE', 'TWN_CHY', 'TWN_ECO',
-  'IND_DMK', 'IND_GLR1', 'IND_GLR2', 'IND_GLS', 'IND_STL',
-  'NVN_MK1', 'NVN_MK2', 'NVN_MK', 'NVN_HN',
-  'SVN_LDR', 'SVN_TRP',
-  'CAB_MK1', 'CAB_MK2', 'CAB_MK5', 'CAB_MOHA', 'CAB_MK',
-  'CHN_JY', 'CHN_MZ', 'CHN_JY_SP', 'CHN_SH', 'CHN_HY',
-  'SLV_MK', 'BGD_MK',
-];
-
-const COUNTRY_LABELS: Record<string, string> = {
-  TWN: '台灣', CHN: '中國', NVN: '北越', SVN: '南越',
-  CAB: '柬埔寨', SLV: '薩爾瓦多', BGD: '孟加拉', IND: '印尼',
-};
+// 工廠順序與產區標籤由 server 傳入（來源：DB 名冊，見 lib/factory-registry.ts）。
+// 這裡刻意不再自訂常數 —— 過去這份 FACTORY_ORDER 與 summary-data.ts 那份
+// 各自維護，改一邊忘另一邊就會走鐘（commit a486835 就是在補這個洞）。
 
 const HEADER_BG = '#0C3D2E';
 const YEARS = [2023, 2024, 2025, 2026, 2027];
 const COL_W = 72;
 
 export default function SummaryClient({
-  year, factories, sources, cells, scopeAggs, recAggs, gasAggs, scopeGasAggs,
+  year, factories, sources, cells, scopeAggs, recAggs, gasAggs, scopeGasAggs, countryLabels,
 }: {
   year: number;
+  /** 已由 server 依名冊排好序，直接照這個順序用 */
   factories: FactoryMeta[];
   sources: SourceMeta[];
   cells: MatrixCell[];
@@ -53,6 +43,7 @@ export default function SummaryClient({
   recAggs: RecAgg[];
   gasAggs: GasAgg[];
   scopeGasAggs: ScopeGasAgg[];
+  countryLabels: Record<string, string>;
 }) {
   const router = useRouter();
 
@@ -80,15 +71,8 @@ export default function SummaryClient({
   const scopeGasMap: Record<number, ScopeGasAgg> = {};
   for (const g of scopeGasAggs) scopeGasMap[g.scope] = g;
 
-  // ── ordered factories ──
-  const orderedFactories = [
-    ...FACTORY_ORDER.filter((fc) => factories.some((f) => f.factory_code === fc)),
-    ...factories
-      .filter((f) => !FACTORY_ORDER.includes(f.factory_code))
-      .map((f) => f.factory_code),
-  ]
-    .map((fc) => factories.find((f) => f.factory_code === fc)!)
-    .filter(Boolean);
+  // ── ordered factories（server 已排好，這裡不再重排）──
+  const orderedFactories = factories;
 
   // ── group sources by scope → category ──
   const scopeGroups = new Map<number, Map<string, SourceMeta[]>>();
@@ -222,7 +206,7 @@ export default function SummaryClient({
                     className="sticky top-0 z-20 px-2 py-2 text-center text-white font-semibold border-l border-white/20 whitespace-nowrap"
                     style={{ backgroundColor: HEADER_BG }}
                   >
-                    {COUNTRY_LABELS[b.cc] ?? b.cc}
+                    {countryLabels[b.cc] ?? b.cc}
                   </th>
                 ))}
               </tr>

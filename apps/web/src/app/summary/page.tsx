@@ -32,6 +32,7 @@ export default async function SummaryPage({
       recAggs={data.recAggs}
       gasAggs={data.gasAggs}
       scopeGasAggs={data.scopeGasAggs}
+      countryLabels={data.countryLabels}
     />
   );
 }

@@ -1,5 +1,6 @@
 import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
+import { getFactories } from '@/lib/factory-registry';
 import type {
   ReductionSource, RecSource, FactoryReduction, GreenPower,
   BaselineIntensity, ReductionResult, YearlyPoint,
@@ -26,9 +27,13 @@ export type {
 const ELEC_CODE = '2-1-A';
 const SOLAR_CODE = 'SOLAR';
 
-// 依國家、再依廠代碼排序（前端會再按產區分組，此處僅定組內順序）
-function orderFactories<T extends { factory_code: string; country_code: string }>(rows: T[]): T[] {
+// 依 DB 名冊順序排序（產區順序 → 廠順序）。名冊查無的廠排最後，
+// 並退回原本的 country_code/factory_code 字典序，避免名冊缺列時整份亂掉。
+async function orderFactories<T extends { factory_code: string; country_code: string }>(rows: T[]): Promise<T[]> {
+  const registry = await getFactories({ includeInactive: true });
+  const rank = new Map(registry.map((f, i) => [f.factory_code, i]));
   return [...rows].sort((a, b) =>
+    (rank.get(a.factory_code) ?? 9999) - (rank.get(b.factory_code) ?? 9999) ||
     a.country_code.localeCompare(b.country_code) || a.factory_code.localeCompare(b.factory_code),
   );
 }
@@ -144,7 +149,7 @@ export async function getReductionFromPlatform(
   if (monthsSelected < 12) {
     warnings.push(`iREC 為全年一次性採購，已依所選月份數（${monthsSelected}/12）攤提後計入市場別強度。`);
   }
-  const factories = orderFactories(
+  const factories = await orderFactories(
     (emitRes.rows as Array<{
       factory_code: string; name_zh: string; country_code: string;
       s1: number; s2_loc: number; s2_mkt: number; s3: number; biomass_co2: number;
@@ -379,7 +384,7 @@ export async function getReductionFromCsr(
     greenTotal += acc.purchasedKwh + acc.solarKwh;
   }
 
-  const orderedFactories = orderFactories(factories);
+  const orderedFactories = await orderFactories(factories);
   const totals = sumTotals(orderedFactories);
 
   // CSR 產能分母

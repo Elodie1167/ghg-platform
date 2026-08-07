@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import {
-  getSummaryData, FACTORY_ORDER, COUNTRY_LABELS, CAT_PREFIX, MERGED_CAT, SCOPE_NAMES,
+  getSummaryData, CAT_PREFIX, MERGED_CAT, SCOPE_NAMES,
   type FactoryMeta, type SourceMeta, type ScopeGasAgg,
 } from '@/lib/summary-data';
 
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { factories, sources, cells, scopeAggs, recAggs, gasAggs, scopeGasAggs } =
+    const { factories, sources, cells, scopeAggs, recAggs, gasAggs, scopeGasAggs, countryLabels } =
       await getSummaryData(year);
 
     // ── 建索引（比照 SummaryClient）──
@@ -48,13 +48,8 @@ export async function GET(req: NextRequest) {
     const scopeGasMap: Record<number, ScopeGasAgg> = {};
     for (const g of scopeGasAggs) scopeGasMap[g.scope] = g;
 
-    // ── 廠別排序 ──
-    const orderedFactories: FactoryMeta[] = [
-      ...FACTORY_ORDER.filter((fc) => factories.some((f) => f.factory_code === fc)),
-      ...factories.filter((f) => !FACTORY_ORDER.includes(f.factory_code)).map((f) => f.factory_code),
-    ]
-      .map((fc) => factories.find((f) => f.factory_code === fc)!)
-      .filter(Boolean);
+    // ── 廠別排序（getSummaryData 已依 DB 名冊排好，與畫面同一份順序）──
+    const orderedFactories: FactoryMeta[] = factories;
 
     // ── 依範疇→類別分組排放源 ──
     const scopeGroups = new Map<number, Map<string, SourceMeta[]>>();
@@ -117,7 +112,7 @@ export async function GET(req: NextRequest) {
         else bands[bands.length - 1].count++;
       }
       for (const b of bands) {
-        bandRow[ci] = COUNTRY_LABELS[b.cc] ?? b.cc;
+        bandRow[ci] = countryLabels[b.cc] ?? b.cc;
         if (b.count > 1) merges.push({ s: { r, c: ci }, e: { r, c: ci + b.count - 1 } });
         ci += b.count;
       }

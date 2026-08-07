@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  COUNTRY_LABELS, IREC_KWH_PER_CERT,
+  IREC_KWH_PER_CERT,
   type ReductionResult, type FactoryReduction, type ScopeKey, type Basis,
 } from '@/lib/reduction-types';
+import { countryLabelsOf, orderCountryCodes, type CountryMeta } from '@/lib/registry-types';
 import FilterBar from './FilterBar';
 import KpiCard from '@/components/KpiCard';
 import StackedBarChart from '@/components/charts/StackedBarChart';
@@ -14,7 +15,7 @@ import HBarChart from '@/components/charts/HBarChart';
 import { SCOPE_COLORS } from '@/components/theme';
 
 const HEADER_BG = '#0C3D2E';
-const COUNTRY_ORDER = ['TWN', 'CHN', 'NVN', 'SVN', 'CAB', 'SLV', 'BGD', 'IND'];
+// 產區順序與標籤由 countries prop 傳入（DB 名冊），不再硬編碼
 const T2030_RATIO = 0.5; // 2030 相比 2020 減 50%，2050 減 100%
 
 type RowAgg = { s1: number; s2_loc: number; s2_mkt: number; s1s2_loc: number; s1s2_mkt: number; irec_kwh: number; biomass_co2: number };
@@ -38,12 +39,15 @@ export interface DashboardFilters {
   basis: Basis;
 }
 
-export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, allFactories, filters }: {
+export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, allFactories, countries, filters }: {
   data: ReductionResult; anomalyOpenCount?: number; anomalyYear?: number;
   allFactories: { factory_code: string; name_zh: string; country_code: string }[];
+  /** 產區順序與標籤，來自 DB 名冊 */
+  countries: CountryMeta[];
   filters: DashboardFilters;
 }) {
   const router = useRouter();
+  const countryLabels = countryLabelsOf(countries);
   const { source, year, monthFrom, monthTo, factorYear } = data;
   const { countryCode, factoryCode, scopes, basis } = filters;
   const filterActive = countryCode !== '' || factoryCode !== '';
@@ -87,10 +91,7 @@ export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, a
     if (!byCountry.has(f.country_code)) byCountry.set(f.country_code, []);
     byCountry.get(f.country_code)!.push(f);
   }
-  const countries = [
-    ...COUNTRY_ORDER.filter((c) => byCountry.has(c)),
-    ...[...byCountry.keys()].filter((c) => !COUNTRY_ORDER.includes(c)),
-  ];
+  const regionCodes = orderCountryCodes(byCountry.keys(), countries);
   const regionAgg = (rows: FactoryReduction[]): RowAgg => rows.reduce(
     (a, f) => ({
       s1: a.s1 + f.s1, s2_loc: a.s2_loc + f.s2_loc, s2_mkt: a.s2_mkt + f.s2_mkt,
@@ -139,6 +140,7 @@ export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, a
           {/* 儀表板篩選：產區 / 工廠 / 年度區間 / 範疇 / 市場地域基準 */}
           <FilterBar
             factories={allFactories}
+            countries={countries}
             source={source}
             yearFrom={filters.yearFrom}
             yearTo={year}
@@ -174,7 +176,7 @@ export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, a
 
         {/* 手動 iREC 試算輸入（CSR + 手動模式） */}
         {source === 'csr' && data.recSource === 'manual' && (
-          <ManualIrecPanel year={year} factories={data.factories} onSaved={() => router.refresh()} />
+          <ManualIrecPanel year={year} factories={data.factories} countries={countries} onSaved={() => router.refresh()} />
         )}
 
         {/* KPI 卡：標打強度 / 營業額強度（僅集團層級）/ 總排放當量（依範疇+基準篩選）/ 綠電占比 */}
@@ -229,11 +231,11 @@ export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, a
         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <h2 className="text-base font-bold text-gray-800 mb-3">各產區排放當量（tCO₂e）</h2>
-            <HBarChart unit="t" rows={countries.map((c) => {
+            <HBarChart unit="t" rows={regionCodes.map((c) => {
               const rows = byCountry.get(c)!.filter((f) =>
                 (!countryCode || f.country_code === countryCode) && (!factoryCode || f.factory_code === factoryCode));
               return {
-                label: COUNTRY_LABELS[c] ?? c,
+                label: countryLabels[c] ?? c,
                 segments: [
                   ...(scopes.includes(1) ? [{ key: 's1', color: SCOPE_COLORS.s1, value: rows.reduce((a, f) => a + f.s1, 0) }] : []),
                   ...(scopes.includes(2) ? [{ key: 's2', color: basis === 'market' ? SCOPE_COLORS.s2_mkt : SCOPE_COLORS.s2_loc, value: rows.reduce((a, f) => a + (basis === 'market' ? f.s2_mkt : f.s2_loc), 0) }] : []),
@@ -278,7 +280,7 @@ export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, a
 
         {/* 情境試算（CSR，前端即時，不寫入資料庫） */}
         {projOn && projectable && (
-          <ProjectionPanel data={data} b2020={b2020} b2025={b2025} />
+          <ProjectionPanel data={data} b2020={b2020} b2025={b2025} countries={countries} />
         )}
 
         {/* 綠電占比 */}
@@ -322,8 +324,8 @@ export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, a
               <TableHead first="產區" />
               <tbody>
                 <Row bold bg="bg-blue-50/60" label="集團合計" f={data.totals} labelClass="text-[#1e3a5f]" />
-                {countries.map((c) => (
-                  <Row key={c} bold bg="bg-gray-50" label={COUNTRY_LABELS[c] ?? c} f={regionAgg(byCountry.get(c)!)} labelClass="text-gray-700" />
+                {regionCodes.map((c) => (
+                  <Row key={c} bold bg="bg-gray-50" label={countryLabels[c] ?? c} f={regionAgg(byCountry.get(c)!)} labelClass="text-gray-700" />
                 ))}
                 {data.factories.length === 0 && <EmptyRow />}
               </tbody>
@@ -338,9 +340,9 @@ export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, a
             <table className="w-full border-collapse text-sm bg-white">
               <TableHead first="廠" />
               <tbody>
-                {countries.map((c) => (
+                {regionCodes.map((c) => (
                   <FragmentGroup key={c}>
-                    <Row bold bg="bg-gray-100" label={`${COUNTRY_LABELS[c] ?? c} 產區加總`} f={regionAgg(byCountry.get(c)!)} labelClass="text-gray-700" />
+                    <Row bold bg="bg-gray-100" label={`${countryLabels[c] ?? c} 產區加總`} f={regionAgg(byCountry.get(c)!)} labelClass="text-gray-700" />
                     {byCountry.get(c)!.map((f) => (
                       <Row key={f.factory_code} label={f.factory_code} sublabel={f.name_zh} f={f} />
                     ))}
@@ -357,9 +359,10 @@ export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, a
 }
 
 // ── 手動 iREC 試算輸入 ───────────────────────────────────────
-function ManualIrecPanel({ year, factories, onSaved }: {
-  year: number; factories: FactoryReduction[]; onSaved: () => void;
+function ManualIrecPanel({ year, factories, countries, onSaved }: {
+  year: number; factories: FactoryReduction[]; countries: CountryMeta[]; onSaved: () => void;
 }) {
+  const countryLabels = countryLabelsOf(countries);
   // 輸入框需顯示「全年」已存張數（不受目前所選月份攤提影響），故另向 GET /api/csr-rec 取值，
   // 不可直接用 f.irec_kwh（那已依所選月份數 ÷12 攤提，只供市場別強度計算用）。
   const [vals, setVals] = useState<Record<string, string>>({});
@@ -409,10 +412,7 @@ function ManualIrecPanel({ year, factories, onSaved }: {
     if (!byCC.has(f.country_code)) byCC.set(f.country_code, []);
     byCC.get(f.country_code)!.push(f);
   }
-  const regions = [
-    ...COUNTRY_ORDER.filter((c) => byCC.has(c)),
-    ...[...byCC.keys()].filter((c) => !COUNTRY_ORDER.includes(c)),
-  ];
+  const regions = orderCountryCodes(byCC.keys(), countries);
 
   return (
     <section className="bg-amber-50 border border-amber-200 rounded-xl p-5">
@@ -428,7 +428,7 @@ function ManualIrecPanel({ year, factories, onSaved }: {
       <div className="divide-y divide-amber-200 border-t border-amber-200">
         {regions.map((cc) => (
           <div key={cc} className="flex flex-wrap items-center gap-2 py-2.5">
-            <div className="w-16 shrink-0 text-sm font-bold text-amber-900">{COUNTRY_LABELS[cc] ?? cc}</div>
+            <div className="w-16 shrink-0 text-sm font-bold text-amber-900">{countryLabels[cc] ?? cc}</div>
             {byCC.get(cc)!.map((f) => (
               <label key={f.factory_code} title={f.name_zh}
                 className="flex items-center gap-1.5 bg-white rounded-lg border border-amber-100 px-2.5 py-1.5">
@@ -480,9 +480,10 @@ function pathwayTargetAt(yr: number, b2020: number | null, b2025: number | null)
   return 0;
 }
 
-function ProjectionPanel({ data, b2020, b2025 }: {
-  data: ReductionResult; b2020: number | null; b2025: number | null;
+function ProjectionPanel({ data, b2020, b2025, countries }: {
+  data: ReductionResult; b2020: number | null; b2025: number | null; countries: CountryMeta[];
 }) {
+  const countryLabels = countryLabelsOf(countries);
   const factories = data.factories;
   const [actualM, setActualM] = useState(String(data.csrActualMonths || (data.monthTo - data.monthFrom + 1)));
   const [targetM, setTargetM] = useState('9');
@@ -561,10 +562,7 @@ function ProjectionPanel({ data, b2020, b2025 }: {
   // ── 依產區分組（iREC 輸入格）──
   const byCC = new Map<string, FactoryReduction[]>();
   for (const f of factories) { if (!byCC.has(f.country_code)) byCC.set(f.country_code, []); byCC.get(f.country_code)!.push(f); }
-  const regions = [
-    ...COUNTRY_ORDER.filter((c) => byCC.has(c)),
-    ...[...byCC.keys()].filter((c) => !COUNTRY_ORDER.includes(c)),
-  ];
+  const regions = orderCountryCodes(byCC.keys(), countries);
 
   async function exportExcel() {
     setExporting(true);
@@ -584,13 +582,13 @@ function ProjectionPanel({ data, b2020, b2025 }: {
         ['備註', 'AI 試算，情境模擬結果需永續發展部確認，非最終結論'],
       ];
       const irecPlan: (string | number)[][] = [['廠代碼', '名稱', '產區', '年度規劃 iREC (張)']];
-      for (const f of factories) irecPlan.push([f.factory_code, f.name_zh, COUNTRY_LABELS[f.country_code] ?? f.country_code, certsOf(f.factory_code)]);
+      for (const f of factories) irecPlan.push([f.factory_code, f.name_zh, countryLabels[f.country_code] ?? f.country_code, certsOf(f.factory_code)]);
 
       const header = ['S1', 'S2 市場', 'S1+S2 市場', '投影 iREC 度數', '封頂'];
       const facRows: (string | number)[][] = [[`各廠明細（投影至 ${tM} 月，tCO₂e）`], ['廠代碼', '名稱', '產區', ...header]];
       const region = new Map<string, { s1: number; s2_mkt: number; s1s2_mkt: number; irecKwh: number }>();
       for (const { f, r } of proj.rows) {
-        facRows.push([f.factory_code, f.name_zh, COUNTRY_LABELS[f.country_code] ?? f.country_code,
+        facRows.push([f.factory_code, f.name_zh, countryLabels[f.country_code] ?? f.country_code,
           r2(r.s1), r2(r.s2_mkt), r2(r.s1s2_mkt), Math.round(r.irecKwh), r.clamped ? '是' : '']);
         const cur = region.get(f.country_code) ?? { s1: 0, s2_mkt: 0, s1s2_mkt: 0, irecKwh: 0 };
         cur.s1 += r.s1; cur.s2_mkt += r.s2_mkt; cur.s1s2_mkt += r.s1s2_mkt; cur.irecKwh += r.irecKwh;
@@ -598,7 +596,7 @@ function ProjectionPanel({ data, b2020, b2025 }: {
       }
       const regRows: (string | number)[][] = [[`產區加總（投影至 ${tM} 月，tCO₂e）`], ['產區', 'S1', 'S2 市場', 'S1+S2 市場', '投影 iREC 度數']];
       regRows.push(['集團合計', r2(proj.s1), r2(proj.s2_mkt), r2(proj.s1s2_mkt), Math.round(proj.greenIrec)]);
-      for (const [cc, t] of region) regRows.push([COUNTRY_LABELS[cc] ?? cc, r2(t.s1), r2(t.s2_mkt), r2(t.s1s2_mkt), Math.round(t.irecKwh)]);
+      for (const [cc, t] of region) regRows.push([countryLabels[cc] ?? cc, r2(t.s1), r2(t.s2_mkt), r2(t.s1s2_mkt), Math.round(t.irecKwh)]);
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(meta), '試算摘要');
@@ -677,7 +675,7 @@ function ProjectionPanel({ data, b2020, b2025 }: {
         <div className="divide-y divide-blue-100 border-t border-blue-100">
           {regions.map((cc) => (
             <div key={cc} className="flex flex-wrap items-center gap-2 py-2.5">
-              <div className="w-16 shrink-0 text-sm font-bold text-[#1e3a5f]">{COUNTRY_LABELS[cc] ?? cc}</div>
+              <div className="w-16 shrink-0 text-sm font-bold text-[#1e3a5f]">{countryLabels[cc] ?? cc}</div>
               {byCC.get(cc)!.map((f) => {
                 const isClamped = proj.clamped.includes(f.factory_code);
                 return (

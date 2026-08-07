@@ -1,16 +1,19 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { COUNTRY_LABELS, type ScopeKey, type Basis } from '@/lib/reduction-types';
+import { type ScopeKey, type Basis } from '@/lib/reduction-types';
+import { countryLabelsOf, orderCountryCodes, type CountryMeta } from '@/lib/registry-types';
 
 const HEADER_BG = '#0C3D2E';
 
 export interface FactoryOption { factory_code: string; name_zh: string; country_code: string }
 
 export default function FilterBar({
-  factories, source, yearFrom, yearTo, scopes, basis, countryCode, factoryCode,
+  factories, countries, source, yearFrom, yearTo, scopes, basis, countryCode, factoryCode,
 }: {
   factories: FactoryOption[];
+  /** 產區順序與標籤，來自 DB 名冊 */
+  countries: CountryMeta[];
   source: 'csr' | 'platform';
   yearFrom: number;
   yearTo: number;
@@ -21,6 +24,7 @@ export default function FilterBar({
 }) {
   const router = useRouter();
   const sp = useSearchParams();
+  const countryLabels = countryLabelsOf(countries);
 
   function patch(next: Record<string, string>) {
     const params = new URLSearchParams(sp.toString());
@@ -30,7 +34,7 @@ export default function FilterBar({
     router.push(`/reduction?${params.toString()}`);
   }
 
-  const countries = [...new Set(factories.map((f) => f.country_code))];
+  const countryCodes = orderCountryCodes(new Set(factories.map((f) => f.country_code)), countries);
   const factoryOptions = countryCode
     ? factories.filter((f) => f.country_code === countryCode)
     : factories;
@@ -51,7 +55,7 @@ export default function FilterBar({
         <select value={countryCode} onChange={(e) => patch({ country: e.target.value, factory: '' })}
           className="bg-white/10 text-white border border-white/30 rounded px-2 py-1">
           <option className="text-black" value="">全部</option>
-          {countries.map((c) => <option key={c} className="text-black" value={c}>{COUNTRY_LABELS[c] ?? c}</option>)}
+          {countryCodes.map((c) => <option key={c} className="text-black" value={c}>{countryLabels[c] ?? c}</option>)}
         </select>
       </label>
 

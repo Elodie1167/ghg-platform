@@ -2,7 +2,8 @@
 
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { COUNTRY_LABELS, IREC_KWH_PER_CERT, type ReductionSource, type RecSource } from '@/lib/reduction-types';
+import { IREC_KWH_PER_CERT, type ReductionSource, type RecSource } from '@/lib/reduction-types';
+import { countryLabelsOf, orderCountryCodes, type CountryMeta } from '@/lib/registry-types';
 
 // =============================================================
 // /reduction 設定引導（進頁先跳出，選完才計算並呈現結果）
@@ -16,7 +17,7 @@ import { COUNTRY_LABELS, IREC_KWH_PER_CERT, type ReductionSource, type RecSource
 const HEADER_BG = '#0C3D2E';
 const YEARS = [2023, 2024, 2025, 2026, 2027, 2028];
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
-const COUNTRY_ORDER = ['TWN', 'CHN', 'NVN', 'SVN', 'CAB', 'SLV', 'BGD', 'IND'];
+// 產區順序與標籤由 server 以 countries prop 傳入（DB 名冊），不再在此硬編碼
 
 type Factory = { factory_code: string; name_zh: string; country_code: string };
 
@@ -25,10 +26,13 @@ type Detected = {
   monthCount: number; hasAnnualLump: boolean; hasData: boolean;
 };
 
-export default function SetupWizard({ defaultYear, defaultFactorYear }: {
+export default function SetupWizard({ defaultYear, defaultFactorYear, countries }: {
   defaultYear: number; defaultFactorYear: number;
+  /** 產區順序與標籤，來自 DB 名冊 */
+  countries: CountryMeta[];
 }) {
   const router = useRouter();
+  const countryLabels = countryLabelsOf(countries);
   const [step, setStep] = useState<1 | 2>(1);
 
   // 步驟一
@@ -152,10 +156,7 @@ export default function SetupWizard({ defaultYear, defaultFactorYear }: {
     if (!byCC.has(f.country_code)) byCC.set(f.country_code, []);
     byCC.get(f.country_code)!.push(f);
   }
-  const regions = [
-    ...COUNTRY_ORDER.filter((c) => byCC.has(c)),
-    ...[...byCC.keys()].filter((c) => !COUNTRY_ORDER.includes(c)),
-  ];
+  const regions = orderCountryCodes(byCC.keys(), countries);
   const hasPrevManual = Object.keys(prevManual).length > 0;
 
   return (
@@ -279,7 +280,7 @@ export default function SetupWizard({ defaultYear, defaultFactorYear }: {
                     <div className="divide-y divide-gray-100 border-t border-gray-100 max-h-72 overflow-y-auto">
                       {regions.map((cc) => (
                         <div key={cc} className="flex flex-wrap items-center gap-2 py-2.5">
-                          <div className="w-16 shrink-0 text-sm font-bold text-gray-700">{COUNTRY_LABELS[cc] ?? cc}</div>
+                          <div className="w-16 shrink-0 text-sm font-bold text-gray-700">{countryLabels[cc] ?? cc}</div>
                           {byCC.get(cc)!.map((f) => (
                             <label key={f.factory_code} title={f.name_zh}
                               className="flex items-center gap-1.5 bg-white rounded-lg border border-gray-200 px-2.5 py-1.5">

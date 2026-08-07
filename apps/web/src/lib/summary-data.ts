@@ -1,4 +1,5 @@
 import { query } from '@/lib/db';
+import { getCountryLabels, getFactories } from '@/lib/factory-registry';
 
 // =============================================================
 // 集團碳排彙整表 — 共用資料層
@@ -61,6 +62,7 @@ export interface ScopeGasAgg {
 }
 
 export interface SummaryData {
+  /** 已依名冊順序排好，呼叫端直接照這個順序用，不要再自己排 */
   factories: FactoryMeta[];
   sources: SourceMeta[];
   cells: MatrixCell[];
@@ -68,6 +70,8 @@ export interface SummaryData {
   recAggs: RecAgg[];
   gasAggs: GasAgg[];
   scopeGasAggs: ScopeGasAgg[];
+  /** country_code → 中文名，供畫面與匯出顯示產區標籤 */
+  countryLabels: Record<string, string>;
 }
 
 // ── 排列/分組常數（畫面與匯出共用）─────────────────────────────
@@ -91,20 +95,11 @@ export const MERGED_CAT: Record<string, string> = {
   '3-5': '廢棄物處理',
 };
 
-export const FACTORY_ORDER = [
-  'TWN_TPE', 'TWN_CHY', 'TWN_ECO',
-  'IND_DMK', 'IND_GLR1', 'IND_GLR2', 'IND_GLS', 'IND_STL',
-  'NVN_MK1', 'NVN_MK2', 'NVN_MK', 'NVN_HN',
-  'SVN_LDR', 'SVN_TRP',
-  'CAB_MK1', 'CAB_MK2', 'CAB_MK5', 'CAB_MOHA', 'CAB_MK',
-  'CHN_JY', 'CHN_MZ', 'CHN_JY_SP', 'CHN_SH', 'CHN_HY',
-  'SLV_MK', 'BGD_MK',
-];
-
-export const COUNTRY_LABELS: Record<string, string> = {
-  TWN: '台灣', CHN: '中國', NVN: '北越', SVN: '南越',
-  CAB: '柬埔寨', SLV: '薩爾瓦多', BGD: '孟加拉', IND: '印尼',
-};
+// 工廠順序與國家標籤已改由 DB 驅動（V32）：
+//   順序 → countries.display_order + factories.display_order
+//   標籤 → countries.name_zh
+// 由 /admin/factories 維護，見 lib/factory-registry.ts。
+// getSummaryData() 回傳的 factories 已排好序、並附 countryLabels。
 
 /**
  * 取得「集團碳排彙整表」所需的全部彙整資料。
@@ -123,16 +118,15 @@ export async function getSummaryData(year: number): Promise<SummaryData> {
       AND COALESCE(ef.density::float, 0) > 0
     THEN ef.density::float ELSE 1.0 END`;
 
-  const [factoriesRes, sourcesRes, matrixRes, scopeAggRes, recRes, gasRes, scopeGasRes] = await Promise.all([
-    query(
-      `SELECT factory_code, name_zh, country_code
-       FROM factories
-       ORDER BY country_code ASC, factory_code ASC`,
-    ),
+  const [factoryRows, countryLabels, sourcesRes, matrixRes, scopeAggRes, recRes, gasRes, scopeGasRes] = await Promise.all([
+    // 停用的廠若該年度仍有填報資料就照樣列出 —— 已盤查年度不因之後關廠而少一欄
+    getFactories({ year }),
+    getCountryLabels(),
     query(
       `SELECT source_code, name_zh, scope
        FROM emission_sources
-       ORDER BY scope ASC, source_code ASC`,
+       WHERE is_active
+       ORDER BY scope ASC, display_order ASC, source_code ASC`,
     ),
     query(
       `SELECT f.factory_code, es.source_code,
@@ -322,12 +316,15 @@ export async function getSummaryData(year: number): Promise<SummaryData> {
   ]);
 
   return {
-    factories: factoriesRes.rows as FactoryMeta[],
+    factories: factoryRows.map(({ factory_code, name_zh, country_code }) => ({
+      factory_code, name_zh, country_code,
+    })),
     sources: sourcesRes.rows as SourceMeta[],
     cells: matrixRes.rows as MatrixCell[],
     scopeAggs: scopeAggRes.rows as ScopeAgg[],
     recAggs: recRes.rows as RecAgg[],
     gasAggs: gasRes.rows as GasAgg[],
     scopeGasAggs: scopeGasRes.rows as ScopeGasAgg[],
+    countryLabels,
   };
 }
