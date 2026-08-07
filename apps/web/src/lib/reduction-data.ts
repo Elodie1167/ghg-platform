@@ -2,7 +2,7 @@ import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
 import type {
   ReductionSource, RecSource, FactoryReduction, GreenPower,
-  BaselineIntensity, ReductionResult,
+  BaselineIntensity, ReductionResult, YearlyPoint,
 } from '@/lib/reduction-types';
 
 // =============================================================
@@ -33,13 +33,26 @@ function orderFactories<T extends { factory_code: string; country_code: string }
   );
 }
 
+/** 依產區分組（供產區加總/明細表與儀表板圖表共用） */
+export function groupByCountry(factories: FactoryReduction[]): Map<string, FactoryReduction[]> {
+  const byCountry = new Map<string, FactoryReduction[]>();
+  for (const f of factories) {
+    if (!byCountry.has(f.country_code)) byCountry.set(f.country_code, []);
+    byCountry.get(f.country_code)!.push(f);
+  }
+  return byCountry;
+}
+
 function finalizeFactory(r: {
   factory_code: string; name_zh: string; country_code: string;
-  s1: number; s2_loc: number; s2_mkt: number; irec_kwh: number; biomass_co2: number;
+  s1: number; s2_loc: number; s2_mkt: number; s3?: number; irec_kwh: number; biomass_co2: number;
+  production?: number | null;
   market_elec_kwh?: number; mkt_factor?: number; purchased_kwh?: number; solar_kwh?: number;
 }): FactoryReduction {
   return {
     ...r,
+    s3: r.s3 ?? 0,
+    production: r.production ?? null,
     s1s2_loc: r.s1 + r.s2_loc,
     s1s2_mkt: r.s1 + r.s2_mkt,
   };
@@ -51,12 +64,13 @@ function sumTotals(factories: FactoryReduction[]) {
       s1: acc.s1 + f.s1,
       s2_loc: acc.s2_loc + f.s2_loc,
       s2_mkt: acc.s2_mkt + f.s2_mkt,
+      s3: acc.s3 + f.s3,
       s1s2_loc: acc.s1s2_loc + f.s1s2_loc,
       s1s2_mkt: acc.s1s2_mkt + f.s1s2_mkt,
       irec_kwh: acc.irec_kwh + f.irec_kwh,
       biomass_co2: acc.biomass_co2 + f.biomass_co2,
     }),
-    { s1: 0, s2_loc: 0, s2_mkt: 0, s1s2_loc: 0, s1s2_mkt: 0, irec_kwh: 0, biomass_co2: 0 },
+    { s1: 0, s2_loc: 0, s2_mkt: 0, s3: 0, s1s2_loc: 0, s1s2_mkt: 0, irec_kwh: 0, biomass_co2: 0 },
   );
 }
 
@@ -92,6 +106,7 @@ export async function getReductionFromPlatform(
               COALESCE(SUM(CASE WHEN es.scope = 1 THEN ar.co2e_total::float ELSE 0 END), 0)    AS s1,
               COALESCE(SUM(CASE WHEN es.scope = 2 THEN ar.co2e_location::float ELSE 0 END), 0) AS s2_loc,
               COALESCE(SUM(CASE WHEN es.scope = 2 THEN ar.co2e_market::float ELSE 0 END), 0)   AS s2_mkt,
+              COALESCE(SUM(CASE WHEN es.scope = 3 THEN ar.co2e_total::float ELSE 0 END), 0)    AS s3,
               COALESCE(SUM(ar.co2e_biomass_co2::float), 0)                                     AS biomass_co2
        FROM factories f
        LEFT JOIN activity_records ar
@@ -132,8 +147,10 @@ export async function getReductionFromPlatform(
   const factories = orderFactories(
     (emitRes.rows as Array<{
       factory_code: string; name_zh: string; country_code: string;
-      s1: number; s2_loc: number; s2_mkt: number; biomass_co2: number;
-    }>).map((r) => finalizeFactory({ ...r, irec_kwh: recByFactory.get(r.factory_code) || 0 })),
+      s1: number; s2_loc: number; s2_mkt: number; s3: number; biomass_co2: number;
+    }>).map((r) => finalizeFactory({
+      ...r, production: null, irec_kwh: recByFactory.get(r.factory_code) || 0,
+    })),
   );
   const totals = sumTotals(factories);
 
@@ -167,7 +184,7 @@ export async function getReductionFromPlatform(
     factories, totals, production,
     intensity_market_kg: intensity(totals.s1s2_mkt, production),
     intensity_location_kg: intensity(totals.s1s2_loc, production),
-    baselines, greenPower, warnings,
+    baselines, greenPower, warnings, yearly: [],
   };
 }
 
@@ -321,6 +338,13 @@ export async function getReductionFromCsr(
     });
   }));
 
+  // 各廠標打產能（供廠別強度卡使用；CSR 路徑唯一有廠別粒度的產能來源）
+  const prodByFactory = new Map<string, number>();
+  for (const row of prodRes.rows as Array<{ factory_code: string; month: number; standard_units: number }>) {
+    if (!inRange(row.month)) continue;
+    prodByFactory.set(row.factory_code, (prodByFactory.get(row.factory_code) || 0) + (Number(row.standard_units) || 0));
+  }
+
   const factories: FactoryReduction[] = [];
   let greenIrec = 0, greenSolar = 0, greenTotal = 0;
 
@@ -342,7 +366,8 @@ export async function getReductionFromCsr(
 
     factories.push(finalizeFactory({
       factory_code: code, name_zh: fact.name_zh, country_code: fact.country_code,
-      s1: acc.s1, s2_loc, s2_mkt, irec_kwh: irec, biomass_co2: acc.biomass_co2,
+      s1: acc.s1, s2_loc, s2_mkt, s3: 0, irec_kwh: irec, biomass_co2: acc.biomass_co2,
+      production: prodByFactory.get(code) ?? null,
       market_elec_kwh: marketElec,
       mkt_factor: isCHN ? residual : gridEf,
       purchased_kwh: acc.purchasedKwh,
@@ -359,10 +384,7 @@ export async function getReductionFromCsr(
 
   // CSR 產能分母
   let production = 0;
-  for (const row of prodRes.rows as Array<{ factory_code: string; month: number; standard_units: number }>) {
-    if (!inRange(row.month)) continue;
-    production += Number(row.standard_units) || 0;
-  }
+  for (const p of prodByFactory.values()) production += p;
   if (production <= 0) warnings.push('CSR 查無標打產能，KPI 強度無法計算（請匯入或填入 CSR 產能）。');
 
   const greenPower: GreenPower = {
@@ -377,6 +399,36 @@ export async function getReductionFromCsr(
     factories: orderedFactories, totals, production,
     intensity_market_kg: intensity(totals.s1s2_mkt, production),
     intensity_location_kg: intensity(totals.s1s2_loc, production),
-    baselines, greenPower, warnings, csrActualMonths,
+    baselines, greenPower, warnings, csrActualMonths, yearly: [],
   };
+}
+
+// ── 年走勢（逐年，恆為全年 1–12 月，不受 KPI 區塊月份篩選影響）──────
+// 重用既有單年路徑逐年呼叫，避免在兩條計算邏輯（尤其 CSR 燃料/電力係數換算）之外
+// 另開一份重複的多年 SQL；年份範圍在儀表板通常僅 3–8 年，效能可接受。
+export async function getYearlySeries(
+  source: ReductionSource,
+  yearFrom: number,
+  yearTo: number,
+  recSource: RecSource,
+  factorYearOf: (year: number) => number,
+): Promise<YearlyPoint[]> {
+  const years: number[] = [];
+  for (let y = yearFrom; y <= yearTo; y++) years.push(y);
+
+  const results = await Promise.all(years.map((y) =>
+    source === 'platform'
+      ? getReductionFromPlatform(y, 1, 12)
+      : getReductionFromCsr(y, 1, 12, recSource, factorYearOf(y)),
+  ));
+
+  return results.map((r, i) => ({
+    year: years[i],
+    s1: r.totals.s1,
+    s2_loc: r.totals.s2_loc,
+    s2_mkt: r.totals.s2_mkt,
+    s3: r.totals.s3,
+    biomass_co2: r.totals.biomass_co2,
+    production: r.production,
+  }));
 }

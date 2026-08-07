@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { query } from '@/lib/db';
 import { CSR_ENERGY_MAP } from '@/lib/reduction-types';
+import { runAnomalyRules } from '@/lib/anomaly/engine';
 
 // ─────────────────────────────────────────────────────────────────
 // POST /api/reduction/import-csr
@@ -153,6 +154,15 @@ export async function POST(req: NextRequest) {
 
   if (unmapped.size) {
     warnings.push(`下列 CSR 廠別未對應平台廠代碼，已略過（已關廠或無對應）：${[...unmapped].join('、')}`);
+  }
+
+  // CSR 匯入完成 → 觸發該年度異常比對重跑（GOV_CSR_GHG_MISMATCH 等）。
+  // 該年度已整年 DELETE 重建，故不限廠別，重跑全部廠。失敗不影響匯入結果本身，只記警告。
+  try {
+    await runAnomalyRules(year);
+  } catch (err) {
+    console.error('[import-csr] 異常比對重跑失敗', err);
+    warnings.push('CSR 匯入成功，但異常比對重跑失敗，請稍後手動觸發或聯絡開發');
   }
 
   return NextResponse.json({

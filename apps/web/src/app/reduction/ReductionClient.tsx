@@ -2,7 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { COUNTRY_LABELS, IREC_KWH_PER_CERT, type ReductionResult, type FactoryReduction } from '@/lib/reduction-types';
+import {
+  COUNTRY_LABELS, IREC_KWH_PER_CERT,
+  type ReductionResult, type FactoryReduction, type ScopeKey, type Basis,
+} from '@/lib/reduction-types';
+import FilterBar from './FilterBar';
+import KpiCard from '@/components/KpiCard';
+import StackedBarChart from '@/components/charts/StackedBarChart';
+import DonutChart from '@/components/charts/DonutChart';
+import HBarChart from '@/components/charts/HBarChart';
+import { SCOPE_COLORS } from '@/components/theme';
 
 const HEADER_BG = '#0C3D2E';
 const COUNTRY_ORDER = ['TWN', 'CHN', 'NVN', 'SVN', 'CAB', 'SLV', 'BGD', 'IND'];
@@ -21,9 +30,29 @@ function changeDisplay(v: number | null): { text: string; cls: string } {
   return { text: `增加 ${v.toFixed(1)}%`, cls: 'text-red-600' };
 }
 
-export default function ReductionClient({ data }: { data: ReductionResult }) {
+export interface DashboardFilters {
+  yearFrom: number;
+  countryCode: string;
+  factoryCode: string;
+  scopes: ScopeKey[];
+  basis: Basis;
+}
+
+export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, allFactories, filters }: {
+  data: ReductionResult; anomalyOpenCount?: number; anomalyYear?: number;
+  allFactories: { factory_code: string; name_zh: string; country_code: string }[];
+  filters: DashboardFilters;
+}) {
   const router = useRouter();
   const { source, year, monthFrom, monthTo, factorYear } = data;
+  const { countryCode, factoryCode, scopes, basis } = filters;
+  const filterActive = countryCode !== '' || factoryCode !== '';
+
+  // 依產區/工廠篩選（顯示層過濾；未影響伺服器端計算的集團級分母）
+  const scopedFactories = useMemo(() => data.factories.filter((f) =>
+    (!countryCode || f.country_code === countryCode) &&
+    (!factoryCode || f.factory_code === factoryCode),
+  ), [data.factories, countryCode, factoryCode]);
   const [projOn, setProjOn] = useState(false);
   // 投影僅 CSR 路徑（需 market_elec_kwh 等原始欄位；平台路徑為 undefined）
   const projectable = source === 'csr' && data.factories.some((f) => f.market_elec_kwh !== undefined);
@@ -83,8 +112,16 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
               <h1 className="text-xl font-bold mt-0.5">減碳績效追蹤</h1>
               <p className="text-green-300 text-sm">S1/S2（地域·市場）· 減碳 KPI · 綠電占比 · 2020–2050 減碳路徑</p>
             </div>
-            <div className="text-right text-[11px] leading-relaxed bg-amber-400/15 border border-amber-300/40 rounded-lg px-3 py-1.5">
-              ⚠️ AI 試算，基準值與減碳%<br />需<span className="font-semibold">永續發展部確認</span>，非最終結論
+            <div className="flex flex-col items-end gap-2">
+              <div className="text-right text-[11px] leading-relaxed bg-amber-400/15 border border-amber-300/40 rounded-lg px-3 py-1.5">
+                ⚠️ AI 試算，基準值與減碳%<br />需<span className="font-semibold">永續發展部確認</span>，非最終結論
+              </div>
+              {!!anomalyOpenCount && (
+                <a href={`/admin/anomaly${anomalyYear ? `?year=${anomalyYear}` : ''}`}
+                  className="text-[11px] px-3 py-1 rounded-full bg-red-400/20 border border-red-300/50 hover:bg-red-400/30 transition">
+                  ⚠ {anomalyYear} 年有 {anomalyOpenCount} 筆待處理異常 →
+                </a>
+              )}
             </div>
           </div>
 
@@ -98,6 +135,18 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
               <Chip label="係數年度" value={String(factorYear ?? year - 1)} />
             </>}
           </div>
+
+          {/* 儀表板篩選：產區 / 工廠 / 年度區間 / 範疇 / 市場地域基準 */}
+          <FilterBar
+            factories={allFactories}
+            source={source}
+            yearFrom={filters.yearFrom}
+            yearTo={year}
+            scopes={scopes}
+            basis={basis}
+            countryCode={countryCode}
+            factoryCode={factoryCode}
+          />
 
           {/* 操作列：重新試算 / 情境試算 */}
           <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -128,18 +177,104 @@ export default function ReductionClient({ data }: { data: ReductionResult }) {
           <ManualIrecPanel year={year} factories={data.factories} onSaved={() => router.refresh()} />
         )}
 
-        {/* KPI 卡 */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Kpi title="市場別強度" value={im == null ? '—' : im.toFixed(4)} unit="kgCO₂e/標打"
-            sub={`期間 S1+S2(市) ÷ 標打產能（${fmt0(data.production)} 標打）`} accent />
-          <Kpi title="相比 2020 基準" value={c2020.text} valueClassName={c2020.cls} unit={b2020 != null ? `基準 ${b2020}` : ''}
-            sub="市場別 · 2020 原定基準年" />
-          <Kpi title="相比 2025 基準" value={c2025.text} valueClassName={c2025.cls} unit={b2025 != null ? `基準 ${b2025}` : ''}
-            sub="市場別 · 2025 預計基準年" />
+        {/* KPI 卡：標打強度 / 營業額強度（僅集團層級）/ 總排放當量（依範疇+基準篩選）/ 綠電占比 */}
+        {(() => {
+          const scopedEmission = scopedFactories.reduce((a, f) => {
+            if (scopes.includes(1)) a += f.s1;
+            if (scopes.includes(2)) a += basis === 'market' ? f.s2_mkt : f.s2_loc;
+            if (scopes.includes(3)) a += f.s3;
+            return a;
+          }, 0);
+          const scopedProduction = source === 'csr'
+            ? scopedFactories.reduce((a, f) => a + (f.production ?? 0), 0)
+            : (filterActive ? null : data.production);
+          const scopedIntensity = scopedProduction && scopedProduction > 0
+            ? (scopedEmission * 1000) / scopedProduction : null;
+          const revenueDisabled = filterActive; // 營業額僅有集團年度資料
+          const productionDisabled = source === 'platform' && filterActive; // 平台路徑無廠別標打產能
+
+          return (
+            <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <KpiCard title={`標打強度（${basis === 'market' ? '市場別' : '地域別'}）`}
+                disabled={productionDisabled}
+                disabledReason="平台路徑僅集團層級有標打產能"
+                value={scopedIntensity == null ? '—' : scopedIntensity.toFixed(4)} unit="kgCO₂e/標打"
+                sub={`已選範疇 S${scopes.join('/')} ÷ 標打產能（${scopedProduction != null ? fmt0(scopedProduction) : '—'} 標打）`}
+                accent />
+              <KpiCard title="營業額排放強度" disabled={revenueDisabled} disabledReason="僅在集團層級顯示"
+                value={(() => {
+                  if (revenueDisabled) return '—';
+                  return '（需於年度指標維護頁填入營業額後顯示）';
+                })()}
+                unit="" sub="集團層級 · 需 annual_metrics.revenue_thousands" />
+              <KpiCard title="總排放當量" value={fmt0(scopedEmission)} unit="tCO₂e"
+                sub={`已選範疇 S${scopes.join('/')} · ${basis === 'market' ? '市場別' : '地域別'}（S2）`} accent />
+              <KpiCard title="綠電占比" value={`${data.greenPower.ratio.toFixed(1)}%`} unit=""
+                sub={filterActive ? '集團層級（尚未支援廠別綠電占比）' : 'iREC ÷ 總電量'} />
+            </section>
+          );
+        })()}
+
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <KpiCard title="相比 2020 基準" value={c2020.text} valueClassName={c2020.cls} unit={b2020 != null ? `基準 ${b2020}` : ''}
+            sub="市場別 · 2020 原定基準年 · 集團層級" />
+          <KpiCard title="相比 2025 基準" value={c2025.text} valueClassName={c2025.cls} unit={b2025 != null ? `基準 ${b2025}` : ''}
+            sub="市場別 · 2025 預計基準年 · 集團層級" />
         </section>
         <p className="-mt-4 text-xs text-gray-400">
           地域別強度 = {iloc == null ? '—' : `${iloc.toFixed(4)} kgCO₂e/標打`}（僅供參考，基準年僅有市場別、地域別不比基準）
         </p>
+
+        {/* 圖表列 1：各產區排放當量 + 範疇占比（依篩選） */}
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <h2 className="text-base font-bold text-gray-800 mb-3">各產區排放當量（tCO₂e）</h2>
+            <HBarChart unit="t" rows={countries.map((c) => {
+              const rows = byCountry.get(c)!.filter((f) =>
+                (!countryCode || f.country_code === countryCode) && (!factoryCode || f.factory_code === factoryCode));
+              return {
+                label: COUNTRY_LABELS[c] ?? c,
+                segments: [
+                  ...(scopes.includes(1) ? [{ key: 's1', color: SCOPE_COLORS.s1, value: rows.reduce((a, f) => a + f.s1, 0) }] : []),
+                  ...(scopes.includes(2) ? [{ key: 's2', color: basis === 'market' ? SCOPE_COLORS.s2_mkt : SCOPE_COLORS.s2_loc, value: rows.reduce((a, f) => a + (basis === 'market' ? f.s2_mkt : f.s2_loc), 0) }] : []),
+                  ...(scopes.includes(3) ? [{ key: 's3', color: SCOPE_COLORS.s3, value: rows.reduce((a, f) => a + f.s3, 0) }] : []),
+                ],
+              };
+            }).filter((r) => r.segments.some((s) => s.value > 0))} />
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <h2 className="text-base font-bold text-gray-800 mb-3">範疇占比（{basis === 'market' ? '市場別' : '地域別'}）</h2>
+            <DonutChart slices={[
+              ...(scopes.includes(1) ? [{ label: '範疇一', color: SCOPE_COLORS.s1, value: scopedFactories.reduce((a, f) => a + f.s1, 0) }] : []),
+              ...(scopes.includes(2) ? [{ label: '範疇二', color: basis === 'market' ? SCOPE_COLORS.s2_mkt : SCOPE_COLORS.s2_loc, value: scopedFactories.reduce((a, f) => a + (basis === 'market' ? f.s2_mkt : f.s2_loc), 0) }] : []),
+              ...(scopes.includes(3) ? [{ label: '範疇三', color: SCOPE_COLORS.s3, value: scopedFactories.reduce((a, f) => a + f.s3, 0) }] : []),
+            ]} />
+          </div>
+        </section>
+
+        {/* 圖表列 2：年走勢（恆為全年，不受月份篩選影響） */}
+        <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-bold text-gray-800">年走勢（{filters.yearFrom}–{year}）</h2>
+            <span className="text-[11px] text-gray-400">此圖恆為全年聚合，不受月份篩選影響</span>
+          </div>
+          <StackedBarChart
+            categories={data.yearly.map((y) => y.year)}
+            series={[
+              ...(scopes.includes(1) ? [{ key: 's1', label: '範疇一', color: SCOPE_COLORS.s1, values: data.yearly.map((y) => y.s1) }] : []),
+              ...(scopes.includes(2) ? [{ key: 's2', label: `範疇二（${basis === 'market' ? '市場別' : '地域別'}）`, color: basis === 'market' ? SCOPE_COLORS.s2_mkt : SCOPE_COLORS.s2_loc, values: data.yearly.map((y) => (basis === 'market' ? y.s2_mkt : y.s2_loc)) }] : []),
+              ...(scopes.includes(3) ? [{ key: 's3', label: '範疇三', color: SCOPE_COLORS.s3, values: data.yearly.map((y) => y.s3) }] : []),
+            ]}
+            line={{
+              label: '排放強度（kgCO₂e/標打）', color: '#0d9488',
+              values: data.yearly.map((y) => {
+                const e = (scopes.includes(1) ? y.s1 : 0) + (scopes.includes(2) ? (basis === 'market' ? y.s2_mkt : y.s2_loc) : 0) + (scopes.includes(3) ? y.s3 : 0);
+                return y.production > 0 ? (e * 1000) / y.production : null;
+              }),
+            }}
+            yLabel="tCO₂e" y2Label="kgCO₂e/標打"
+          />
+        </section>
 
         {/* 情境試算（CSR，前端即時，不寫入資料庫） */}
         {projOn && projectable && (

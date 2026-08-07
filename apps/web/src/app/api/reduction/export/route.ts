@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     // 產區加總
     const regionMap = new Map<string, typeof d.totals>();
     for (const f of d.factories) {
-      const cur = regionMap.get(f.country_code) ?? { s1: 0, s2_loc: 0, s2_mkt: 0, s1s2_loc: 0, s1s2_mkt: 0, irec_kwh: 0, biomass_co2: 0 };
+      const cur = regionMap.get(f.country_code) ?? { s1: 0, s2_loc: 0, s2_mkt: 0, s3: 0, s1s2_loc: 0, s1s2_mkt: 0, irec_kwh: 0, biomass_co2: 0 };
       cur.s1 += f.s1; cur.s2_loc += f.s2_loc; cur.s2_mkt += f.s2_mkt;
       cur.s1s2_loc += f.s1s2_loc; cur.s1s2_mkt += f.s1s2_mkt; cur.irec_kwh += f.irec_kwh; cur.biomass_co2 += f.biomass_co2;
       regionMap.set(f.country_code, cur);
