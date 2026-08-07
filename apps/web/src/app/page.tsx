@@ -44,12 +44,6 @@ export default async function Home() {
               係數設定 →
             </Link>
             <Link
-              href="/dashboard"
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
-            >
-              碳排儀表板 →
-            </Link>
-            <Link
               href="/summary"
               className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
             >
