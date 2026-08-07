@@ -47,7 +47,6 @@ export default function DashboardClient({
             <p className="text-green-300 text-sm">標打產能／營業額｜圖表已搬至減碳績效儀表板</p>
           </div>
           <div className="flex items-center gap-3">
-            <a href="/reduction" className="text-green-300 text-sm hover:underline">→ 減碳績效儀表板</a>
             <a href="/summary" className="text-green-300 text-sm hover:underline">明細彙整表 →</a>
             <span className="text-green-300 text-sm">年度</span>
             <select value={year} onChange={(e) => router.push(`/dashboard?year=${e.target.value}`)}

@@ -39,11 +39,13 @@ export interface DashboardFilters {
   basis: Basis;
 }
 
-export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, allFactories, countries, filters }: {
+export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, allFactories, countries, revenueThousands, filters }: {
   data: ReductionResult; anomalyOpenCount?: number; anomalyYear?: number;
   allFactories: { factory_code: string; name_zh: string; country_code: string }[];
   /** 產區順序與標籤，來自 DB 名冊 */
   countries: CountryMeta[];
+  /** 該年度集團營業額（新臺幣千元），來自 annual_metrics；未填則為 null */
+  revenueThousands: number | null;
   filters: DashboardFilters;
 }) {
   const router = useRouter();
@@ -192,8 +194,11 @@ export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, a
             : (filterActive ? null : data.production);
           const scopedIntensity = scopedProduction && scopedProduction > 0
             ? (scopedEmission * 1000) / scopedProduction : null;
-          const revenueDisabled = filterActive; // 營業額僅有集團年度資料
+          const revenueDisabled = filterActive || !revenueThousands || revenueThousands <= 0; // 營業額僅有集團年度資料
           const productionDisabled = source === 'platform' && filterActive; // 平台路徑無廠別標打產能
+          const revenueEmission = filterActive ? null : scopedEmission; // 營業額強度恆為集團層級
+          const revenueIntensity = revenueEmission != null && revenueThousands && revenueThousands > 0
+            ? (revenueEmission * 1000) / revenueThousands : null;
 
           return (
             <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -203,12 +208,10 @@ export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, a
                 value={scopedIntensity == null ? '—' : scopedIntensity.toFixed(4)} unit="kgCO₂e/標打"
                 sub={`已選範疇 S${scopes.join('/')} ÷ 標打產能（${scopedProduction != null ? fmt0(scopedProduction) : '—'} 標打）`}
                 accent />
-              <KpiCard title="營業額排放強度" disabled={revenueDisabled} disabledReason="僅在集團層級顯示"
-                value={(() => {
-                  if (revenueDisabled) return '—';
-                  return '（需於年度指標維護頁填入營業額後顯示）';
-                })()}
-                unit="" sub="集團層級 · 需 annual_metrics.revenue_thousands" />
+              <KpiCard title="營業額排放強度" disabled={revenueDisabled}
+                disabledReason={filterActive ? '僅在集團層級顯示' : `請至「年度指標維護」頁填入 ${year} 年營業額`}
+                value={revenueIntensity == null ? '—' : revenueIntensity.toFixed(4)} unit="kgCO₂e/千元"
+                sub={`已選範疇 S${scopes.join('/')} ÷ 營業額（${revenueThousands != null ? fmt0(revenueThousands) : '—'} 千元）`} />
               <KpiCard title="總排放當量" value={fmt0(scopedEmission)} unit="tCO₂e"
                 sub={`已選範疇 S${scopes.join('/')} · ${basis === 'market' ? '市場別' : '地域別'}（S2）`} accent />
               <KpiCard title="綠電占比" value={`${data.greenPower.ratio.toFixed(1)}%`} unit=""

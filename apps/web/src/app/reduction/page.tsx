@@ -72,11 +72,18 @@ export default async function ReductionPage({
   ]);
   data.yearly = yearly;
 
-  const anomalyCountRes = await query(
-    `SELECT COUNT(*)::int AS n FROM anomaly_flags WHERE year = $1 AND status = 'open'`,
-    [year],
-  );
+  const [anomalyCountRes, revenueRes] = await Promise.all([
+    query(
+      `SELECT COUNT(*)::int AS n FROM anomaly_flags WHERE year = $1 AND status = 'open'`,
+      [year],
+    ),
+    query(
+      `SELECT revenue_thousands::float AS revenue_thousands FROM annual_metrics WHERE year = $1`,
+      [year],
+    ),
+  ]);
   const anomalyOpenCount = anomalyCountRes.rows[0]?.n ?? 0;
+  const revenueThousands: number | null = revenueRes.rows[0]?.revenue_thousands ?? null;
 
   return (
     <ReductionClient
@@ -87,6 +94,7 @@ export default async function ReductionPage({
         factory_code, name_zh, country_code,
       }))}
       countries={countryList}
+      revenueThousands={revenueThousands}
       filters={{ yearFrom: Math.min(yearFrom, year), countryCode, factoryCode, scopes, basis }}
     />
   );
