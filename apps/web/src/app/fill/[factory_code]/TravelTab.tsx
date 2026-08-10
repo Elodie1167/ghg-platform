@@ -5,7 +5,7 @@ import type { TabProps, SaveStatus } from './tabTypes';
 import { MONTHS, HEADER_BG, BTN_BG } from './tabTypes';
 import type { EmissionSource, ActivityRecord } from './page';
 
-// 3-6-A 飛機, 3-6-B 飯店, 3-6-C 火車
+// 3-6-A 飛機, 3-6-B 飯店, 3-6-C 高鐵
 const TRAVEL_CODES = ['3-6-A', '3-6-B', '3-6-C'];
 const HOTEL_CODE = '3-6-B';
 
@@ -14,15 +14,16 @@ interface EventRow {
   id: string | null;
   month: number;
   date_from: string;
-  sub_location: string;   // 路線 (飛機/火車) 或 旅館城市 (飯店)
-  meter_number: string;   // 人次 (飛機/火車)
-  activity_value: string; // 距離 km (飛機/火車) 或 房晚 (飯店)
+  sub_location: string;   // 路線 (飛機/高鐵) 或 旅館城市 (飯店)
+  meter_number: string;   // 人次 (飛機/高鐵)
+  activity_value: string; // 距離 km (飛機/高鐵) 或 房晚 (飯店)
   notes: string;
   co2e_total: number | null;
   is_reviewed: boolean;
   saveStatus: SaveStatus;
   is_manual_co2e: boolean;
   manual_co2e_kg: string;  // 機票/車票碳排法：票證上的 CO2e (kg)
+  is_round_trip: boolean;  // 往返：距離欄位維持單程輸入，計算時系統乘2
 }
 
 export default function TravelTab({
@@ -39,7 +40,7 @@ export default function TravelTab({
         <p className="text-sm">
           請至
           <button onClick={() => setActiveTab('basic')} className="text-green-600 underline mx-1">基本資訊</button>
-          勾選飛機、火車或住宿。
+          勾選飛機、高鐵或住宿。
         </p>
       </div>
     );
@@ -49,7 +50,7 @@ export default function TravelTab({
     <div>
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-gray-800">差旅 S3</h2>
-        <p className="text-sm text-gray-500 mt-0.5">商務出差飛機、火車、住宿記錄，每次出差一筆</p>
+        <p className="text-sm text-gray-500 mt-0.5">商務出差飛機、高鐵、住宿記錄，每次出差一筆</p>
       </div>
       {sources.map((src) => (
         <TravelSection
@@ -89,6 +90,7 @@ function TravelSection({
       is_reviewed: r.is_reviewed ?? false, saveStatus: 'idle' as SaveStatus,
       is_manual_co2e: r.is_manual_co2e ?? false,
       manual_co2e_kg: r.is_manual_co2e && r.co2e_total != null ? String(r.co2e_total * 1000) : '',
+      is_round_trip: r.is_round_trip ?? false,
     }))
   );
 
@@ -133,7 +135,7 @@ function TravelSection({
       tempKey, id: null, month: new Date().getMonth() + 1,
       date_from: '', sub_location: '', meter_number: '', activity_value: '',
       notes: '', co2e_total: null, is_reviewed: false, saveStatus: 'idle',
-      is_manual_co2e: isManualMode, manual_co2e_kg: '',
+      is_manual_co2e: isManualMode, manual_co2e_kg: '', is_round_trip: false,
     }]);
   }
 
@@ -149,7 +151,7 @@ function TravelSection({
     if (onReviewToggle && row.id) onReviewToggle(row.id, newVal);
   }
 
-  function updateRow(tempKey: string, field: keyof EventRow, value: string | number) {
+  function updateRow(tempKey: string, field: keyof EventRow, value: string | number | boolean) {
     setRows((p) => p.map((r) => r.tempKey === tempKey ? { ...r, [field]: value } : r));
     if (timers.current[tempKey]) clearTimeout(timers.current[tempKey]);
     timers.current[tempKey] = setTimeout(() => saveRow(tempKey), 1000);
@@ -184,6 +186,7 @@ function TravelSection({
           sub_location: row.sub_location || null,
           date_from: row.date_from || null,
           notes: row.notes || null,
+          is_round_trip: row.is_round_trip,
         };
 
     try {
@@ -270,6 +273,7 @@ function TravelSection({
                   </th>
                 )}
                 {isManualMode && <th className="px-3 py-2.5 text-right w-32">機票/車票 CO₂e (kg)</th>}
+                {!isHotel && !isManualMode && <th className="px-3 py-2.5 text-center w-16">往返</th>}
                 <th className="px-3 py-2.5 text-left w-28">備註</th>
                 <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
@@ -316,10 +320,18 @@ function TravelSection({
                   {!isManualMode && (
                     <td className="px-2 py-1.5">
                       <input type="number" min="0" step="any"
-                        placeholder={isHotel ? '房晚' : 'km'}
+                        placeholder={isHotel ? '房晚' : '單程 km'}
                         value={row.activity_value}
                         onChange={(e) => updateRow(row.tempKey, 'activity_value', e.target.value)}
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </td>
+                  )}
+                  {!isHotel && !isManualMode && (
+                    <td className="px-2 py-1.5 text-center">
+                      <input type="checkbox" checked={row.is_round_trip}
+                        title="勾選代表上方距離為單程，計算碳排時系統自動乘2"
+                        onChange={(e) => updateRow(row.tempKey, 'is_round_trip', e.target.checked)}
+                        className="w-4 h-4" style={{ accentColor: '#16a34a' }} />
                     </td>
                   )}
                   {isManualMode && (
@@ -366,6 +378,7 @@ function TravelSection({
                     ? '—'
                     : `${totalAct.toLocaleString(undefined, { maximumFractionDigits: 10 })} ${source.default_unit}`}
                 </td>
+                {!isHotel && !isManualMode && <td />}
                 <td />
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}

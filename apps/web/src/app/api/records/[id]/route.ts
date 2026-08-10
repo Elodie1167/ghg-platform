@@ -52,6 +52,8 @@ const UpdateRecordSchema = z.object({
   // 商務旅行「機票/車票碳排法」：直接填票證上的 CO2e（kg），跳過排放係數計算
   is_manual_co2e: z.boolean().optional(),
   manual_co2e_kg: z.number().min(0).nullable().optional(),
+  // 商務旅行「往返」：距離欄位維持單程輸入，計算時乘2
+  is_round_trip: z.boolean().optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────
@@ -161,6 +163,10 @@ export async function PUT(
       setClauses.push(`is_manual_co2e = $${paramIdx++}`);
       values.push(updates.is_manual_co2e);
     }
+    if (updates.is_round_trip !== undefined) {
+      setClauses.push(`is_round_trip = $${paramIdx++}`);
+      values.push(updates.is_round_trip);
+    }
     if (updates.manual_co2e_kg !== undefined) {
       const co2eTotal = updates.manual_co2e_kg != null
         ? Math.round((updates.manual_co2e_kg / 1000) * 10000) / 10000
@@ -182,8 +188,9 @@ export async function PUT(
     const result = await query(updateSql, values);
     const updatedRow = result.rows[0];
 
-    // 若 activity_value 或 meter_number 有變動，觸發重新計算
-    const needsCalc = updates.activity_value !== undefined || updates.meter_number !== undefined;
+    // 若 activity_value、meter_number 或 is_round_trip 有變動，觸發重新計算
+    const needsCalc = updates.activity_value !== undefined || updates.meter_number !== undefined
+      || updates.is_round_trip !== undefined;
     let recordScope: number | null = null;
     if (needsCalc && updatedRow.activity_value != null) {
       const srcRow = await query(
@@ -210,6 +217,7 @@ export async function PUT(
           source_code: srcCode ?? '',
           activity_record_id: id,
           bio_fraction,
+          is_round_trip: updatedRow.is_round_trip,
         };
         // FastAPI 優先，未設定/失敗時走 TypeScript 備援（Vercel serverless 必要）
         const calc = (await callCalculate(calcParams))

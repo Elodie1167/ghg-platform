@@ -50,6 +50,7 @@ export interface ActivityRecord {
   hfc_t: number | null;
   is_reviewed: boolean;
   is_manual_co2e: boolean;
+  is_round_trip: boolean;
   sub_location: string | null;
   meter_number: string | null;
   date_from: string | null;
@@ -159,7 +160,7 @@ export default async function FillPage({
             ar.activity_value::float, ar.activity_unit, ar.notes,
             ar.co2e_total::float, ar.co2e_location::float, ar.co2e_market::float, ar.co2e_biomass_co2::float,
             ar.co2_t::float, ar.ch4_t::float, ar.n2o_t::float, ar.hfc_t::float,
-            ar.is_reviewed, ar.is_manual_co2e, ar.sub_location, ar.meter_number,
+            ar.is_reviewed, ar.is_manual_co2e, ar.is_round_trip, ar.sub_location, ar.meter_number,
             ar.date_from::text AS date_from, ar.date_to::text AS date_to,
             (SELECT COUNT(*)::int FROM activity_line_items li WHERE li.activity_record_id = ar.id) AS line_items_count
      FROM activity_records ar

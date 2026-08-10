@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   // 查出該廠該年有 activity_value 且 co2e_total 未填 或 co2_t 未填 的記錄（僅已查核）
   const pending = await query(
     `SELECT ar.id, ar.emission_source_id, ar.activity_value::float, ar.activity_unit,
-            es.scope, es.is_biomass, es.source_code, es.substance,
+            ar.is_round_trip, es.scope, es.is_biomass, es.source_code, es.substance,
             f.country_code
      FROM activity_records ar
      JOIN emission_sources es ON ar.emission_source_id = es.id
@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
       is_biomass: row.is_biomass,
       source_code: row.source_code,
       substance: row.substance ?? null,
+      is_round_trip: row.is_round_trip,
     });
 
     if (calc) {

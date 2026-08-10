@@ -23,6 +23,8 @@ const CreateRecordSchema = z.object({
   // 商務旅行「機票/車票碳排法」：直接填票證上的 CO2e（kg），跳過排放係數計算
   is_manual_co2e: z.boolean().optional().default(false),
   manual_co2e_kg: z.number().min(0).nullable().optional(),
+  // 商務旅行「往返」：距離欄位維持單程輸入，計算時乘2
+  is_round_trip: z.boolean().optional().default(false),
 });
 
 // ── FastAPI 回傳型別 ──────────────────────────────────────────────
@@ -141,6 +143,7 @@ export async function GET(req: NextRequest) {
         ar.emission_factor_id,
         ar.is_reviewed,
         ar.is_manual_co2e,
+        ar.is_round_trip,
         ar.reviewed_at,
         ar.import_source,
         ar.created_at,
@@ -202,6 +205,7 @@ export async function POST(req: NextRequest) {
     date_to,
     is_manual_co2e,
     manual_co2e_kg,
+    is_round_trip,
   } = parsed.data;
 
   try {
@@ -211,13 +215,13 @@ export async function POST(req: NextRequest) {
          (factory_id, emission_source_id, year, month,
           activity_value, activity_unit, notes,
           sub_location, meter_number, date_from, date_to,
-          is_manual_co2e, import_source, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date, $12, 'manual', NOW(), NOW())
+          is_manual_co2e, is_round_trip, import_source, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date, $12, $13, 'manual', NOW(), NOW())
        RETURNING id`,
       [factory_id, emission_source_id, year, month,
        activity_value ?? null, activity_unit, notes ?? null,
        sub_location ?? null, meter_number ?? null, date_from ?? null, date_to ?? null,
-       is_manual_co2e],
+       is_manual_co2e, is_round_trip],
     );
 
     const newId: string = insertResult.rows[0].id;
@@ -258,7 +262,7 @@ export async function POST(req: NextRequest) {
           bio_fraction: isNaN(bio_fraction) ? 0 : bio_fraction,
         };
         calc = await callCalculate(fastApiPayload)
-          ?? await calcCo2e({ ...fastApiPayload, substance: substance ?? null });
+          ?? await calcCo2e({ ...fastApiPayload, substance: substance ?? null, is_round_trip });
       }
     }
 

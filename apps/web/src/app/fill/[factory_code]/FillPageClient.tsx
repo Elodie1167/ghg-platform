@@ -56,8 +56,8 @@ type TabId = typeof TABS[number]['id'];
 const ELEC_SOURCE_CODE = '2-1-A';
 const SOLAR_SOURCE_CODE = '2-1-B';
 
-// 商務旅行可切換「機票/車票碳排法」的排放源：3-6-A 飛機、3-6-C 火車（住宿 3-6-B 不適用）
-const TRAVEL_MANUAL_CODES: Record<string, string> = { '3-6-A': '飛機', '3-6-C': '火車' };
+// 商務旅行可切換「機票/車票碳排法」的排放源：3-6-A 飛機、3-6-C 高鐵（住宿 3-6-B 不適用）
+const TRAVEL_MANUAL_CODES: Record<string, string> = { '3-6-A': '飛機', '3-6-C': '高鐵' };
 
 const CUSTOM_SOURCE_ORDER: Record<string, number> = {
   // 固定燃燒：鍋爐類 → 廚房 → 發電機 → 其他
@@ -445,7 +445,7 @@ export default function FillPageClient({
           );
           if (groupSources.length === 0) return null;
 
-          // 商務旅行：勾選之外，飛機/火車各自可切換「距離法」或「機票/車票碳排法」
+          // 商務旅行：勾選之外，飛機/高鐵各自可切換「距離法」或「機票/車票碳排法」
           if (group.tabId === 'travel') {
             const manualCount = Object.values(pendingTravel).filter((m) => m === 'manual').length;
             return (
@@ -493,7 +493,7 @@ export default function FillPageClient({
                 </div>
                 <div className="border border-gray-200 rounded-lg p-4">
                   <p className="text-xs text-gray-500 mb-3">
-                    飛機／火車可選擇填報方式：「距離法」填人次與距離、套排放係數自動算；
+                    飛機／高鐵可選擇填報方式：「距離法」填人次與距離、套排放係數自動算；
                     「機票/車票碳排法」直接填票證上標示的 CO₂e（kg），不套係數。
                     住宿（3-6-B）僅支援房晚計算，無此選項。
                   </p>

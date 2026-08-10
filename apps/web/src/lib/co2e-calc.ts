@@ -43,6 +43,7 @@ export async function calcCo2e(params: {
   source_code: string;
   substance?: string | null;
   bio_fraction?: number;
+  is_round_trip?: boolean;
 }): Promise<CalcResult | null> {
   const fRow = await query(
     `SELECT ef.id, ef.factor_co2::float, ef.factor_ch4::float, ef.factor_n2o::float,
@@ -74,7 +75,8 @@ export async function calcCo2e(params: {
   const factorGwpCH4 = f.gwp_ch4 ?? GWP_CH4;
   const factorGwpN2O = f.gwp_n2o ?? GWP_N2O;
 
-  const value = params.activity_value * (UNIT_CONV[params.activity_unit] ?? 1);
+  // 商務旅行「往返」：使用者填單程距離，往返時計算要乘2（畫面上的距離欄位維持顯示單程）
+  const value = params.activity_value * (UNIT_CONV[params.activity_unit] ?? 1) * (params.is_round_trip ? 2 : 1);
 
   if (params.scope === 2) {
     const gridEf = f.grid_emission_factor ?? 0;
@@ -157,10 +159,16 @@ export async function calcCo2e(params: {
   }
 
   // Scope 1 — 化糞池
+  // CH4 = BOD(0.04) × B0(0.6) × MCF(0.5) × (CH4/C 碳質量比 16/12)，合併係數 = 0.016
+  // 化糞池 CH4 屬生質/非化石來源，GWP 固定用 27（IPCC AR6 non-fossil CH4 GWP100 ≈27.2，
+  // 與平台其他排放源共用的化石 CH4 GWP 27.9 不同，不套用 emission_factors.gwp_ch4 的通用預設）
   if (params.source_code === '1-4B-1') {
-    const ch4_kg = (value / 24) * (f.factor_co2 ?? 0.04) * (f.factor_ch4 ?? 0.6) * (f.factor_substance ?? 0.5);
+    const CH4_CARBON_MASS_RATIO = 16 / 12;
+    const SEPTIC_GWP_CH4 = 27;
+    const ch4_kg = (value / 24) * (f.factor_co2 ?? 0.04) * (f.factor_ch4 ?? 0.6) * (f.factor_substance ?? 0.5) * CH4_CARBON_MASS_RATIO;
+    const gwpCh4 = f.gwp_ch4 ?? SEPTIC_GWP_CH4;
     return {
-      co2e_total: r4(ch4_kg * factorGwpCH4 / 1000), co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
+      co2e_total: r4(ch4_kg * gwpCh4 / 1000), co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
       emission_factor_id: f.id, warnings: [],
       co2_t: null, ch4_t: r4(ch4_kg / 1000), n2o_t: null, hfc_t: null,
     };
