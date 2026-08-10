@@ -181,6 +181,11 @@ function toDateStr(v: unknown): string | null {
 
 const LINE_ITEM_SHEETS = ['單據明細', 'S_單據明細'];
 
+// 化糞池（1-4B-1）欄位為「上班天數/上班人數/上班總時數」，與一般單據明細的
+// 「用量/單位/發票號」模式不同；範本本身已註明尚未支援自動匯入，此處擋掉避免
+// 上班天數被誤寫入 activity_value（畫面顯示為「上班總時數」）。
+const SEPTIC_TANK_SOURCE_CODE = '1-4B-1';
+
 function parseLineItemSheet(sheet: XLSX.WorkSheet): LineItemRow[] {
   const rows: LineItemRow[] = [];
   const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1');
@@ -204,10 +209,19 @@ function parseLineItemSheet(sheet: XLSX.WorkSheet): LineItemRow[] {
   return rows;
 }
 
-function collectLineItems(wb: XLSX.WorkBook): LineItemRow[] {
+function collectLineItems(wb: XLSX.WorkBook, errors: string[]): LineItemRow[] {
   for (const name of LINE_ITEM_SHEETS) {
     if (wb.Sheets[name]) {
-      try { return parseLineItemSheet(wb.Sheets[name]); }
+      try {
+        const rows = parseLineItemSheet(wb.Sheets[name]);
+        const septicRows = rows.filter((r) => r.source_code === SEPTIC_TANK_SOURCE_CODE);
+        if (septicRows.length > 0) {
+          errors.push(
+            `化糞池排放（${SEPTIC_TANK_SOURCE_CODE}）不支援自動匯入，已略過 ${septicRows.length} 列；請於填報頁「逸散排放」分頁手動輸入上班天數/人數/總時數。`,
+          );
+        }
+        return rows.filter((r) => r.source_code !== SEPTIC_TANK_SOURCE_CODE);
+      }
       catch (e) { console.warn(`[import] 解析單據明細 sheet "${name}" 失敗：`, e); }
     }
   }
@@ -430,7 +444,7 @@ export async function POST(req: NextRequest) {
 
   // ── 單據明細（每列一張單）：依 (源×月) 分組，重建明細後回算月加總 + CO₂e ──
   let lineItemsImported = 0;
-  const lineItems = collectLineItems(wb);
+  const lineItems = collectLineItems(wb, errors);
   const groups = new Map<string, LineItemRow[]>();
   for (const li of lineItems) {
     const key = `${li.source_code}|${li.month}`;
