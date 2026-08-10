@@ -83,6 +83,9 @@ export interface AssignedFactor {
   grid_emission_factor: number | null;
   market_residual_factor: number | null;
   scope3_factor: number | null;
+  waste_incineration_factor: number | null;
+  waste_recycling_factor: number | null;
+  waste_landfill_factor: number | null;
   source_reference: string | null;
   ncv: number | null;
   ncv_unit: string | null;
@@ -172,6 +175,9 @@ export default async function FillPage({
             ef.grid_emission_factor::float AS grid_emission_factor,
             ef.market_residual_factor::float AS market_residual_factor,
             ef.scope3_factor::float AS scope3_factor,
+            ef.waste_incineration_factor::float AS waste_incineration_factor,
+            ef.waste_recycling_factor::float AS waste_recycling_factor,
+            ef.waste_landfill_factor::float AS waste_landfill_factor,
             ef.source_reference, ef.ncv::float AS ncv, ef.ncv_unit,
             ef.density::float AS density, ef.density_unit,
             ef.gwp_ch4::float AS gwp_ch4, ef.gwp_n2o::float AS gwp_n2o,

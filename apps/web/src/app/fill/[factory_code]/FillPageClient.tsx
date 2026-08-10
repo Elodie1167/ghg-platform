@@ -2041,6 +2041,9 @@ export default function FillPageClient({
                   <th className="py-1.5 font-semibold">電網 EF</th>
                   <th className="py-1.5 font-semibold">市場剩餘 EF</th>
                   <th className="py-1.5 font-semibold">S3 EF</th>
+                  <th className="py-1.5 font-semibold">焚化係數</th>
+                  <th className="py-1.5 font-semibold">回收係數</th>
+                  <th className="py-1.5 font-semibold">掩埋係數</th>
                   <th className="py-1.5 font-semibold">NCV</th>
                   <th className="py-1.5 text-left font-semibold pl-3">來源</th>
                 </tr>
@@ -2056,6 +2059,9 @@ export default function FillPageClient({
                     <td className="py-1.5 text-right font-mono">{fmtNum(factor!.grid_emission_factor)}</td>
                     <td className="py-1.5 text-right font-mono">{fmtNum(factor!.market_residual_factor)}</td>
                     <td className="py-1.5 text-right font-mono">{fmtNum(factor!.scope3_factor)}</td>
+                    <td className="py-1.5 text-right font-mono">{fmtNum(factor!.waste_incineration_factor)}</td>
+                    <td className="py-1.5 text-right font-mono">{fmtNum(factor!.waste_recycling_factor)}</td>
+                    <td className="py-1.5 text-right font-mono">{fmtNum(factor!.waste_landfill_factor)}</td>
                     <td className="py-1.5 text-right font-mono pl-3">
                       {factor!.ncv != null ? `${factor!.ncv} ${factor!.ncv_unit ?? ''}` : '—'}
                     </td>
@@ -2067,7 +2073,7 @@ export default function FillPageClient({
               </tbody>
             </table>
             <p className="text-xs text-blue-300 mt-2">
-              範疇一 EF 單位：kg/TJ；範疇二電網 EF：tCO₂e/MWh；S3：kg/kg 或 kg/tonne-km
+              範疇一 EF 單位：kg/TJ；範疇二電網 EF：tCO₂e/MWh；S3：kg/kg 或 kg/tonne-km；廢棄物焚化/回收/掩埋係數：kg CO₂e/kg
             </p>
           </div>
         )}
