@@ -1229,6 +1229,7 @@ export default function FillPageClient({
       const [secStatus, setSecStatus] = useState<SaveStatus>('idle');
       const [cleared, setCleared] = useState<Set<number>>(new Set());
       const [reviewedOverride, setReviewedOverride] = useState<Record<number, boolean>>({});
+      const [selected, setSelected] = useState<Set<number>>(new Set());
       const tmr = useRef<ReturnType<typeof setTimeout> | null>(null);
 
       // 查核 toggle（未查核才會被 /summary 等彙總納入計算，見 CLAUDE.md 業務規則）
@@ -1261,6 +1262,43 @@ export default function FillPageClient({
           setSecStatus('error');
           alert(err instanceof Error ? err.message : '刪除失敗');
         }
+      }
+
+      function monthsWithRecord(): number[] {
+        return months.filter((m) => existingRecords.some((r) => r.emission_source_id === source.id && r.month === m));
+      }
+
+      function targetMonths(): number[] {
+        const withRecord = monthsWithRecord();
+        return selected.size > 0 ? withRecord.filter((m) => selected.has(m)) : withRecord;
+      }
+
+      async function bulkReview() {
+        const targets = targetMonths().filter((m) => {
+          const existing = existingRecords.find((r) => r.emission_source_id === source.id && r.month === m);
+          const isReviewed = reviewedOverride[m] ?? existing?.is_reviewed ?? false;
+          return existing?.id && !isReviewed;
+        });
+        await Promise.all(targets.map((m) => {
+          const existing = existingRecords.find((r) => r.emission_source_id === source.id && r.month === m)!;
+          return toggleReview(m, existing.id, false);
+        }));
+        setSelected(new Set());
+      }
+
+      async function bulkDelete() {
+        const targets = targetMonths().filter((m) => {
+          const existing = existingRecords.find((r) => r.emission_source_id === source.id && r.month === m);
+          const isReviewed = reviewedOverride[m] ?? existing?.is_reviewed ?? false;
+          return existing?.id && !isReviewed;
+        });
+        if (targets.length === 0) return;
+        if (!confirm(`確定要刪除 ${targets.length} 筆尚未查核的資料？`)) return;
+        await Promise.all(targets.map((m) => {
+          const existing = existingRecords.find((r) => r.emission_source_id === source.id && r.month === m)!;
+          return deleteWasteMonth(m, existing.id);
+        }));
+        setSelected(new Set());
       }
 
       function onWasteChange(month: number, val: string) {
@@ -1298,9 +1336,12 @@ export default function FillPageClient({
         .filter((r) => r.emission_source_id === source.id && r.co2e_total != null)
         .reduce((s, r) => s + (r.co2e_total ?? 0), 0);
 
+      const recordMonths = monthsWithRecord();
+      const allSelected = recordMonths.length > 0 && recordMonths.every((m) => selected.has(m));
+
       return (
         <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
+          <div className="flex items-center gap-3 mb-2 flex-wrap">
             <h3 className="text-base font-semibold text-gray-800">{source.name_zh}</h3>
             <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
               {formatMethods(cfg)}
@@ -1310,10 +1351,26 @@ export default function FillPageClient({
                 {secStatus === 'saving' ? '⏳ 儲存中' : secStatus === 'saved' ? '✅ 已儲存' : '❌ 失敗'}
               </span>
             )}
+            <div className="flex items-center gap-2 ml-auto">
+              <button onClick={bulkReview} disabled={recordMonths.length === 0}
+                className="px-3 py-1 rounded-lg text-xs font-medium text-white transition hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ backgroundColor: '#0C3D2E' }}>
+                全選查核
+              </button>
+              <button onClick={bulkDelete} disabled={recordMonths.length === 0}
+                className="px-3 py-1 rounded-lg text-xs font-medium border border-red-300 text-red-600 hover:bg-red-50 transition disabled:opacity-40 disabled:cursor-not-allowed">
+                全選刪除
+              </button>
+            </div>
           </div>
           <table className="w-full border-collapse text-sm max-w-lg">
             <thead>
               <tr style={{ backgroundColor: '#0C3D2E' }} className="text-white">
+                <th className="px-2 py-2 text-center w-8">
+                  <input type="checkbox" checked={allSelected}
+                    onChange={(e) => setSelected(e.target.checked ? new Set(recordMonths) : new Set())}
+                    className="accent-green-600" />
+                </th>
                 <th className="px-4 py-2 text-left w-16">月份</th>
                 <th className="px-4 py-2 text-right">廢棄物重量 (kg)</th>
                 <th className="px-3 py-2 text-center w-16">明細</th>
@@ -1330,6 +1387,17 @@ export default function FillPageClient({
                 const isReviewed = reviewedOverride[m] ?? existing?.is_reviewed ?? false;
                 return (
                   <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                    <td className="px-2 py-1.5 text-center">
+                      {existing?.id && (
+                        <input type="checkbox" checked={selected.has(m)}
+                          onChange={(e) => setSelected((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(m); else next.delete(m);
+                            return next;
+                          })}
+                          className="accent-green-600" />
+                      )}
+                    </td>
                     <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
                     <td className="px-4 py-1.5">
                       <input type="number" min="0" step="any" placeholder="輸入重量"
@@ -1364,6 +1432,7 @@ export default function FillPageClient({
             </tbody>
             <tfoot>
               <tr className="bg-green-50 font-semibold">
+                <td />
                 <td className="px-4 py-2 text-gray-700">合計</td>
                 <td className="px-4 py-2 text-right text-gray-700 font-mono">{total.toLocaleString(undefined, { maximumFractionDigits: 10 })} kg</td>
                 <td />
