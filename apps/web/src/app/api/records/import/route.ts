@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { query } from '@/lib/db';
 import { recomputeRecordFromLineItems } from '@/lib/line-items';
-import { recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
+import { calcCo2e, recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
 
 // ─────────────────────────────────────────────────────────────────
 // 型別定義
@@ -10,9 +10,12 @@ import { recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
 interface ParsedRow {
   month: number;
   source_code: string;
-  activity_value: number;
+  activity_value: number | null;
   activity_unit: string;
   notes?: string;
+  // 化糞池（1-4B-1）專用：上班天數→meter_number、上班人數→sub_location
+  meter_number?: string;
+  sub_location?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -138,6 +141,32 @@ function parseBusinessTravelSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
         rows.push({ month: monthVal, source_code: '3-6-B', activity_value: nights, activity_unit: 'room-nights' });
       }
     }
+  }
+  return rows;
+}
+
+/**
+ * 解析「S1_化糞池」：固定 1-4B-1，可變列數，col A=月份 B=上班天數 C=上班人數 D=上班總時數
+ * 同月若出現多列，取最後一列（不加總，天數/人數/時數不是可加總的量）
+ */
+function parseSepticSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
+  const rows: ParsedRow[] = [];
+  const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1');
+  for (let r = 1; r <= range.e.r; r++) {
+    const month = parseMonth(cellVal(sheet, r, 0)); // col A
+    if (month === null) continue;
+    const days = toNum(cellVal(sheet, r, 1));    // col B 上班天數
+    const workers = toNum(cellVal(sheet, r, 2)); // col C 上班人數
+    const hours = toNum(cellVal(sheet, r, 3));   // col D 上班總時數
+    if (days === null && workers === null && hours === null) continue;
+    rows.push({
+      month,
+      source_code: '1-4B-1',
+      activity_value: hours,
+      activity_unit: 'hr',
+      meter_number: days !== null ? String(days) : undefined,
+      sub_location: workers !== null ? String(workers) : undefined,
+    });
   }
   return rows;
 }
@@ -296,6 +325,8 @@ function parseWorkbook(wb: XLSX.WorkBook): ParsedRow[] {
         { col: 5, source_code: '3-7-D', unit: 'km' },
         { col: 7, source_code: '3-7-E', unit: 'km' },
       ]),
+
+    'S1_化糞池': () => parseSepticSheet(wb.Sheets['S1_化糞池']),
   };
 
   for (const sheetName of wb.SheetNames) {
@@ -349,7 +380,7 @@ export async function POST(req: NextRequest) {
 
   // 確認工廠存在
   const factoryCheck = await query(
-    'SELECT id FROM factories WHERE id = $1',
+    'SELECT id, country_code FROM factories WHERE id = $1',
     [factory_id],
   );
   if (!factoryCheck.rowCount || factoryCheck.rowCount === 0) {
@@ -358,6 +389,7 @@ export async function POST(req: NextRequest) {
       { status: 404 },
     );
   }
+  const factoryCountryCode: string = factoryCheck.rows[0].country_code;
 
   // 讀取 xlsx 檔案
   const buffer = await file.arrayBuffer();
@@ -412,22 +444,48 @@ export async function POST(req: NextRequest) {
         await query(
           `UPDATE activity_records
            SET activity_value = $1, activity_unit = $2,
-               notes = COALESCE($3, notes), updated_at = NOW()
-           WHERE id = $4`,
-          [row.activity_value, row.activity_unit, row.notes ?? null, existing.rows[0].id],
+               notes = COALESCE($3, notes),
+               meter_number = COALESCE($4, meter_number),
+               sub_location = COALESCE($5, sub_location),
+               updated_at = NOW()
+           WHERE id = $6`,
+          [row.activity_value, row.activity_unit, row.notes ?? null,
+           row.meter_number ?? null, row.sub_location ?? null, existing.rows[0].id],
         );
       } else {
         await query(
           `INSERT INTO activity_records
              (factory_id, emission_source_id, year, month,
-              activity_value, activity_unit, notes,
+              activity_value, activity_unit, notes, meter_number, sub_location,
               import_source, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'excel_import', NOW(), NOW())`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'excel_import', NOW(), NOW())`,
           [factory_id, source.id, year, row.month,
-           row.activity_value, row.activity_unit, row.notes ?? null],
+           row.activity_value, row.activity_unit, row.notes ?? null,
+           row.meter_number ?? null, row.sub_location ?? null],
         );
       }
       imported++;
+
+      // 化糞池（1-4B-1）：比照填報頁手動輸入，寫入後立即算 CO₂e（公式僅需 activity_value）
+      if (row.source_code === '1-4B-1' && row.activity_value != null) {
+        try {
+          const calc = await calcCo2e({
+            factory_id, emission_source_id: source.id, country_code: factoryCountryCode,
+            year, activity_value: row.activity_value, activity_unit: row.activity_unit,
+            scope: source.scope, is_biomass: false, source_code: row.source_code,
+          });
+          if (calc) {
+            await query(
+              `UPDATE activity_records
+               SET co2e_total = $1, ch4_t = $2, emission_factor_id = $3, updated_at = NOW()
+               WHERE factory_id = $4 AND emission_source_id = $5 AND year = $6 AND month = $7`,
+              [calc.co2e_total, calc.ch4_t, calc.emission_factor_id, factory_id, source.id, year, row.month],
+            );
+          }
+        } catch (err) {
+          console.error('[import 化糞池 co2e]', err);
+        }
+      }
     } catch (err) {
       console.error('[import upsert]', err);
       errors.push(`${row.source_code} 月份 ${row.month}：寫入失敗`);
