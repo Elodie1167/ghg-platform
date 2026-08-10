@@ -384,10 +384,13 @@ export async function POST(req: NextRequest) {
     }
 
     try {
+      // 找該 (廠×源×月) 既有紀錄時不限 import_source：這類固定分頁匯入是「每月一筆彙總」
+      // 設計，若只比對 excel_import 會漏掉先前手動填的那筆，導致同月重複建立新紀錄
+      // （例如手動填報頁清空過又重新匯入，會冒出一筆孤兒舊列）。
       const existing = await query(
         `SELECT id FROM activity_records
          WHERE factory_id = $1 AND emission_source_id = $2
-           AND year = $3 AND month = $4 AND import_source = 'excel_import'
+           AND year = $3 AND month = $4
          LIMIT 1`,
         [factory_id, source.id, year, row.month],
       );
@@ -443,11 +446,12 @@ export async function POST(req: NextRequest) {
       continue;
     }
     try {
-      // find-or-create 該 (廠×源×月) 的 excel_import 紀錄
+      // find-or-create 該 (廠×源×月) 的紀錄；不限 import_source，理由同上（避免與手動填報的
+      // 同月紀錄脫鉤而重複建立）
       const existing = await query(
         `SELECT id FROM activity_records
          WHERE factory_id = $1 AND emission_source_id = $2
-           AND year = $3 AND month = $4 AND import_source = 'excel_import'
+           AND year = $3 AND month = $4
          LIMIT 1`,
         [factory_id, source.id, year, month],
       );
