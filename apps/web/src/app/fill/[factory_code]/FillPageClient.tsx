@@ -1243,20 +1243,24 @@ export default function FillPageClient({
         } catch { /* 失敗則畫面暫時領先於伺服器，重新整理後會校正 */ }
       }
 
-      // 清空某月（autosave activity_value=null → 後端一併清 co2e；cleared 讓本列 co2e 即時顯示「—」）
-      async function clearWasteMonth(month: number) {
-        const next = { ...lvRef.current, [month]: '' };
-        lvRef.current = next; setLv(next);
-        setCleared((prev) => new Set(prev).add(month));
+      // 刪除某月（真正 DELETE 該筆紀錄，資料庫 ON DELETE CASCADE 會一併刪除其單據明細；
+      // 不同於「清空數值」只把 activity_value 設 null，明細會殘留）
+      async function deleteWasteMonth(month: number, recordId: string) {
         setSecStatus('saving');
         try {
-          const res = await fetch('/api/records/autosave', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ factory_id: factory.id, emission_source_id: source.id, year, month, activity_value: null, activity_unit: 'kg', notes: null }),
-          });
-          if (!res.ok) throw new Error();
+          const res = await fetch(`/api/records/${recordId}`, { method: 'DELETE' });
+          if (!res.ok) {
+            const j = await res.json().catch(() => null);
+            throw new Error(j?.error ?? `HTTP ${res.status}`);
+          }
+          const next = { ...lvRef.current, [month]: '' };
+          lvRef.current = next; setLv(next);
+          setCleared((prev) => new Set(prev).add(month));
           setSecStatus('saved'); setTimeout(() => setSecStatus('idle'), 2000);
-        } catch { setSecStatus('error'); }
+        } catch (err) {
+          setSecStatus('error');
+          alert(err instanceof Error ? err.message : '刪除失敗');
+        }
       }
 
       function onWasteChange(month: number, val: string) {
@@ -1340,8 +1344,8 @@ export default function FillPageClient({
                     </td>
                     <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono whitespace-nowrap">
                       {!cleared.has(m) && existing?.co2e_total != null ? existing.co2e_total.toFixed(4) : '—'}
-                      <button onClick={() => clearWasteMonth(m)} disabled={!existing?.id || isReviewed}
-                        title={isReviewed ? '已查核不可清空，請先取消查核' : '清空此月數值'}
+                      <button onClick={() => existing?.id && deleteWasteMonth(m, existing.id)} disabled={!existing?.id || isReviewed}
+                        title={isReviewed ? '已查核不可刪除，請先取消查核' : '刪除此月數值與明細'}
                         className={`ml-2 text-sm leading-none transition ${!existing?.id || isReviewed ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
                         ✕
                       </button>

@@ -49,7 +49,9 @@ export async function calcCo2e(params: {
             ef.factor_substance::float, ef.grid_emission_factor::float,
             ef.market_residual_factor::float, ef.scope3_factor::float,
             ef.ncv::float, ef.ncv_unit, ef.density::float,
-            ef.gwp_ch4::float, ef.gwp_n2o::float
+            ef.gwp_ch4::float, ef.gwp_n2o::float,
+            ef.waste_incineration_factor::float, ef.waste_recycling_factor::float,
+            ef.waste_landfill_factor::float
      FROM emission_factors ef
      JOIN emission_factor_assignments efa ON efa.emission_factor_id = ef.id
      WHERE efa.factory_id = $1
@@ -66,6 +68,8 @@ export async function calcCo2e(params: {
     grid_emission_factor: number | null; market_residual_factor: number | null;
     scope3_factor: number | null; ncv: number | null; ncv_unit: string | null;
     density: number | null; gwp_ch4: number | null; gwp_n2o: number | null;
+    waste_incineration_factor: number | null; waste_recycling_factor: number | null;
+    waste_landfill_factor: number | null;
   };
   const factorGwpCH4 = f.gwp_ch4 ?? GWP_CH4;
   const factorGwpN2O = f.gwp_n2o ?? GWP_N2O;
@@ -108,6 +112,38 @@ export async function calcCo2e(params: {
       co2e_total: co2e_location, co2e_location, co2e_market, co2e_biomass_co2: null,
       emission_factor_id: f.id, warnings: [],
       co2_t: co2e_location, ch4_t: null, n2o_t: null, hfc_t: null,
+    };
+  }
+
+  // Scope 3 — 廢棄物（一般/紡織）：依各廠設定的處置方式（焚化/回收/掩埋）% 加權平均係數，
+  // 而非單一 scope3_factor。% 設定存於 factories.source_config.waste_config
+  // （3-5-W1 對應 general、3-5-W2 對應 textile，見填報頁「基本資訊」）。
+  if (params.scope === 3 && (params.source_code === '3-5-W1' || params.source_code === '3-5-W2')) {
+    const factoryRow = await query(
+      `SELECT source_config FROM factories WHERE id = $1`,
+      [params.factory_id],
+    );
+    const wasteConfig = factoryRow.rows[0]?.source_config?.waste_config ?? null;
+    const category = params.source_code === '3-5-W1' ? 'general' : 'textile';
+    const cfg = wasteConfig?.[category] as
+      { enabled?: boolean; incineration?: number; recycling?: number; landfill?: number } | undefined;
+    if (!cfg?.enabled) return null; // 尚未設定處置方式 %，無法計算
+
+    const pcts: [number | undefined, number | null][] = [
+      [cfg.incineration, f.waste_incineration_factor],
+      [cfg.recycling, f.waste_recycling_factor],
+      [cfg.landfill, f.waste_landfill_factor],
+    ];
+    // 任一 % > 0 的處置方式若缺對應係數，視為無法計算（避免漏算卻無聲顯示錯誤數字）
+    for (const [pct, factor] of pcts) {
+      if ((pct ?? 0) > 0 && factor == null) return null;
+    }
+    const weightedFactor = pcts.reduce((s, [pct, factor]) => s + ((pct ?? 0) / 100) * (factor ?? 0), 0);
+    const co2e = r4(value * weightedFactor / 1000);
+    return {
+      co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
+      emission_factor_id: f.id, warnings: [],
+      co2_t: co2e, ch4_t: null, n2o_t: null, hfc_t: null,
     };
   }
 

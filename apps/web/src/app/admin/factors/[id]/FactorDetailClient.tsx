@@ -28,6 +28,9 @@ interface FactorDetail {
   grid_emission_factor: number | null;
   market_residual_factor: number | null;
   scope3_factor: number | null;
+  waste_incineration_factor: number | null;
+  waste_recycling_factor: number | null;
+  waste_landfill_factor: number | null;
   source_reference: string | null;
   ncv: number | null;
   ncv_unit: string | null;
@@ -120,6 +123,9 @@ export default function FactorDetailClient({ factor, factories }: Props) {
     grid_emission_factor: factor.grid_emission_factor,
     market_residual_factor: factor.market_residual_factor,
     scope3_factor: factor.scope3_factor,
+    waste_incineration_factor: factor.waste_incineration_factor,
+    waste_recycling_factor: factor.waste_recycling_factor,
+    waste_landfill_factor: factor.waste_landfill_factor,
     source_reference: factor.source_reference,
     ncv: factor.ncv,
     ncv_unit: factor.ncv_unit,
@@ -140,6 +146,9 @@ export default function FactorDetailClient({ factor, factories }: Props) {
   const [previewActivity, setPreviewActivity] = useState('1000');
   const [previewUnit, setPreviewUnit] = useState('kg');
   const [previewBioFrac, setPreviewBioFrac] = useState('0');
+  const [previewIncin, setPreviewIncin] = useState('0');
+  const [previewRecyc, setPreviewRecyc] = useState('0');
+  const [previewLandfill, setPreviewLandfill] = useState('100');
 
   // GWP values — CO2 is always 1 (local only); CH4/N2O are stored in DB via edit state
   const [gwpCO2, setGwpCO2] = useState(String(GWP_CO2_DEFAULT));
@@ -150,7 +159,8 @@ export default function FactorDetailClient({ factor, factories }: Props) {
   const isSeptic = factor.source_code === '1-4B-1';
   const isRefrigerant = !isSeptic && (factor.category?.includes('冷媒') || factor.source_code.startsWith('1-4'));
   const isWelding = factor.source_code.startsWith('1-3'); // 焊條：已外算碳含量，只需 CO₂ 係數
-  const isScope3 = factor.scope === 3;                    // 範疇三：只需排放係數 + GWP
+  const isWaste = factor.source_code === '3-5-W1' || factor.source_code === '3-5-W2'; // 廢棄物：依處置方式%加權
+  const isScope3 = factor.scope === 3 && !isWaste;        // 範疇三：只需排放係數 + GWP
   const isFabricBoiler = factor.source_code === '1-1A-9'; // 廢布鍋爐：一般 S1 燃燒，不需生質分段係數
 
   async function handleSave() {
@@ -350,6 +360,19 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
                 <p className="text-xs text-amber-700 mb-3">焊條：碳含量已於填報前換算，係數僅需 CO₂ 係數（通常為 <code>1</code>），計算引擎以 <code>活動量 × CO₂係數 ÷ 1000</code> 得 tCO₂。</p>
                 <NumField label="CO₂ 係數" value={n(edit.factor_co2)} onChange={(v) => setEdit((e) => ({ ...e, factor_co2: p(v) }))} unit="kg CO₂/kg" hint="通常填 1" />
+              </div>
+            ) : isWaste ? (
+              <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
+                <p className="text-xs text-orange-700 mb-3">
+                  廢棄物：依該廠「基本資訊」設定的處置方式 %（焚化/回收/掩埋）加權平均係數，
+                  計算引擎以 <code>活動量 × (焚化% × 焚化係數 + 回收% × 回收係數 + 掩埋% × 掩埋係數) ÷ 100 ÷ 1000</code> 得 tCO₂e。
+                  任一 % &gt; 0 的處置方式若未填係數，該廠當月無法算出碳排。
+                </p>
+                <div className="grid grid-cols-3 gap-4">
+                  <NumField label="焚化係數" value={n(edit.waste_incineration_factor)} onChange={(v) => setEdit((e) => ({ ...e, waste_incineration_factor: p(v) }))} unit="kg CO₂e/kg" />
+                  <NumField label="回收係數" value={n(edit.waste_recycling_factor)} onChange={(v) => setEdit((e) => ({ ...e, waste_recycling_factor: p(v) }))} unit="kg CO₂e/kg" />
+                  <NumField label="掩埋係數" value={n(edit.waste_landfill_factor)} onChange={(v) => setEdit((e) => ({ ...e, waste_landfill_factor: p(v) }))} unit="kg CO₂e/kg" />
+                </div>
               </div>
             ) : isScope3 ? (
               <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
@@ -620,6 +643,50 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               </div>
             )}
 
+            {/* 廢棄物：活動量 × 加權係數 ÷ 1000（預覽用假設 %，實際依各廠設定） */}
+            {isWaste && (() => {
+              const incin = parseFloat(previewIncin) || 0;
+              const recyc = parseFloat(previewRecyc) || 0;
+              const landfill = parseFloat(previewLandfill) || 0;
+              const pctSum = incin + recyc + landfill;
+              const weighted = (incin * (edit.waste_incineration_factor ?? 0)
+                + recyc * (edit.waste_recycling_factor ?? 0)
+                + landfill * (edit.waste_landfill_factor ?? 0)) / 100;
+              const co2eWaste = actVal * weighted / 1000;
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3 flex-wrap text-xs">
+                    <div>
+                      <label className="block text-gray-500 mb-1">焚化 %</label>
+                      <input type="number" min="0" max="100" step="any" value={previewIncin} onChange={(e) => setPreviewIncin(e.target.value)}
+                        className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm font-mono w-20 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </div>
+                    <div>
+                      <label className="block text-gray-500 mb-1">回收 %</label>
+                      <input type="number" min="0" max="100" step="any" value={previewRecyc} onChange={(e) => setPreviewRecyc(e.target.value)}
+                        className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm font-mono w-20 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </div>
+                    <div>
+                      <label className="block text-gray-500 mb-1">掩埋 %</label>
+                      <input type="number" min="0" max="100" step="any" value={previewLandfill} onChange={(e) => setPreviewLandfill(e.target.value)}
+                        className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm font-mono w-20 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </div>
+                    {pctSum !== 100 && <span className="text-red-500">⚠ 合計需為 100%（目前 {pctSum}%）</span>}
+                  </div>
+                  <div className="space-y-2 font-mono text-xs">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{previewActivity} {previewUnit}</span>
+                      <span className="text-gray-400">× 加權係數 {weighted.toFixed(6)} ÷ 1000</span>
+                      <span className="text-gray-400">=</span>
+                      <span className="bg-green-50 text-green-800 px-2 py-1 rounded font-semibold">
+                        {co2eWaste.toFixed(10)} tCO₂e
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* 範疇三：活動量 × 排放係數 ÷ 1000 */}
             {isScope3 && edit.scope3_factor != null && (
               <div className="space-y-2 font-mono text-xs">
@@ -634,7 +701,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               </div>
             )}
 
-            {!isSeptic && !isWelding && !isScope3 && edit.ncv == null && edit.grid_emission_factor == null && (
+            {!isSeptic && !isWelding && !isScope3 && !isWaste && edit.ncv == null && edit.grid_emission_factor == null && (
               <p className="text-xs text-gray-400 italic">請先填入 NCV（燃燒排放）或電網係數（電力）後，預覽才會顯示計算過程。</p>
             )}
           </div>
