@@ -25,28 +25,15 @@ const ANNUAL_MONTH = 1;
 
 interface CellState {
   id: string | null;
-  tkm: string;
-  ton: string;
+  value: string;
   is_reviewed: boolean;
   saveStatus: SaveStatus;
 }
+const EMPTY_CELL: CellState = { id: null, value: '', is_reviewed: false, saveStatus: 'idle' };
 
-// Key: `${source_id}-${supply_type}-${item}`  e.g. "uuid-TW-布料"
+// TKM key: `${sourceId}-${supply}`（依運輸方式加總，不分品項）
+// 重量 key: `${supply}-${item}`（依品項加總，不分運輸方式）
 type CellKey = string;
-
-function computeItemTons(cells: Map<CellKey, CellState>): Record<string, number> {
-  const totals: Record<string, number> = {};
-  for (const item of ITEMS) {
-    let total = 0;
-    for (const [key, cell] of cells) {
-      if (key.endsWith(`-TW-${item}`) || key.endsWith(`-FC-${item}`)) {
-        total += parseFloat(cell.ton) || 0;
-      }
-    }
-    totals[item] = total;
-  }
-  return totals;
-}
 
 interface UpstreamTabProps extends TabProps {
   onTonsChange?: (tons: Record<string, number>) => void;
@@ -58,83 +45,111 @@ export default function UpstreamTab({
   const transportSources = emissionSources
     .filter((s) => TRANSPORT_CODES.includes(s.source_code as typeof TRANSPORT_CODES[number]))
     .sort((a, b) => a.source_code.localeCompare(b.source_code));
+  // 重量與運輸方式無關，固定掛在排序後第一個運輸排放源下（僅供資料庫外鍵用途，不影響計算）
+  const weightAnchorSourceId = transportSources[0]?.id ?? null;
 
-  const initCells = useCallback((): Map<CellKey, CellState> => {
-    const map = new Map<CellKey, CellState>();
+  const initCells = useCallback((): { tkm: Map<CellKey, CellState>; weight: Map<CellKey, CellState> } => {
+    const tkm = new Map<CellKey, CellState>();
+    const weight = new Map<CellKey, CellState>();
     for (const r of existingRecords) {
       if (!r.source_code?.startsWith('3-4')) continue;
       if (r.month !== ANNUAL_MONTH) continue;
       const sl = r.sub_location ?? '';
-      // Accept both new "TW-布料" format and legacy "布料" format
+
+      // 新格式：TKM 彙總列，sub_location 直接是 "TW" / "FC"
+      if (sl === 'TW' || sl === 'FC') {
+        tkm.set(`${r.emission_source_id}-${sl}`, {
+          id: r.id,
+          value: r.activity_value != null ? String(r.activity_value) : '',
+          is_reviewed: r.is_reviewed ?? false,
+          saveStatus: 'idle',
+        });
+        continue;
+      }
+
+      // 新格式／舊格式：重量列，sub_location 為 "TW-布料" / "FC-布料"，舊資料可能無前綴
       let supply: SupplyType | null = null;
       let itemCode: ItemCode | null = null;
-      if (sl.startsWith('TW-')) {
-        supply = 'TW';
-        itemCode = sl.slice(3) as ItemCode;
-      } else if (sl.startsWith('FC-')) {
-        supply = 'FC';
-        itemCode = sl.slice(3) as ItemCode;
-      } else if (ITEMS.includes(sl as ItemCode)) {
-        // Legacy records without prefix → treat as TW
-        supply = 'TW';
-        itemCode = sl as ItemCode;
-      }
+      if (sl.startsWith('TW-')) { supply = 'TW'; itemCode = sl.slice(3) as ItemCode; }
+      else if (sl.startsWith('FC-')) { supply = 'FC'; itemCode = sl.slice(3) as ItemCode; }
+      else if (ITEMS.includes(sl as ItemCode)) { supply = 'TW'; itemCode = sl as ItemCode; }
       if (!supply || !itemCode || !ITEMS.includes(itemCode)) continue;
-      const key = `${r.emission_source_id}-${supply}-${itemCode}`;
-      map.set(key, {
-        id: r.id,
-        tkm: r.activity_value != null ? String(r.activity_value) : '',
-        ton: r.meter_number != null ? String(r.meter_number) : '',
-        is_reviewed: r.is_reviewed ?? false,
-        saveStatus: 'idle',
-      });
-    }
-    return map;
-  }, [existingRecords]);
 
-  const [cells, setCells] = useState<Map<CellKey, CellState>>(initCells);
-  const cellsRef = useRef(cells);
-  useEffect(() => { cellsRef.current = cells; }, [cells]);
+      const key = `${supply}-${itemCode}`;
+      const existing = weight.get(key);
+      const tonNum = r.meter_number != null ? parseFloat(r.meter_number) : 0;
+      if (existing) {
+        // 舊資料可能拆在多個運輸方式列下：加總顯示，但只保留一筆作為儲存目標（優先選錨點排放源那一筆）
+        const preferThis = r.emission_source_id === weightAnchorSourceId && existing.id !== r.id;
+        weight.set(key, {
+          id: preferThis || !existing.id ? r.id : existing.id,
+          value: String((parseFloat(existing.value) || 0) + (isNaN(tonNum) ? 0 : tonNum)),
+          is_reviewed: existing.is_reviewed || (r.is_reviewed ?? false),
+          saveStatus: 'idle',
+        });
+      } else {
+        weight.set(key, {
+          id: r.id,
+          value: r.meter_number != null ? String(r.meter_number) : '',
+          is_reviewed: r.is_reviewed ?? false,
+          saveStatus: 'idle',
+        });
+      }
+    }
+    return { tkm, weight };
+  }, [existingRecords, weightAnchorSourceId]);
+
+  const [{ tkm: tkmCells, weight: weightCells }, setCellState] = useState(initCells);
+  const tkmRef = useRef(tkmCells);
+  const weightRef = useRef(weightCells);
+  useEffect(() => { tkmRef.current = tkmCells; }, [tkmCells]);
+  useEffect(() => { weightRef.current = weightCells; }, [weightCells]);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  function getCell(sourceId: string, supply: SupplyType, item: ItemCode): CellState {
-    return cells.get(`${sourceId}-${supply}-${item}`) ?? {
-      id: null, tkm: '', ton: '', is_reviewed: false, saveStatus: 'idle',
-    };
+  function getTkmCell(sourceId: string, supply: SupplyType): CellState {
+    return tkmRef.current.get(`${sourceId}-${supply}`) ?? EMPTY_CELL;
+  }
+  function getWeightCell(supply: SupplyType, item: ItemCode): CellState {
+    return weightRef.current.get(`${supply}-${item}`) ?? EMPTY_CELL;
   }
 
-  function updateCell(
-    sourceId: string, supply: SupplyType, item: ItemCode,
-    field: 'tkm' | 'ton', value: string,
-  ) {
-    const key = `${sourceId}-${supply}-${item}`;
-    const prev = cellsRef.current.get(key) ?? { id: null, tkm: '', ton: '', is_reviewed: false, saveStatus: 'idle' };
-    const next = new Map(cellsRef.current);
-    next.set(key, { ...prev, [field]: value, saveStatus: 'saving' });
-    cellsRef.current = next;
-    setCells(next);
+  function updateTkm(sourceId: string, supply: SupplyType, value: string) {
+    const key = `${sourceId}-${supply}`;
+    const prev = tkmRef.current.get(key) ?? EMPTY_CELL;
+    const next = new Map(tkmRef.current);
+    next.set(key, { ...prev, value, saveStatus: 'saving' });
+    tkmRef.current = next;
+    setCellState((s) => ({ ...s, tkm: next }));
     if (timers.current[key]) clearTimeout(timers.current[key]);
-    timers.current[key] = setTimeout(() => saveCell(sourceId, supply, item), 1000);
+    timers.current[key] = setTimeout(() => saveTkm(sourceId, supply), 1000);
   }
 
-  async function saveCell(sourceId: string, supply: SupplyType, item: ItemCode) {
-    const key = `${sourceId}-${supply}-${item}`;
-    const cell = cellsRef.current.get(key);
-    if (!cell) return;
+  function updateWeight(supply: SupplyType, item: ItemCode, value: string) {
+    const key = `${supply}-${item}`;
+    const prev = weightRef.current.get(key) ?? EMPTY_CELL;
+    const next = new Map(weightRef.current);
+    next.set(key, { ...prev, value, saveStatus: 'saving' });
+    weightRef.current = next;
+    setCellState((s) => ({ ...s, weight: next }));
+    if (timers.current[key]) clearTimeout(timers.current[key]);
+    timers.current[key] = setTimeout(() => saveWeight(supply, item), 1000);
+  }
 
-    const tkmNum = cell.tkm !== '' ? parseFloat(cell.tkm) : null;
-    const tonNum = cell.ton !== '' ? parseFloat(cell.ton) : null;
+  async function saveTkm(sourceId: string, supply: SupplyType) {
+    const key = `${sourceId}-${supply}`;
+    const cell = tkmRef.current.get(key);
+    if (!cell) return;
+    const num = cell.value !== '' ? parseFloat(cell.value) : null;
 
     const payload = {
       factory_id: factory.id,
       emission_source_id: sourceId,
       year,
       month: ANNUAL_MONTH,
-      activity_value: tkmNum != null && !isNaN(tkmNum) ? tkmNum : null,
+      activity_value: num != null && !isNaN(num) ? num : null,
       activity_unit: 'tonne-km',
-      sub_location: `${supply}-${item}`,
-      // meter_number must be a string per API schema
-      meter_number: tonNum != null && !isNaN(tonNum) ? String(tonNum) : null,
+      sub_location: supply,
+      meter_number: null,
     };
 
     try {
@@ -151,59 +166,129 @@ export default function UpstreamTab({
         });
         if (!res.ok) throw new Error();
         const data = await res.json();
-        const nextMap = new Map(cellsRef.current);
+        const nextMap = new Map(tkmRef.current);
         const cur = nextMap.get(key);
         if (cur) nextMap.set(key, { ...cur, id: data.data.id });
-        cellsRef.current = nextMap;
-        setCells(nextMap);
+        tkmRef.current = nextMap;
+        setCellState((s) => ({ ...s, tkm: nextMap }));
       }
-      const saved = new Map(cellsRef.current);
-      const cur = saved.get(key);
-      if (cur) saved.set(key, { ...cur, saveStatus: 'saved' });
-      cellsRef.current = saved;
-      setCells(saved);
-      onTonsChange?.(computeItemTons(saved));
-      setTimeout(() => {
-        const reset = new Map(cellsRef.current);
-        const c = reset.get(key);
-        if (c && c.saveStatus === 'saved') reset.set(key, { ...c, saveStatus: 'idle' });
-        cellsRef.current = reset;
-        setCells(reset);
-      }, 2000);
+      markSaved(key, 'tkm');
     } catch {
-      const err = new Map(cellsRef.current);
-      const c = err.get(key);
-      if (c) err.set(key, { ...c, saveStatus: 'error' });
-      cellsRef.current = err;
-      setCells(err);
+      markError(key, 'tkm');
     }
   }
 
-  async function toggleReview(sourceId: string, supply: SupplyType, item: ItemCode) {
-    const key = `${sourceId}-${supply}-${item}`;
-    const cell = cellsRef.current.get(key);
+  async function saveWeight(supply: SupplyType, item: ItemCode) {
+    const key = `${supply}-${item}`;
+    const cell = weightRef.current.get(key);
+    if (!cell || !weightAnchorSourceId) return;
+    const num = cell.value !== '' ? parseFloat(cell.value) : null;
+
+    const payload = {
+      factory_id: factory.id,
+      emission_source_id: weightAnchorSourceId,
+      year,
+      month: ANNUAL_MONTH,
+      activity_value: null,
+      activity_unit: 'ton',
+      sub_location: `${supply}-${item}`,
+      meter_number: num != null && !isNaN(num) ? String(num) : null,
+    };
+
+    try {
+      if (cell.id) {
+        const res = await fetch(`/api/records/${cell.id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error();
+      } else {
+        const res = await fetch('/api/records', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const nextMap = new Map(weightRef.current);
+        const cur = nextMap.get(key);
+        if (cur) nextMap.set(key, { ...cur, id: data.data.id });
+        weightRef.current = nextMap;
+        setCellState((s) => ({ ...s, weight: nextMap }));
+      }
+      markSaved(key, 'weight');
+      onTonsChange?.(computeItemTotals());
+    } catch {
+      markError(key, 'weight');
+    }
+  }
+
+  function markSaved(key: string, which: 'tkm' | 'weight') {
+    const ref = which === 'tkm' ? tkmRef : weightRef;
+    const saved = new Map(ref.current);
+    const cur = saved.get(key);
+    if (cur) saved.set(key, { ...cur, saveStatus: 'saved' });
+    ref.current = saved;
+    setCellState((s) => ({ ...s, [which]: saved }));
+    setTimeout(() => {
+      const reset = new Map(ref.current);
+      const c = reset.get(key);
+      if (c && c.saveStatus === 'saved') reset.set(key, { ...c, saveStatus: 'idle' });
+      ref.current = reset;
+      setCellState((s) => ({ ...s, [which]: reset }));
+    }, 2000);
+  }
+
+  function markError(key: string, which: 'tkm' | 'weight') {
+    const ref = which === 'tkm' ? tkmRef : weightRef;
+    const err = new Map(ref.current);
+    const c = err.get(key);
+    if (c) err.set(key, { ...c, saveStatus: 'error' });
+    ref.current = err;
+    setCellState((s) => ({ ...s, [which]: err }));
+  }
+
+  async function toggleTkmReview(sourceId: string, supply: SupplyType) {
+    const key = `${sourceId}-${supply}`;
+    const cell = tkmRef.current.get(key);
     if (!cell?.id) return;
     const newVal = !cell.is_reviewed;
-    const next = new Map(cellsRef.current);
+    const next = new Map(tkmRef.current);
     next.set(key, { ...cell, is_reviewed: newVal });
-    cellsRef.current = next;
-    setCells(next);
+    tkmRef.current = next;
+    setCellState((s) => ({ ...s, tkm: next }));
     await fetch(`/api/records/${cell.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_reviewed: newVal }),
     });
-    if (onReviewToggle && cell.id) onReviewToggle(cell.id, newVal);
+    onReviewToggle?.(cell.id, newVal);
   }
 
-  // Totals per item across all supply types and transport modes
-  function itemTonTotal(item: ItemCode): number {
-    let total = 0;
-    for (const src of transportSources) {
+  async function toggleWeightReview(supply: SupplyType, item: ItemCode) {
+    const key = `${supply}-${item}`;
+    const cell = weightRef.current.get(key);
+    if (!cell?.id) return;
+    const newVal = !cell.is_reviewed;
+    const next = new Map(weightRef.current);
+    next.set(key, { ...cell, is_reviewed: newVal });
+    weightRef.current = next;
+    setCellState((s) => ({ ...s, weight: next }));
+    await fetch(`/api/records/${cell.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_reviewed: newVal }),
+    });
+    onReviewToggle?.(cell.id, newVal);
+  }
+
+  function computeItemTotals(): Record<string, number> {
+    const totals: Record<string, number> = {};
+    for (const item of ITEMS) {
+      let total = 0;
       for (const { key: supply } of SUPPLY_TYPES) {
-        total += parseFloat(getCell(src.id, supply, item).ton) || 0;
+        total += parseFloat(getWeightCell(supply, item).value) || 0;
       }
+      totals[item] = total;
     }
-    return total;
+    return totals;
   }
 
   if (transportSources.length === 0) {
@@ -215,7 +300,7 @@ export default function UpstreamTab({
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-gray-800">上游運輸（進口）S3</h2>
         <p className="text-sm text-gray-500 mt-0.5">
-          填入年度 TKM 與採購總重量。重量合計會自動帶入「採購商品」頁籤。（下游運輸另有頁籤，係數共用）
+          運輸方式（陸/海/空）僅填年度 TKM 加總；採購重量依品項另計，不分運輸方式。重量合計會自動帶入「採購商品」頁籤。（下游運輸另有頁籤，係數共用）
         </p>
       </div>
 
@@ -228,111 +313,120 @@ export default function UpstreamTab({
             </span>
           </h3>
 
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="text-sm border-collapse" style={{ minWidth: '860px' }}>
+          <div className="overflow-x-auto rounded-lg border border-gray-200 mb-3">
+            <table className="text-sm border-collapse" style={{ minWidth: '360px' }}>
               <thead>
                 <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
                   <th className="px-4 py-2.5 text-left w-20">運輸方式</th>
-                  {ITEMS.map((item) => (
-                    <th key={item} className="px-2 py-2.5 text-center" colSpan={2}>{item}</th>
-                  ))}
-                </tr>
-                <tr style={{ backgroundColor: '#1a5c44' }} className="text-white text-xs">
-                  <th className="px-4 py-2" />
-                  {ITEMS.map((item) => (
-                    <th key={item} className="px-2 py-2" colSpan={2}>
-                      <div className="flex gap-1 justify-center">
-                        <span className="w-24 text-right">TKM</span>
-                        <span className="w-20 text-right">重量(ton)</span>
-                      </div>
-                    </th>
-                  ))}
+                  <th className="px-2 py-2.5 text-right w-28">TKM 年度合計</th>
+                  <th className="px-2 py-2.5 w-16" />
                 </tr>
               </thead>
               <tbody>
-                {transportSources.map((src, si) => (
-                  <tr key={src.id} className={si % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap text-xs">
-                      {TRANSPORT_LABEL[src.source_code]}
-                      <span className="block font-mono text-gray-400">{src.source_code}</span>
-                    </td>
-                    {ITEMS.map((item) => {
-                      const cell = getCell(src.id, supply, item);
-                      const hasSaved = cell.id !== null;
-                      return (
-                        <td key={item} className="px-2 py-1.5" colSpan={2}>
-                          <div className="flex gap-1 items-center">
-                            <input
-                              type="number" min="0" step="any" placeholder="TKM"
-                              value={cell.tkm}
-                              onChange={(e) => updateCell(src.id, supply, item, 'tkm', e.target.value)}
-                              className="w-24 border border-gray-300 rounded px-1.5 py-1 text-right text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
-                            />
-                            <input
-                              type="number" min="0" step="any" placeholder="ton"
-                              value={cell.ton}
-                              onChange={(e) => updateCell(src.id, supply, item, 'ton', e.target.value)}
-                              className="w-20 border border-gray-300 rounded px-1.5 py-1 text-right text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
-                            />
-                            {/* review toggle — only enabled once record is saved */}
-                            <button
-                              onClick={() => toggleReview(src.id, supply, item)}
-                              disabled={!hasSaved}
-                              title={cell.is_reviewed ? '已查核（點擊取消）' : hasSaved ? '點擊標記查核' : '請先儲存資料'}
-                              className={`text-sm leading-none transition-all shrink-0
-                                ${cell.is_reviewed ? 'text-green-500' : 'text-gray-300'}
-                                ${!hasSaved ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
-                              {cell.is_reviewed ? '✅' : '⬜'}
-                            </button>
-                            {/* save status indicator */}
-                            <span className="text-xs w-4 text-center shrink-0">
-                              {cell.saveStatus === 'saving' && '⏳'}
-                              {cell.saveStatus === 'saved' && '✓'}
-                              {cell.saveStatus === 'error' && '❌'}
-                            </span>
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-xs">
-                  <td className="px-4 py-2 text-gray-700">小計</td>
-                  {ITEMS.map((item) => {
-                    const tkmTotal = transportSources.reduce(
-                      (s, src) => s + (parseFloat(getCell(src.id, supply, item).tkm) || 0), 0,
-                    );
-                    const tonTotal = transportSources.reduce(
-                      (s, src) => s + (parseFloat(getCell(src.id, supply, item).ton) || 0), 0,
-                    );
-                    return (
-                      <td key={item} className="px-2 py-2 font-mono text-gray-700" colSpan={2}>
-                        <div className="flex gap-1">
-                          <span className="w-24 text-right">
-                            {tkmTotal > 0 ? tkmTotal.toLocaleString(undefined, { maximumFractionDigits: 10 }) : '—'}
-                          </span>
-                          <span className="w-20 text-right">
-                            {tonTotal > 0 ? tonTotal.toLocaleString(undefined, { maximumFractionDigits: 10 }) : '—'}
+                {transportSources.map((src, si) => {
+                  const cell = getTkmCell(src.id, supply);
+                  const hasSaved = cell.id !== null;
+                  return (
+                    <tr key={src.id} className={si % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap text-xs">
+                        {TRANSPORT_LABEL[src.source_code]}
+                        <span className="block font-mono text-gray-400">{src.source_code}</span>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <div className="flex gap-1 items-center justify-end">
+                          <input
+                            type="number" min="0" step="any" placeholder="TKM"
+                            value={cell.value}
+                            onChange={(e) => updateTkm(src.id, supply, e.target.value)}
+                            className="w-28 border border-gray-300 rounded px-1.5 py-1 text-right text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        </div>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <div className="flex gap-1 items-center justify-center">
+                          <button
+                            onClick={() => toggleTkmReview(src.id, supply)}
+                            disabled={!hasSaved}
+                            title={cell.is_reviewed ? '已查核（點擊取消）' : hasSaved ? '點擊標記查核' : '請先儲存資料'}
+                            className={`text-sm leading-none transition-all shrink-0
+                              ${cell.is_reviewed ? 'text-green-500' : 'text-gray-300'}
+                              ${!hasSaved ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+                            {cell.is_reviewed ? '✅' : '⬜'}
+                          </button>
+                          <span className="text-xs w-4 text-center shrink-0">
+                            {cell.saveStatus === 'saving' && '⏳'}
+                            {cell.saveStatus === 'saved' && '✓'}
+                            {cell.saveStatus === 'error' && '❌'}
                           </span>
                         </div>
                       </td>
-                    );
-                  })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="text-sm border-collapse" style={{ minWidth: '360px' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#1a5c44' }} className="text-white">
+                  <th className="px-4 py-2.5 text-left w-20">品項</th>
+                  <th className="px-2 py-2.5 text-right w-28">重量(ton) 年度合計</th>
+                  <th className="px-2 py-2.5 w-16" />
                 </tr>
-              </tfoot>
+              </thead>
+              <tbody>
+                {ITEMS.map((item, ii) => {
+                  const cell = getWeightCell(supply, item);
+                  const hasSaved = cell.id !== null;
+                  return (
+                    <tr key={item} className={ii % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap text-xs">{item}</td>
+                      <td className="px-2 py-1.5">
+                        <div className="flex gap-1 items-center justify-end">
+                          <input
+                            type="number" min="0" step="any" placeholder="ton"
+                            value={cell.value}
+                            onChange={(e) => updateWeight(supply, item, e.target.value)}
+                            className="w-28 border border-gray-300 rounded px-1.5 py-1 text-right text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        </div>
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <div className="flex gap-1 items-center justify-center">
+                          <button
+                            onClick={() => toggleWeightReview(supply, item)}
+                            disabled={!hasSaved}
+                            title={cell.is_reviewed ? '已查核（點擊取消）' : hasSaved ? '點擊標記查核' : '請先儲存資料'}
+                            className={`text-sm leading-none transition-all shrink-0
+                              ${cell.is_reviewed ? 'text-green-500' : 'text-gray-300'}
+                              ${!hasSaved ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+                            {cell.is_reviewed ? '✅' : '⬜'}
+                          </button>
+                          <span className="text-xs w-4 text-center shrink-0">
+                            {cell.saveStatus === 'saving' && '⏳'}
+                            {cell.saveStatus === 'saved' && '✓'}
+                            {cell.saveStatus === 'error' && '❌'}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
             </table>
           </div>
         </div>
       ))}
 
-      {/* Cross-supply total — feeds into PurchaseTab */}
       <div className="mt-2 p-4 bg-green-50 rounded-lg border border-green-200">
         <p className="text-xs font-semibold text-gray-700 mb-2">各品項年度重量合計（台供 + 廠供）→ 帶入採購商品</p>
         <div className="flex flex-wrap gap-4">
           {ITEMS.map((item) => {
-            const total = itemTonTotal(item);
+            const total = SUPPLY_TYPES.reduce(
+              (s, { key: supply }) => s + (parseFloat(getWeightCell(supply, item).value) || 0), 0,
+            );
             return (
               <div key={item} className="text-xs">
                 <span className="text-gray-500">{item}：</span>

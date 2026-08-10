@@ -25,13 +25,14 @@ interface AnnualRow {
   notes: string;
   co2e: number | null;
   status: SaveStatus;
+  is_reviewed: boolean;
 }
 
 // month=1 用於儲存年度彙總值（DB 限 1-12）
 const ANNUAL_MONTH = 1;
 
 export default function CommuteTab({
-  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab,
+  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab, onReviewToggle,
 }: TabProps) {
   const sources = emissionSources
     .filter((s) => s.source_code.startsWith(COMMUTE_CODES_PREFIX) && selectedSourceIds.has(s.id))
@@ -61,18 +62,20 @@ export default function CommuteTab({
         factory={factory}
         year={year}
         existingRecords={existingRecords}
+        onReviewToggle={onReviewToggle}
       />
     </div>
   );
 }
 
 function CommuteTable({
-  sources, factory, year, existingRecords,
+  sources, factory, year, existingRecords, onReviewToggle,
 }: {
   sources: EmissionSource[];
   factory: TabProps['factory'];
   year: number;
   existingRecords: ActivityRecord[];
+  onReviewToggle?: TabProps['onReviewToggle'];
 }) {
   const initRows = (): Record<string, AnnualRow> => {
     const map: Record<string, AnnualRow> = {};
@@ -86,6 +89,7 @@ function CommuteTable({
         notes: rec?.notes ?? '',
         co2e: rec?.co2e_total ?? null,
         status: 'idle',
+        is_reviewed: rec?.is_reviewed ?? false,
       };
     }
     return map;
@@ -160,6 +164,20 @@ function CommuteTable({
     } catch { /* 忽略；畫面已清 */ }
   }
 
+  async function toggleReview(srcId: string) {
+    const row = rowsRef.current[srcId];
+    if (!row?.id) return;
+    const newVal = !row.is_reviewed;
+    const next = { ...rowsRef.current, [srcId]: { ...row, is_reviewed: newVal } };
+    rowsRef.current = next;
+    setRows(next);
+    await fetch(`/api/records/${row.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_reviewed: newVal }),
+    });
+    onReviewToggle?.(row.id, newVal);
+  }
+
   const totalPkm = sources.reduce((s, src) => s + (parseFloat(rows[src.id]?.value ?? '') || 0), 0);
   const totalCo2e = sources.reduce((s, src) => s + (rows[src.id]?.co2e ?? 0), 0);
 
@@ -172,6 +190,7 @@ function CommuteTable({
             <th className="px-4 py-3 text-right w-48">年度總里程 (person-km)</th>
             <th className="px-4 py-3 text-left w-40">備註</th>
             <th className="px-4 py-3 text-right w-28">CO₂e (t)</th>
+            <th className="px-4 py-3 text-center w-16">查核</th>
             <th className="px-4 py-3 text-center w-8">狀</th>
           </tr>
         </thead>
@@ -206,6 +225,17 @@ function CommuteTable({
                 <td className="px-4 py-2 text-right font-mono text-xs text-gray-400">
                   {row?.co2e != null ? row.co2e.toFixed(4) : '—'}
                 </td>
+                <td className="px-4 py-2 text-center">
+                  <button
+                    onClick={() => toggleReview(src.id)}
+                    disabled={!row?.id}
+                    title={row?.is_reviewed ? '已查核（點擊取消）' : row?.id ? '點擊標記查核' : '請先儲存資料'}
+                    className={`text-sm leading-none transition-all shrink-0
+                      ${row?.is_reviewed ? 'text-green-500' : 'text-gray-300'}
+                      ${!row?.id ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+                    {row?.is_reviewed ? '✅' : '⬜'}
+                  </button>
+                </td>
                 <td className="px-4 py-2 text-center text-xs whitespace-nowrap">
                   {row?.status === 'saving' && '⏳'}
                   {row?.status === 'saved' && '✅'}
@@ -230,6 +260,7 @@ function CommuteTable({
             <td className="px-4 py-2 text-right font-mono text-gray-700">
               {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
             </td>
+            <td />
             <td />
           </tr>
         </tfoot>
