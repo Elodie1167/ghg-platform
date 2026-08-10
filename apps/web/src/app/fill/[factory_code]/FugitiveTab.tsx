@@ -105,6 +105,7 @@ function FugitiveTabInner({
               factory={factory}
               year={year}
               records={existingRecords.filter((r) => r.emission_source_id === src.id)}
+              onReviewToggle={onReviewToggle}
             />
           ))}
         </div>
@@ -151,16 +152,18 @@ interface SepticMonthData {
   workers: string;
   hours: string;
   co2e: number | null;
+  is_reviewed: boolean;
   saveStatus: SaveStatus;
 }
 
 function SepticSection({
-  source, factory, year, records,
+  source, factory, year, records, onReviewToggle,
 }: {
   source: EmissionSource;
   factory: TabProps['factory'];
   year: number;
   records: ActivityRecord[];
+  onReviewToggle?: TabProps['onReviewToggle'];
 }) {
   const [rows, setRows] = useState<SepticMonthData[]>(() =>
     MONTHS.map((m) => {
@@ -171,6 +174,7 @@ function SepticSection({
         workers: r?.sub_location ?? '',
         hours: r?.activity_value != null ? String(r.activity_value) : '',
         co2e: r?.co2e_total ?? null,
+        is_reviewed: r?.is_reviewed ?? false,
         saveStatus: 'idle' as SaveStatus,
       };
     })
@@ -227,6 +231,37 @@ function SepticSection({
     } catch { /* 忽略；畫面已清 */ }
   }
 
+  async function toggleReview(idx: number) {
+    const row = rowsRef.current[idx];
+    if (!row.id) return;
+    const newVal = !row.is_reviewed;
+    setRows((p) => { const n = [...p]; n[idx] = { ...n[idx], is_reviewed: newVal }; return n; });
+    await fetch(`/api/records/${row.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_reviewed: newVal }),
+    });
+    onReviewToggle?.(row.id, newVal);
+  }
+
+  // 查核全部：只動尚未查核的月份（已查核的視為鎖定）
+  async function reviewAll() {
+    const targets = rowsRef.current
+      .map((r, idx) => ({ r, idx }))
+      .filter(({ r }) => r.id && !r.is_reviewed);
+    if (targets.length === 0) return;
+    await Promise.all(targets.map(({ idx }) => toggleReview(idx)));
+  }
+
+  // 刪除全部：清空全部尚未查核的月份，已查核月份保留（需先取消查核才能刪）
+  async function clearAll() {
+    const targets = rowsRef.current
+      .map((r, idx) => ({ r, idx }))
+      .filter(({ r }) => r.id && !r.is_reviewed && (r.days || r.workers || r.hours));
+    if (targets.length === 0) return;
+    if (!confirm(`確定要清空 ${targets.length} 個月份的上班天數/人數/總時數？（已查核的月份不受影響）`)) return;
+    await Promise.all(targets.map(({ idx }) => clearRow(idx)));
+  }
+
   const totalDays = rows.reduce((s, r) => s + (parseFloat(r.days) || 0), 0);
   const totalHours = rows.reduce((s, r) => s + (parseFloat(r.hours) || 0), 0);
   const monthsWithWorkers = rows.filter((r) => r.workers !== '' && !isNaN(parseFloat(r.workers)));
@@ -247,6 +282,14 @@ function SepticSection({
           {source.name_zh}
           <span className="ml-2 text-xs font-mono text-gray-400">{source.source_code}</span>
         </h4>
+        <button onClick={reviewAll}
+          className="text-xs px-2 py-1 rounded border border-green-300 text-green-700 hover:bg-green-50">
+          ✅ 查核全部
+        </button>
+        <button onClick={clearAll}
+          className="text-xs px-2 py-1 rounded border border-red-300 text-red-600 hover:bg-red-50">
+          🗑 刪除全部
+        </button>
       </div>
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full text-sm">
@@ -258,6 +301,7 @@ function SepticSection({
               <th className="px-3 py-2 text-right w-28">上班總時數</th>
               <th className="px-3 py-2 text-right w-28">CO₂e (t)</th>
               <th className="px-3 py-2 text-center w-16">明細</th>
+              <th className="px-3 py-2 text-center w-16">查核</th>
               <th className="px-3 py-2 text-center w-8">狀</th>
             </tr>
           </thead>
@@ -289,6 +333,17 @@ function SepticSection({
                     <LineItemsCell recordId={row.id} count={liCountByMonth[m] ?? 0}
                       title={`${source.name_zh} ${m} 月`} unit={source.default_unit} sourceCode={source.source_code} />
                   </td>
+                  <td className="px-3 py-1.5 text-center">
+                    <button
+                      onClick={() => toggleReview(idx)}
+                      disabled={!row.id}
+                      title={row.is_reviewed ? '已查核（點擊取消）' : row.id ? '點擊標記查核' : '請先儲存資料'}
+                      className={`text-sm leading-none transition-all shrink-0
+                        ${row.is_reviewed ? 'text-green-500' : 'text-gray-300'}
+                        ${!row.id ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+                      {row.is_reviewed ? '✅' : '⬜'}
+                    </button>
+                  </td>
                   <td className="px-2 py-1.5 text-center text-xs whitespace-nowrap">
                     {row.saveStatus === 'saving' && '⏳'}
                     {row.saveStatus === 'saved' && '✓'}
@@ -310,6 +365,7 @@ function SepticSection({
               <td className="px-3 py-2 text-right font-mono text-gray-700">{avgWorkers > 0 ? avgWorkers.toFixed(1) + ' 人均' : '—'}</td>
               <td className="px-3 py-2 text-right font-mono text-gray-700">{totalHours > 0 ? totalHours.toLocaleString(undefined, { maximumFractionDigits: 10 }) + ' hr' : '—'}</td>
               <td className="px-3 py-2 text-right font-mono text-gray-700">{totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}</td>
+              <td />
               <td />
               <td />
             </tr>
