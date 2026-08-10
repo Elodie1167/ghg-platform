@@ -148,6 +148,37 @@ function FuelSection({
   const rowsRef = useRef(rows);
   useEffect(() => { rowsRef.current = rows; }, [rows]);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function toggleSelect(tempKey: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(tempKey)) next.delete(tempKey); else next.add(tempKey);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelected((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.tempKey))));
+  }
+
+  function targetRows() {
+    return selected.size > 0 ? rows.filter((r) => selected.has(r.tempKey)) : rows;
+  }
+
+  async function bulkReview() {
+    const targets = targetRows().filter((r) => r.id && !r.is_reviewed);
+    await Promise.all(targets.map((r) => toggleReview(r.tempKey)));
+    setSelected(new Set());
+  }
+
+  async function bulkDelete() {
+    const targets = targetRows().filter((r) => r.id && !r.is_reviewed);
+    if (targets.length === 0) { setSelected(new Set()); return; }
+    if (!confirm(`確定要刪除 ${targets.length} 筆尚未查核的資料？`)) return;
+    await Promise.all(targets.map((r) => deleteRow(r.tempKey)));
+    setSelected(new Set());
+  }
 
   const lsKeyDiesel = `ghg:vehcount:${factory.id}:${year}:${source.source_code}`;
   const lsKeyElectric = `ghg:vehcount:${factory.id}:${year}:forklift_electric`;
@@ -267,11 +298,23 @@ function FuelSection({
           )}
           <span className="text-xs text-gray-400">（年底填寫）</span>
         </div>
-        <button onClick={addRow}
-          className="px-3 py-1.5 rounded-lg text-white text-xs font-medium hover:opacity-90 transition"
-          style={{ backgroundColor: BTN_BG }}>
-          + 新增記錄
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={bulkReview}
+            disabled={rows.length === 0}
+            className="px-3 py-1.5 rounded-lg border border-green-700 text-green-700 text-xs font-medium transition hover:bg-green-50 disabled:opacity-30 disabled:cursor-not-allowed">
+            全選查核
+          </button>
+          <button onClick={bulkDelete}
+            disabled={rows.length === 0}
+            className="px-3 py-1.5 rounded-lg border border-red-400 text-red-500 text-xs font-medium transition hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed">
+            全選刪除
+          </button>
+          <button onClick={addRow}
+            className="px-3 py-1.5 rounded-lg text-white text-xs font-medium hover:opacity-90 transition"
+            style={{ backgroundColor: BTN_BG }}>
+            + 新增記錄
+          </button>
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -283,6 +326,12 @@ function FuelSection({
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
+                <th className="px-2 py-2.5 text-center w-8">
+                  <input type="checkbox"
+                    checked={rows.length > 0 && selected.size === rows.length}
+                    onChange={toggleSelectAll}
+                  />
+                </th>
                 <th className="px-3 py-2.5 text-left w-20">月份</th>
                 <th className="px-3 py-2.5 text-left w-28">加油日期</th>
                 <th className="px-3 py-2.5 text-left">{locationLabel}</th>
@@ -311,6 +360,12 @@ function FuelSection({
                   : null;
                 return (
                 <tr key={row.tempKey} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <td className="px-2 py-1.5 text-center">
+                    <input type="checkbox"
+                      checked={selected.has(row.tempKey)}
+                      onChange={() => toggleSelect(row.tempKey)}
+                    />
+                  </td>
                   <td className="px-2 py-1.5">
                     <select value={row.month}
                       onChange={(e) => updateRow(row.tempKey, 'month', parseInt(e.target.value))}
@@ -400,7 +455,7 @@ function FuelSection({
             </tbody>
             <tfoot>
               <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
-                <td colSpan={3} className="px-3 py-2 text-gray-700">合計</td>
+                <td colSpan={4} className="px-3 py-2 text-gray-700">合計</td>
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalVol.toLocaleString(undefined, { maximumFractionDigits: 10 })} {source.default_unit}
                 </td>

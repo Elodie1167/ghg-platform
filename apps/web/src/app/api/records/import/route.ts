@@ -266,11 +266,8 @@ function parseWorkbook(wb: XLSX.WorkBook): ParsedRow[] {
 
     'S3_廢棄物': () =>
       parseMonthlySheet(wb.Sheets['S3_廢棄物'], [
-        { col: 1, source_code: '3-5-A', unit: 'kg' },
-        { col: 2, source_code: '3-5-B', unit: 'kg' },
-        { col: 4, source_code: '3-5-D', unit: 'kg' },
-        { col: 5, source_code: '3-5-E', unit: 'kg' },
-        { col: 6, source_code: '3-5-F', unit: 'kg' },
+        { col: 1, source_code: '3-5-W1', unit: 'kg' },
+        { col: 2, source_code: '3-5-W2', unit: 'kg' },
         { col: 7, source_code: '3-5-G', unit: 'm3' },
       ]),
 

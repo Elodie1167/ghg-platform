@@ -583,6 +583,37 @@ export default function FillPageClient({
     useEffect(() => { rowsRef.current = rows; }, [rows]);
     const rowTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
     const [liRecord, setLiRecord] = useState<{ id: string; title: string } | null>(null);
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+
+    function toggleSelect(tempKey: string) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(tempKey)) next.delete(tempKey); else next.add(tempKey);
+        return next;
+      });
+    }
+
+    function toggleSelectAll() {
+      setSelected((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.tempKey))));
+    }
+
+    function targetRows() {
+      return selected.size > 0 ? rows.filter((r) => selected.has(r.tempKey)) : rows;
+    }
+
+    async function bulkReview() {
+      const targets = targetRows().filter((r) => r.id && !r.is_reviewed);
+      await Promise.all(targets.map((r) => toggleReview(r.tempKey)));
+      setSelected(new Set());
+    }
+
+    async function bulkDelete() {
+      const targets = targetRows().filter((r) => r.id && !r.is_reviewed);
+      if (targets.length === 0) { setSelected(new Set()); return; }
+      if (!confirm(`確定要刪除 ${targets.length} 筆尚未查核的資料？`)) return;
+      await Promise.all(targets.map((r) => deleteRow(r.tempKey)));
+      setSelected(new Set());
+    }
 
     function addRow() {
       const tempKey = `new-${Date.now()}`;
@@ -693,11 +724,23 @@ export default function FillPageClient({
                 : '每月可有多張帳單（3 個計費區間 × 多電表）'}
             </p>
           </div>
-          <button onClick={addRow}
-            className="px-4 py-2 rounded-lg text-white text-sm font-medium transition hover:opacity-90"
-            style={{ backgroundColor: '#0C3D2E' }}>
-            + 新增帳單
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={bulkReview}
+              disabled={rows.length === 0}
+              className="px-3 py-2 rounded-lg border border-green-700 text-green-700 text-sm font-medium transition hover:bg-green-50 disabled:opacity-30 disabled:cursor-not-allowed">
+              全選查核
+            </button>
+            <button onClick={bulkDelete}
+              disabled={rows.length === 0}
+              className="px-3 py-2 rounded-lg border border-red-400 text-red-500 text-sm font-medium transition hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed">
+              全選刪除
+            </button>
+            <button onClick={addRow}
+              className="px-4 py-2 rounded-lg text-white text-sm font-medium transition hover:opacity-90"
+              style={{ backgroundColor: '#0C3D2E' }}>
+              + 新增帳單
+            </button>
+          </div>
         </div>
 
         {rows.length === 0 ? (
@@ -715,6 +758,12 @@ export default function FillPageClient({
               <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr style={{ backgroundColor: '#0C3D2E' }} className="text-white">
+                    <th className="px-2 py-3 text-center w-8">
+                      <input type="checkbox"
+                        checked={rows.length > 0 && selected.size === rows.length}
+                        onChange={toggleSelectAll}
+                      />
+                    </th>
                     <th className="px-3 py-3 text-left w-24">月份</th>
                     <th className="px-3 py-3 text-left">場別 / 說明</th>
                     <th className="px-3 py-3 text-right w-32">用電量 (kWh)</th>
@@ -731,6 +780,12 @@ export default function FillPageClient({
                 <tbody>
                   {rows.map((row, idx) => (
                     <tr key={row.tempKey} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="px-2 py-1.5 text-center">
+                        <input type="checkbox"
+                          checked={selected.has(row.tempKey)}
+                          onChange={() => toggleSelect(row.tempKey)}
+                        />
+                      </td>
                       <td className="px-2 py-1.5">
                         <select value={row.month}
                           onChange={(e) => updateRow(row.tempKey, 'month', parseInt(e.target.value))}
@@ -816,7 +871,7 @@ export default function FillPageClient({
                 </tbody>
                 <tfoot>
                   <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold">
-                    <td colSpan={2} className="px-3 py-2 text-gray-700">合計</td>
+                    <td colSpan={3} className="px-3 py-2 text-gray-700">合計</td>
                     <td className="px-3 py-2 text-right text-gray-700 font-mono">
                       {totalKwh.toLocaleString(undefined, { minimumFractionDigits: 10, maximumFractionDigits: 10 })} kWh
                     </td>
@@ -1173,7 +1228,20 @@ export default function FillPageClient({
       const lvRef = useRef(lv);
       const [secStatus, setSecStatus] = useState<SaveStatus>('idle');
       const [cleared, setCleared] = useState<Set<number>>(new Set());
+      const [reviewedOverride, setReviewedOverride] = useState<Record<number, boolean>>({});
       const tmr = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+      // 查核 toggle（未查核才會被 /summary 等彙總納入計算，見 CLAUDE.md 業務規則）
+      async function toggleReview(month: number, recordId: string, current: boolean) {
+        const newVal = !current;
+        setReviewedOverride((prev) => ({ ...prev, [month]: newVal }));
+        try {
+          await fetch(`/api/records/${recordId}`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_reviewed: newVal }),
+          });
+        } catch { /* 失敗則畫面暫時領先於伺服器，重新整理後會校正 */ }
+      }
 
       // 清空某月（autosave activity_value=null → 後端一併清 co2e；cleared 讓本列 co2e 即時顯示「—」）
       async function clearWasteMonth(month: number) {
@@ -1246,6 +1314,7 @@ export default function FillPageClient({
                 <th className="px-4 py-2 text-right">廢棄物重量 (kg)</th>
                 <th className="px-3 py-2 text-center w-16">明細</th>
                 <th className="px-4 py-2 text-right w-32">CO₂e (t)</th>
+                <th className="px-2 py-2 text-center w-10">查核</th>
               </tr>
             </thead>
             <tbody>
@@ -1254,6 +1323,7 @@ export default function FillPageClient({
                   (r) => r.emission_source_id === source.id && r.month === m,
                 );
                 const val = lv[m] ?? (existing?.activity_value != null ? String(existing.activity_value) : '');
+                const isReviewed = reviewedOverride[m] ?? existing?.is_reviewed ?? false;
                 return (
                   <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                     <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
@@ -1270,10 +1340,18 @@ export default function FillPageClient({
                     </td>
                     <td className="px-4 py-1.5 text-right text-gray-400 text-xs font-mono whitespace-nowrap">
                       {!cleared.has(m) && existing?.co2e_total != null ? existing.co2e_total.toFixed(4) : '—'}
-                      <button onClick={() => clearWasteMonth(m)} disabled={!existing?.id || existing?.is_reviewed}
-                        title={existing?.is_reviewed ? '已查核不可清空，請先取消查核' : '清空此月數值'}
-                        className={`ml-2 text-sm leading-none transition ${!existing?.id || existing?.is_reviewed ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
+                      <button onClick={() => clearWasteMonth(m)} disabled={!existing?.id || isReviewed}
+                        title={isReviewed ? '已查核不可清空，請先取消查核' : '清空此月數值'}
+                        className={`ml-2 text-sm leading-none transition ${!existing?.id || isReviewed ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
                         ✕
+                      </button>
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      <button onClick={() => existing?.id && toggleReview(m, existing.id, isReviewed)}
+                        disabled={!existing?.id}
+                        className="text-xl leading-none disabled:opacity-30"
+                        title={isReviewed ? '取消查核' : '標記已查核'}>
+                        {isReviewed ? '✅' : '⬜'}
                       </button>
                     </td>
                   </tr>
@@ -1288,6 +1366,7 @@ export default function FillPageClient({
                 <td className="px-4 py-2 text-right text-gray-700 font-mono">
                   {co2eTotal > 0 ? co2eTotal.toFixed(4) + ' t' : '—'}
                 </td>
+                <td />
               </tr>
             </tfoot>
           </table>

@@ -195,8 +195,14 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
                   >
                     下載範本
                   </a>
+                  <a
+                    href={`/api/records/import/template/all?factory_code=${encodeURIComponent(factory.factory_code)}&year=${year}`}
+                    className="px-4 py-2 rounded-lg text-sm font-medium border border-green-700 text-green-800 hover:bg-green-50 transition"
+                  >
+                    下載所有適用範本
+                  </a>
                 </div>
-                <p className="text-xs text-gray-400 mt-1.5">使用 ERP 匯出檔時，此排放源即為匯入目標源；使用範本時可先下載對應排放源範本。</p>
+                <p className="text-xs text-gray-400 mt-1.5">使用 ERP 匯出檔時，此排放源即為匯入目標源；使用範本時可先下載對應排放源範本，或一次下載本廠所有適用排放源範本（zip）。</p>
               </div>
 
               {/* ② 工廠 & 年度（唯讀顯示，置於選排放源下方） */}
