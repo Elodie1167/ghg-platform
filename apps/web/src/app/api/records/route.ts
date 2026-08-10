@@ -20,6 +20,9 @@ const CreateRecordSchema = z.object({
   meter_number: z.string().nullable().optional(),
   date_from: z.string().nullable().optional(),
   date_to: z.string().nullable().optional(),
+  // 商務旅行「機票/車票碳排法」：直接填票證上的 CO2e（kg），跳過排放係數計算
+  is_manual_co2e: z.boolean().optional().default(false),
+  manual_co2e_kg: z.number().min(0).nullable().optional(),
 });
 
 // ── FastAPI 回傳型別 ──────────────────────────────────────────────
@@ -137,6 +140,7 @@ export async function GET(req: NextRequest) {
         ar.hfc_t::float AS hfc_t,
         ar.emission_factor_id,
         ar.is_reviewed,
+        ar.is_manual_co2e,
         ar.reviewed_at,
         ar.import_source,
         ar.created_at,
@@ -196,6 +200,8 @@ export async function POST(req: NextRequest) {
     meter_number,
     date_from,
     date_to,
+    is_manual_co2e,
+    manual_co2e_kg,
   } = parsed.data;
 
   try {
@@ -205,15 +211,31 @@ export async function POST(req: NextRequest) {
          (factory_id, emission_source_id, year, month,
           activity_value, activity_unit, notes,
           sub_location, meter_number, date_from, date_to,
-          import_source, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date, 'manual', NOW(), NOW())
+          is_manual_co2e, import_source, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date, $12, 'manual', NOW(), NOW())
        RETURNING id`,
       [factory_id, emission_source_id, year, month,
        activity_value ?? null, activity_unit, notes ?? null,
-       sub_location ?? null, meter_number ?? null, date_from ?? null, date_to ?? null],
+       sub_location ?? null, meter_number ?? null, date_from ?? null, date_to ?? null,
+       is_manual_co2e],
     );
 
     const newId: string = insertResult.rows[0].id;
+
+    // 機票/車票碳排法：直接用使用者輸入的 kg CO2e，不套排放係數
+    if (is_manual_co2e) {
+      const co2e_total = manual_co2e_kg != null ? Math.round((manual_co2e_kg / 1000) * 10000) / 10000 : null;
+      await query(
+        `UPDATE activity_records
+         SET co2e_total = $1, co2e_location = NULL, co2e_market = NULL, co2e_biomass_co2 = NULL,
+             emission_factor_id = NULL, co2_t = NULL, ch4_t = NULL, n2o_t = NULL, hfc_t = NULL,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [co2e_total, newId],
+      );
+      const finalResult = await query(`SELECT * FROM activity_records WHERE id = $1`, [newId]);
+      return NextResponse.json({ data: finalResult.rows[0], error: null }, { status: 201 });
+    }
 
     // Step 2：計算 CO₂e（FastAPI 優先，失敗時 TypeScript 備援）
     let calc: CalcResult | null = null;

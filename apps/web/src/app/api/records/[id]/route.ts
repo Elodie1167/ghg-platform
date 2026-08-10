@@ -49,6 +49,9 @@ const UpdateRecordSchema = z.object({
   date_from: z.string().nullable().optional(),
   date_to: z.string().nullable().optional(),
   source_doc_url: z.string().nullable().optional(),
+  // 商務旅行「機票/車票碳排法」：直接填票證上的 CO2e（kg），跳過排放係數計算
+  is_manual_co2e: z.boolean().optional(),
+  manual_co2e_kg: z.number().min(0).nullable().optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────
@@ -153,6 +156,19 @@ export async function PUT(
     if (updates.source_doc_url !== undefined) {
       setClauses.push(`source_doc_url = $${paramIdx++}`);
       values.push(updates.source_doc_url);
+    }
+    if (updates.is_manual_co2e !== undefined) {
+      setClauses.push(`is_manual_co2e = $${paramIdx++}`);
+      values.push(updates.is_manual_co2e);
+    }
+    if (updates.manual_co2e_kg !== undefined) {
+      const co2eTotal = updates.manual_co2e_kg != null
+        ? Math.round((updates.manual_co2e_kg / 1000) * 10000) / 10000
+        : null;
+      setClauses.push(`co2e_total = $${paramIdx++}`);
+      values.push(co2eTotal);
+      setClauses.push(`co2e_location = NULL, co2e_market = NULL, co2e_biomass_co2 = NULL,
+        emission_factor_id = NULL, co2_t = NULL, ch4_t = NULL, n2o_t = NULL, hfc_t = NULL`);
     }
 
     values.push(id); // WHERE id = $N

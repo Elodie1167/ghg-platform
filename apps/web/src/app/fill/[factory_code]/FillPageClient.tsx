@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Factory, FactoryListItem, EmissionSource, ActivityRecord, WasteConfig, WasteMethodConfig, AssignedFactor } from './page';
+import type { Factory, FactoryListItem, EmissionSource, ActivityRecord, WasteConfig, WasteMethodConfig, AssignedFactor, TravelModeConfig, TravelSourceMode } from './page';
 import { MONTHS, HEADER_BG } from './tabTypes';
 import ImportModal from './ImportModal';
 import FuelTab from './FuelTab';
@@ -56,6 +56,9 @@ type TabId = typeof TABS[number]['id'];
 const ELEC_SOURCE_CODE = '2-1-A';
 const SOLAR_SOURCE_CODE = '2-1-B';
 
+// 商務旅行可切換「機票/車票碳排法」的排放源：3-6-A 飛機、3-6-C 火車（住宿 3-6-B 不適用）
+const TRAVEL_MANUAL_CODES: Record<string, string> = { '3-6-A': '飛機', '3-6-C': '火車' };
+
 const CUSTOM_SOURCE_ORDER: Record<string, number> = {
   // 固定燃燒：鍋爐類 → 廚房 → 發電機 → 其他
   '1-1A-1': 1, '1-1A-9': 2, '1-1B-1': 3, '1-1B-2': 4, '1-1A-3': 5,
@@ -88,6 +91,7 @@ interface Props {
   year: number;
   initialSelectedIds: string[];
   initialWasteConfig: Partial<WasteConfig> | null;
+  initialTravelConfig: TravelModeConfig;
   assignedFactors: AssignedFactor[];
   recMwh: number;
 }
@@ -111,6 +115,7 @@ export default function FillPageClient({
   year,
   initialSelectedIds,
   initialWasteConfig,
+  initialTravelConfig,
   assignedFactors,
   recMwh,
 }: Props) {
@@ -169,6 +174,8 @@ export default function FillPageClient({
       landfill: initialWasteConfig?.textile?.landfill ?? 0,
     },
   }));
+
+  const [travelConfig, setTravelConfig] = useState<TravelModeConfig>(() => ({ ...initialTravelConfig }));
 
   const [localValues, setLocalValues] = useState<
     Record<string, { activity_value: string; notes: string }>
@@ -293,6 +300,7 @@ export default function FillPageClient({
   function BasicTab() {
     const [pendingIds, setPendingIds] = useState<Set<string>>(new Set(selectedSourceIds));
     const [pendingWaste, setPendingWaste] = useState<WasteConfig>(wasteConfig);
+    const [pendingTravel, setPendingTravel] = useState<TravelModeConfig>(travelConfig);
     const [configSaving, setConfigSaving] = useState(false);
     const [configMsg, setConfigMsg] = useState('');
     const reviewedCount = existingRecords.filter((r) => r.is_reviewed).length;
@@ -311,11 +319,12 @@ export default function FillPageClient({
         const res = await fetch(`/api/factories/${factory.factory_code}/source-config`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ selected_ids: Array.from(finalIds), waste_config: pendingWaste }),
+          body: JSON.stringify({ selected_ids: Array.from(finalIds), waste_config: pendingWaste, travel_mode: pendingTravel }),
         });
         if (!res.ok) throw new Error('Failed');
         setSelectedSourceIds(new Set(finalIds));
         setWasteConfig(pendingWaste);
+        setTravelConfig(pendingTravel);
         setConfigMsg('✅ 設定已儲存');
         setTimeout(() => setConfigMsg(''), 3000);
       } catch {
@@ -435,6 +444,81 @@ export default function FillPageClient({
                    s.source_code !== '3-5-W1' && s.source_code !== '3-5-W2',
           );
           if (groupSources.length === 0) return null;
+
+          // 商務旅行：勾選之外，飛機/火車各自可切換「距離法」或「機票/車票碳排法」
+          if (group.tabId === 'travel') {
+            const manualCount = Object.values(pendingTravel).filter((m) => m === 'manual').length;
+            return (
+              <div key={group.tabId} className="mb-6">
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="font-semibold text-gray-700 text-sm">{group.label}</h3>
+                  {manualCount > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full"
+                      style={{ backgroundColor: '#d1fae5', color: '#065f46' }}>
+                      {manualCount} 種用機票碳排法
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 mb-3">
+                  {groupSources
+                    .filter((s) => !s.is_always_active)
+                    .map((source) => {
+                      const checked = pendingIds.has(source.id);
+                      return (
+                        <label key={source.id}
+                          className="flex items-start gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all select-none"
+                          style={{
+                            backgroundColor: checked ? '#f0fdf4' : '#fff',
+                            borderColor: checked ? '#86efac' : '#e5e7eb',
+                            color: checked ? '#14532d' : '#374151',
+                          }}>
+                          <input type="checkbox" checked={checked}
+                            onChange={(e) => {
+                              setPendingIds((prev) => {
+                                const next = new Set(prev);
+                                if (e.target.checked) next.add(source.id); else next.delete(source.id);
+                                return next;
+                              });
+                            }}
+                            className="mt-0.5 w-4 h-4 flex-shrink-0"
+                            style={{ accentColor: '#16a34a' }}
+                          />
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium leading-snug">{source.name_zh}</div>
+                            <div className="text-xs opacity-50 font-mono">{source.source_code}</div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                </div>
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <p className="text-xs text-gray-500 mb-3">
+                    飛機／火車可選擇填報方式：「距離法」填人次與距離、套排放係數自動算；
+                    「機票/車票碳排法」直接填票證上標示的 CO₂e（kg），不套係數。
+                    住宿（3-6-B）僅支援房晚計算，無此選項。
+                  </p>
+                  <div className="grid grid-cols-2 gap-4 max-w-md">
+                    {Object.entries(TRAVEL_MANUAL_CODES).map(([code, label]) => {
+                      const src = groupSources.find((s) => s.source_code === code);
+                      if (!src) return null;
+                      const mode: TravelSourceMode = pendingTravel[code] ?? 'distance';
+                      return (
+                        <label key={code} className="flex items-center gap-2 text-sm text-gray-700">
+                          <span className="w-10 flex-shrink-0">{label}</span>
+                          <select value={mode}
+                            onChange={(e) => setPendingTravel((p) => ({ ...p, [code]: e.target.value as TravelSourceMode }))}
+                            className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+                            <option value="distance">距離法</option>
+                            <option value="manual">機票/車票碳排法</option>
+                          </select>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          }
 
           // 製程（焊條）：所有 1-3 來源合併成一個「焊條」checkbox
           if (group.tabId === 'process') {
@@ -2095,7 +2179,7 @@ export default function FillPageClient({
       case 'energy':     return <EnergyTab />;
       case 'upstream':   return null;  // always-mounted outside TabContent
       case 'downstream': return <DownstreamTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
-      case 'travel':     return <TravelTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
+      case 'travel':     return <TravelTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} travelMode={travelConfig} />;
       case 'commute':    return <CommuteTab factory={factory} year={year} emissionSources={emissionSources} selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords} setActiveTab={(t) => setActiveTab(t as TabId)} onReviewToggle={handleReviewToggle} />;
       case 'summary':    return <SummaryTab />;
     }

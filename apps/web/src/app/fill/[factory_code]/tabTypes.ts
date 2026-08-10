@@ -1,4 +1,4 @@
-import type { Factory, EmissionSource, ActivityRecord, AssignedFactor } from './page';
+import type { Factory, EmissionSource, ActivityRecord, AssignedFactor, TravelModeConfig } from './page';
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -11,6 +11,7 @@ export interface TabProps {
   setActiveTab: (tab: string) => void;
   assignedFactors?: AssignedFactor[];
   onReviewToggle?: (id: string, newVal: boolean) => void;
+  travelMode?: TravelModeConfig;
 }
 
 export const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);

@@ -49,6 +49,7 @@ export interface ActivityRecord {
   n2o_t: number | null;
   hfc_t: number | null;
   is_reviewed: boolean;
+  is_manual_co2e: boolean;
   sub_location: string | null;
   meter_number: string | null;
   date_from: string | null;
@@ -67,6 +68,10 @@ export interface WasteConfig {
   general: WasteMethodConfig;
   textile: WasteMethodConfig;
 }
+
+// 商務旅行填報方式：'distance' 距離法（既有，套排放係數）／'manual' 直接填機票/車票 CO2e
+export type TravelSourceMode = 'distance' | 'manual';
+export type TravelModeConfig = Partial<Record<string, TravelSourceMode>>;
 
 export interface AssignedFactor {
   id: string;
@@ -133,6 +138,7 @@ export default async function FillPage({
     ? config.selected_ids
     : [];
   const initialWasteConfig: WasteConfig | null = config.waste_config ?? null;
+  const initialTravelConfig: TravelModeConfig = config.travel_mode ?? {};
 
   const allFactoriesResult = await query(
     `SELECT id, factory_code, name_zh, country_code
@@ -153,7 +159,7 @@ export default async function FillPage({
             ar.activity_value::float, ar.activity_unit, ar.notes,
             ar.co2e_total::float, ar.co2e_location::float, ar.co2e_market::float, ar.co2e_biomass_co2::float,
             ar.co2_t::float, ar.ch4_t::float, ar.n2o_t::float, ar.hfc_t::float,
-            ar.is_reviewed, ar.sub_location, ar.meter_number,
+            ar.is_reviewed, ar.is_manual_co2e, ar.sub_location, ar.meter_number,
             ar.date_from::text AS date_from, ar.date_to::text AS date_to,
             (SELECT COUNT(*)::int FROM activity_line_items li WHERE li.activity_record_id = ar.id) AS line_items_count
      FROM activity_records ar
@@ -207,6 +213,7 @@ export default async function FillPage({
       year={currentYear}
       initialSelectedIds={initialSelectedIds}
       initialWasteConfig={initialWasteConfig}
+      initialTravelConfig={initialTravelConfig}
       assignedFactors={assignedFactors}
       recMwh={recMwh}
     />

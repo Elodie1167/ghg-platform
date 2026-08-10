@@ -21,10 +21,12 @@ interface EventRow {
   co2e_total: number | null;
   is_reviewed: boolean;
   saveStatus: SaveStatus;
+  is_manual_co2e: boolean;
+  manual_co2e_kg: string;  // 機票/車票碳排法：票證上的 CO2e (kg)
 }
 
 export default function TravelTab({
-  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab, onReviewToggle,
+  factory, year, emissionSources, selectedSourceIds, existingRecords, setActiveTab, onReviewToggle, travelMode,
 }: TabProps) {
   const sources = emissionSources
     .filter((s) => TRAVEL_CODES.includes(s.source_code) && selectedSourceIds.has(s.id))
@@ -57,6 +59,7 @@ export default function TravelTab({
           year={year}
           records={existingRecords.filter((r) => r.emission_source_id === src.id)}
           onReviewToggle={onReviewToggle}
+          isManualMode={travelMode?.[src.source_code] === 'manual'}
         />
       ))}
     </div>
@@ -64,13 +67,14 @@ export default function TravelTab({
 }
 
 function TravelSection({
-  source, factory, year, records, onReviewToggle,
+  source, factory, year, records, onReviewToggle, isManualMode,
 }: {
   source: EmissionSource;
   factory: TabProps['factory'];
   year: number;
   records: ActivityRecord[];
   onReviewToggle?: (id: string, newVal: boolean) => void;
+  isManualMode: boolean;
 }) {
   const isHotel = source.source_code === HOTEL_CODE;
 
@@ -83,6 +87,8 @@ function TravelSection({
       activity_value: r.activity_value != null ? String(r.activity_value) : '',
       notes: r.notes ?? '', co2e_total: r.co2e_total,
       is_reviewed: r.is_reviewed ?? false, saveStatus: 'idle' as SaveStatus,
+      is_manual_co2e: r.is_manual_co2e ?? false,
+      manual_co2e_kg: r.is_manual_co2e && r.co2e_total != null ? String(r.co2e_total * 1000) : '',
     }))
   );
 
@@ -127,6 +133,7 @@ function TravelSection({
       tempKey, id: null, month: new Date().getMonth() + 1,
       date_from: '', sub_location: '', meter_number: '', activity_value: '',
       notes: '', co2e_total: null, is_reviewed: false, saveStatus: 'idle',
+      is_manual_co2e: isManualMode, manual_co2e_kg: '',
     }]);
   }
 
@@ -155,17 +162,29 @@ function TravelSection({
 
     const actNum = row.activity_value !== '' ? parseFloat(row.activity_value) : null;
     const mtrNum = row.meter_number !== '' ? parseFloat(row.meter_number) : null;
+    const manualKg = row.manual_co2e_kg !== '' ? parseFloat(row.manual_co2e_kg) : null;
 
-    const payload = {
-      factory_id: factory.id, emission_source_id: source.id,
-      year, month: row.month,
-      activity_value: actNum != null && !isNaN(actNum) ? actNum : null,
-      activity_unit: source.default_unit,
-      meter_number: mtrNum != null && !isNaN(mtrNum) ? mtrNum : null,
-      sub_location: row.sub_location || null,
-      date_from: row.date_from || null,
-      notes: row.notes || null,
-    };
+    const payload = isManualMode
+      ? {
+          factory_id: factory.id, emission_source_id: source.id,
+          year, month: row.month,
+          activity_unit: source.default_unit,
+          sub_location: row.sub_location || null,
+          date_from: row.date_from || null,
+          notes: row.notes || null,
+          is_manual_co2e: true,
+          manual_co2e_kg: manualKg != null && !isNaN(manualKg) ? manualKg : null,
+        }
+      : {
+          factory_id: factory.id, emission_source_id: source.id,
+          year, month: row.month,
+          activity_value: actNum != null && !isNaN(actNum) ? actNum : null,
+          activity_unit: source.default_unit,
+          meter_number: mtrNum != null && !isNaN(mtrNum) ? mtrNum : null,
+          sub_location: row.sub_location || null,
+          date_from: row.date_from || null,
+          notes: row.notes || null,
+        };
 
     try {
       if (row.id) {
@@ -244,10 +263,13 @@ function TravelSection({
                 <th className="px-3 py-2.5 text-left w-20">月份</th>
                 <th className="px-3 py-2.5 text-left w-28">出發日期</th>
                 <th className="px-3 py-2.5 text-left">{isHotel ? '旅館 / 城市' : '路線（起→訖）'}</th>
-                {!isHotel && <th className="px-3 py-2.5 text-right w-20">人次</th>}
-                <th className="px-3 py-2.5 text-right w-28">
-                  {isHotel ? `房晚 (${source.default_unit})` : `距離 (${source.default_unit})`}
-                </th>
+                {!isHotel && !isManualMode && <th className="px-3 py-2.5 text-right w-20">人次</th>}
+                {!isManualMode && (
+                  <th className="px-3 py-2.5 text-right w-28">
+                    {isHotel ? `房晚 (${source.default_unit})` : `距離 (${source.default_unit})`}
+                  </th>
+                )}
+                {isManualMode && <th className="px-3 py-2.5 text-right w-32">機票/車票 CO₂e (kg)</th>}
                 <th className="px-3 py-2.5 text-left w-28">備註</th>
                 <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
@@ -283,7 +305,7 @@ function TravelSection({
                       onChange={(e) => updateRow(row.tempKey, 'sub_location', e.target.value)}
                       className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </td>
-                  {!isHotel && (
+                  {!isHotel && !isManualMode && (
                     <td className="px-2 py-1.5">
                       <input type="number" min="1" step="1" placeholder="人次"
                         value={row.meter_number}
@@ -291,13 +313,23 @@ function TravelSection({
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                     </td>
                   )}
-                  <td className="px-2 py-1.5">
-                    <input type="number" min="0" step="any"
-                      placeholder={isHotel ? '房晚' : 'km'}
-                      value={row.activity_value}
-                      onChange={(e) => updateRow(row.tempKey, 'activity_value', e.target.value)}
-                      className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
-                  </td>
+                  {!isManualMode && (
+                    <td className="px-2 py-1.5">
+                      <input type="number" min="0" step="any"
+                        placeholder={isHotel ? '房晚' : 'km'}
+                        value={row.activity_value}
+                        onChange={(e) => updateRow(row.tempKey, 'activity_value', e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </td>
+                  )}
+                  {isManualMode && (
+                    <td className="px-2 py-1.5">
+                      <input type="number" min="0" step="any" placeholder="機票/車票上的 kg CO2e"
+                        value={row.manual_co2e_kg}
+                        onChange={(e) => updateRow(row.tempKey, 'manual_co2e_kg', e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </td>
+                  )}
                   <td className="px-2 py-1.5">
                     <input type="text" placeholder="備註" value={row.notes}
                       onChange={(e) => updateRow(row.tempKey, 'notes', e.target.value)}
@@ -328,9 +360,11 @@ function TravelSection({
             </tbody>
             <tfoot>
               <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
-                <td colSpan={isHotel ? 4 : 5} className="px-3 py-2 text-gray-700">合計</td>
+                <td colSpan={isHotel || isManualMode ? 4 : 5} className="px-3 py-2 text-gray-700">合計</td>
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
-                  {totalAct.toLocaleString(undefined, { maximumFractionDigits: 10 })} {source.default_unit}
+                  {isManualMode
+                    ? '—'
+                    : `${totalAct.toLocaleString(undefined, { maximumFractionDigits: 10 })} ${source.default_unit}`}
                 </td>
                 <td />
                 <td className="px-3 py-2 text-right font-mono text-gray-700">

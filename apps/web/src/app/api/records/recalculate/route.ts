@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
      JOIN factories f ON ar.factory_id = f.id
      WHERE ar.factory_id = $1 AND ar.year = $2
        AND ar.is_reviewed = true
+       AND ar.is_manual_co2e = false
        AND ar.activity_value IS NOT NULL AND ar.activity_value > 0
        AND (ar.co2e_total IS NULL OR ar.co2_t IS NULL)`,
     [factory_id, year],
