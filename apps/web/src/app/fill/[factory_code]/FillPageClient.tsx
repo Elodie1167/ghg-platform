@@ -2180,7 +2180,7 @@ export default function FillPageClient({
               </tbody>
             </table>
             <p className="text-xs text-blue-300 mt-2">
-              範疇一 EF 單位：kg/TJ；範疇二電網 EF：tCO₂e/MWh；S3：kg/kg 或 kg/tonne-km；廢棄物焚化/回收/掩埋係數：kg CO₂e/kg
+              範疇一 EF 單位：kg/TJ；範疇二電網 EF：tCO₂e/MWh；S3：kg/kg 或 kg/tonne-km；廢棄物焚化/回收/掩埋係數：kg CO₂e/tonnes
             </p>
           </div>
         )}

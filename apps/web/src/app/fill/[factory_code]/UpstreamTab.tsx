@@ -26,10 +26,11 @@ const ANNUAL_MONTH = 1;
 interface CellState {
   id: string | null;
   value: string;
+  co2e_total: number | null;
   is_reviewed: boolean;
   saveStatus: SaveStatus;
 }
-const EMPTY_CELL: CellState = { id: null, value: '', is_reviewed: false, saveStatus: 'idle' };
+const EMPTY_CELL: CellState = { id: null, value: '', co2e_total: null, is_reviewed: false, saveStatus: 'idle' };
 
 // TKM key: `${sourceId}-${supply}`（依運輸方式加總，不分品項）
 // 重量 key: `${supply}-${item}`（依品項加總，不分運輸方式）
@@ -61,6 +62,7 @@ export default function UpstreamTab({
         tkm.set(`${r.emission_source_id}-${sl}`, {
           id: r.id,
           value: r.activity_value != null ? String(r.activity_value) : '',
+          co2e_total: r.co2e_total,
           is_reviewed: r.is_reviewed ?? false,
           saveStatus: 'idle',
         });
@@ -84,6 +86,7 @@ export default function UpstreamTab({
         weight.set(key, {
           id: preferThis || !existing.id ? r.id : existing.id,
           value: String((parseFloat(existing.value) || 0) + (isNaN(tonNum) ? 0 : tonNum)),
+          co2e_total: null,
           is_reviewed: existing.is_reviewed || (r.is_reviewed ?? false),
           saveStatus: 'idle',
         });
@@ -91,6 +94,7 @@ export default function UpstreamTab({
         weight.set(key, {
           id: r.id,
           value: r.meter_number != null ? String(r.meter_number) : '',
+          co2e_total: null,
           is_reviewed: r.is_reviewed ?? false,
           saveStatus: 'idle',
         });
@@ -319,6 +323,7 @@ export default function UpstreamTab({
                 <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
                   <th className="px-4 py-2.5 text-left w-20">運輸方式</th>
                   <th className="px-2 py-2.5 text-right w-28">TKM 年度合計</th>
+                  <th className="px-2 py-2.5 text-right w-20">CO₂e (t)</th>
                   <th className="px-2 py-2.5 w-16" />
                 </tr>
               </thead>
@@ -341,6 +346,9 @@ export default function UpstreamTab({
                             className="w-28 border border-gray-300 rounded px-1.5 py-1 text-right text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
                           />
                         </div>
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono text-gray-500 text-xs">
+                        {cell.co2e_total != null ? cell.co2e_total.toFixed(4) : '—'}
                       </td>
                       <td className="px-2 py-1.5">
                         <div className="flex gap-1 items-center justify-center">

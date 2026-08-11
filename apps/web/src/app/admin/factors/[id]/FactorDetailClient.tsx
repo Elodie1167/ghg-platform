@@ -364,14 +364,14 @@ export default function FactorDetailClient({ factor, factories }: Props) {
             ) : isWaste ? (
               <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
                 <p className="text-xs text-orange-700 mb-3">
-                  廢棄物：依該廠「基本資訊」設定的處置方式 %（焚化/回收/掩埋）加權平均係數，
-                  計算引擎以 <code>活動量 × (焚化% × 焚化係數 + 回收% × 回收係數 + 掩埋% × 掩埋係數) ÷ 100 ÷ 1000</code> 得 tCO₂e。
+                  廢棄物：依該廠「基本資訊」設定的處置方式 %（焚化/回收/掩埋）加權平均係數（係數單位 kg CO₂e/tonnes），
+                  計算引擎以 <code>活動量(kg) × (焚化% × 焚化係數 + 回收% × 回收係數 + 掩埋% × 掩埋係數) ÷ 100 ÷ 1,000,000</code> 得 tCO₂e。
                   任一 % &gt; 0 的處置方式若未填係數，該廠當月無法算出碳排。
                 </p>
                 <div className="grid grid-cols-3 gap-4">
-                  <NumField label="焚化係數" value={n(edit.waste_incineration_factor)} onChange={(v) => setEdit((e) => ({ ...e, waste_incineration_factor: p(v) }))} unit="kg CO₂e/kg" />
-                  <NumField label="回收係數" value={n(edit.waste_recycling_factor)} onChange={(v) => setEdit((e) => ({ ...e, waste_recycling_factor: p(v) }))} unit="kg CO₂e/kg" />
-                  <NumField label="掩埋係數" value={n(edit.waste_landfill_factor)} onChange={(v) => setEdit((e) => ({ ...e, waste_landfill_factor: p(v) }))} unit="kg CO₂e/kg" />
+                  <NumField label="焚化係數" value={n(edit.waste_incineration_factor)} onChange={(v) => setEdit((e) => ({ ...e, waste_incineration_factor: p(v) }))} unit="kg CO₂e/tonnes" />
+                  <NumField label="回收係數" value={n(edit.waste_recycling_factor)} onChange={(v) => setEdit((e) => ({ ...e, waste_recycling_factor: p(v) }))} unit="kg CO₂e/tonnes" />
+                  <NumField label="掩埋係數" value={n(edit.waste_landfill_factor)} onChange={(v) => setEdit((e) => ({ ...e, waste_landfill_factor: p(v) }))} unit="kg CO₂e/tonnes" />
                 </div>
               </div>
             ) : isScope3 ? (

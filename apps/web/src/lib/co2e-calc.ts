@@ -141,7 +141,9 @@ export async function calcCo2e(params: {
       if ((pct ?? 0) > 0 && factor == null) return null;
     }
     const weightedFactor = pcts.reduce((s, [pct, factor]) => s + ((pct ?? 0) / 100) * (factor ?? 0), 0);
-    const co2e = r4(value * weightedFactor / 1000);
+    // 係數單位為 kg CO2e/tonnes（每噸廢棄物），activity_value 為 kg，故先除 1000 換算成噸再乘係數，
+    // 結果為 kg CO2e，再除 1000 得 tCO2e
+    const co2e = r4(value * weightedFactor / 1_000_000);
     return {
       co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
       emission_factor_id: f.id, warnings: [],

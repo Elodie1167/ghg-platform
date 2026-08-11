@@ -269,11 +269,14 @@ function TravelSection({
                 {!isHotel && !isManualMode && <th className="px-3 py-2.5 text-right w-20">人次</th>}
                 {!isManualMode && (
                   <th className="px-3 py-2.5 text-right w-28">
-                    {isHotel ? `房晚 (${source.default_unit})` : `距離 (${source.default_unit})`}
+                    {isHotel ? `房晚 (${source.default_unit})` : `單程距離 (${source.default_unit})`}
                   </th>
                 )}
                 {isManualMode && <th className="px-3 py-2.5 text-right w-32">機票/車票 CO₂e (kg)</th>}
                 {!isHotel && !isManualMode && <th className="px-3 py-2.5 text-center w-16">往返</th>}
+                {!isHotel && !isManualMode && (
+                  <th className="px-3 py-2.5 text-right w-28">往返距離 ({source.default_unit})</th>
+                )}
                 <th className="px-3 py-2.5 text-left w-28">備註</th>
                 <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
                 <th className="px-3 py-2.5 text-center w-8">查核</th>
@@ -334,6 +337,13 @@ function TravelSection({
                         className="w-4 h-4" style={{ accentColor: '#16a34a' }} />
                     </td>
                   )}
+                  {!isHotel && !isManualMode && (
+                    <td className="px-3 py-1.5 text-right text-gray-500 text-xs font-mono">
+                      {row.is_round_trip && row.activity_value !== ''
+                        ? (parseFloat(row.activity_value) * 2).toLocaleString(undefined, { maximumFractionDigits: 10 })
+                        : '—'}
+                    </td>
+                  )}
                   {isManualMode && (
                     <td className="px-2 py-1.5">
                       <input type="number" min="0" step="any" placeholder="機票/車票上的 kg CO2e"
@@ -378,6 +388,7 @@ function TravelSection({
                     ? '—'
                     : `${totalAct.toLocaleString(undefined, { maximumFractionDigits: 10 })} ${source.default_unit}`}
                 </td>
+                {!isHotel && !isManualMode && <td />}
                 {!isHotel && !isManualMode && <td />}
                 <td />
                 <td className="px-3 py-2 text-right font-mono text-gray-700">

@@ -21,6 +21,7 @@ const ANNUAL_MONTH = 1;
 interface CellState {
   id: string | null;
   tkm: string;
+  co2e_total: number | null;
   is_reviewed: boolean;
   saveStatus: SaveStatus;
 }
@@ -72,6 +73,7 @@ export default function DownstreamTab({
         map.set(r.emission_source_id, {
           id: r.id,
           tkm: r.activity_value != null ? String(r.activity_value) : '',
+          co2e_total: r.co2e_total,
           is_reviewed: r.is_reviewed ?? false,
           saveStatus: 'idle',
         });
@@ -86,11 +88,11 @@ export default function DownstreamTab({
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   function getCell(sourceId: string): CellState {
-    return cells.get(sourceId) ?? { id: null, tkm: '', is_reviewed: false, saveStatus: 'idle' };
+    return cells.get(sourceId) ?? { id: null, tkm: '', co2e_total: null, is_reviewed: false, saveStatus: 'idle' };
   }
 
   function updateCell(sourceId: string, value: string) {
-    const prev = cellsRef.current.get(sourceId) ?? { id: null, tkm: '', is_reviewed: false, saveStatus: 'idle' };
+    const prev = cellsRef.current.get(sourceId) ?? { id: null, tkm: '', co2e_total: null, is_reviewed: false, saveStatus: 'idle' };
     const next = new Map(cellsRef.current);
     next.set(sourceId, { ...prev, tkm: value, saveStatus: 'saving' });
     cellsRef.current = next;
@@ -187,6 +189,9 @@ export default function DownstreamTab({
   const grandTotal = visibleSources.reduce(
     (s, src) => s + (parseFloat(getCell(src.id).tkm) || 0), 0,
   );
+  const grandTotalCo2e = visibleSources.reduce(
+    (s, src) => s + (getCell(src.id).co2e_total ?? 0), 0,
+  );
 
   return (
     <div>
@@ -222,6 +227,7 @@ export default function DownstreamTab({
             <tr style={{ backgroundColor: HEADER_BG }} className="text-white text-xs">
               <th className="px-4 py-2.5 text-left w-28">運輸方式</th>
               <th className="px-4 py-2.5 text-left">年度 TKM（公噸‧公里）</th>
+              <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
               <th className="px-3 py-2.5 text-center w-16">明細</th>
               <th className="px-3 py-2.5 text-center w-16">查核</th>
               <th className="px-3 py-2.5 text-center w-12">狀態</th>
@@ -243,6 +249,9 @@ export default function DownstreamTab({
                       onChange={(e) => updateCell(src.id, e.target.value)}
                       className="w-56 border border-gray-300 rounded px-3 py-1.5 text-right font-mono text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                     />
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-gray-500 text-xs">
+                    {cell.co2e_total != null ? cell.co2e_total.toFixed(4) : '—'}
                   </td>
                   <td className="px-3 py-2 text-center">
                     <LineItemsCell recordId={cell.id}
@@ -279,6 +288,9 @@ export default function DownstreamTab({
               <td className="px-4 py-2 text-gray-700">合計</td>
               <td className="px-4 py-2 font-mono text-gray-700">
                 {grandTotal > 0 ? grandTotal.toLocaleString(undefined, { maximumFractionDigits: 10 }) + ' TKM' : '—'}
+              </td>
+              <td className="px-3 py-2 text-right font-mono text-gray-700">
+                {grandTotalCo2e > 0 ? grandTotalCo2e.toFixed(4) + ' t' : '—'}
               </td>
               <td colSpan={3} />
             </tr>
