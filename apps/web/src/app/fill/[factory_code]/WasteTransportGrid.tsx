@@ -40,6 +40,14 @@ export default function WasteTransportGrid({
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // 使用者輸入的即時值（伺服器回寫前先顯示自己打的字）
   const [draft, setDraft] = useState<Record<string, string>>({});
+  // 「套用到全年」的來源輸入（不對應任何一個月，純粹是要複製出去的值）
+  const [bulk, setBulk] = useState<Record<'general' | 'textile', {
+    destination_name: string; destination_address: string; distance_km: string;
+  }>>({
+    general: { destination_name: '', destination_address: '', distance_km: '' },
+    textile: { destination_name: '', destination_address: '', distance_km: '' },
+  });
+  const [applying, setApplying] = useState<'general' | 'textile' | null>(null);
 
   const recOf = (stream: string, m: number) =>
     records.find((r) => r.source_code === '3-5-T1' && r.month === m
@@ -68,31 +76,77 @@ export default function WasteTransportGrid({
     timers.current[`${stream}-${m}`] = setTimeout(() => save(stream, m), 800);
   }
 
-  async function save(stream: 'general' | 'textile', m: number) {
-    const distRaw = readField(stream, m, 'distance_km').trim();
+  async function saveOne(
+    stream: 'general' | 'textile', m: number,
+    values: { destination_name: string; destination_address: string; distance_km: string },
+  ): Promise<void> {
+    const distRaw = values.distance_km.trim();
     const dist = distRaw === '' ? null : Number(distRaw);
     if (dist != null && (!isFinite(dist) || dist <= 0)) {
-      setErr(`${m} 月的距離需為大於 0 的數字`); setStatus('error'); return;
+      throw new Error(`${m} 月的距離需為大於 0 的數字`);
     }
+    const res = await fetch('/api/waste', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'transport', factory_id: factory.id, year, month: m, stream,
+        destination_name: values.destination_name.trim() || null,
+        destination_address: values.destination_address.trim() || null,
+        distance_km: dist,
+      }),
+    });
+    const j = await res.json();
+    if (!res.ok) throw new Error(j?.error ?? `HTTP ${res.status}`);
+  }
+
+  async function save(stream: 'general' | 'textile', m: number) {
     setStatus('saving'); setErr(null);
     try {
-      const res = await fetch('/api/waste', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kind: 'transport', factory_id: factory.id, year, month: m, stream,
-          destination_name: readField(stream, m, 'destination_name').trim() || null,
-          destination_address: readField(stream, m, 'destination_address').trim() || null,
-          distance_km: dist,
-        }),
+      await saveOne(stream, m, {
+        destination_name: readField(stream, m, 'destination_name'),
+        destination_address: readField(stream, m, 'destination_address'),
+        distance_km: readField(stream, m, 'distance_km'),
       });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j?.error ?? `HTTP ${res.status}`);
       setStatus('saved');
       onChanged();
       setTimeout(() => setStatus('idle'), 1500);
     } catch (e) {
       setStatus('error');
       setErr(e instanceof Error ? e.message : '儲存失敗');
+    }
+  }
+
+  /** 套用到全年：對該流所有「未查核」的月份寫入同一組處理場所/距離 */
+  async function applyToAll(stream: 'general' | 'textile') {
+    const values = bulk[stream];
+    if (!values.destination_name.trim() && !values.destination_address.trim() && !values.distance_km.trim()) {
+      setErr('請至少填一項要套用的內容'); setStatus('error'); return;
+    }
+    const targetMonths = MONTHS.filter((m) => !(recOf(stream, m)?.is_reviewed ?? false));
+    if (targetMonths.length === 0) {
+      setErr('本年度所有月份都已查核，無法套用'); setStatus('error'); return;
+    }
+    if (!confirm(`確定要把這組處理場所／距離套用到「${STREAMS.find((s) => s.key === stream)!.label}」共 ${targetMonths.length} 個月（已查核的月份會跳過）？`)) return;
+
+    setApplying(stream); setStatus('saving'); setErr(null);
+    try {
+      for (const m of targetMonths) {
+        await saveOne(stream, m, values);
+        // 讓已填的字同時反映在該月的個別欄位，避免使用者以為套用沒生效
+        setDraft((d) => ({
+          ...d,
+          [key(stream, m, 'destination_name')]: values.destination_name,
+          [key(stream, m, 'destination_address')]: values.destination_address,
+          [key(stream, m, 'distance_km')]: values.distance_km,
+        }));
+      }
+      setStatus('saved');
+      onChanged();
+      setTimeout(() => setStatus('idle'), 1500);
+    } catch (e) {
+      setStatus('error');
+      setErr(e instanceof Error ? e.message : '套用失敗');
+    } finally {
+      setApplying(null);
     }
   }
 
@@ -131,6 +185,32 @@ export default function WasteTransportGrid({
                 年度合計 {streamTotal > 0 ? streamTotal.toFixed(4) : '—'} tCO₂e
               </span>
             </div>
+
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex flex-wrap items-end gap-2">
+              <span className="text-xs text-gray-500 mb-1 w-full">
+                若全年送同一個處理場所、距離也相同，這裡填一次套用到 12 個月即可，不用逐月填：
+              </span>
+              <div style={{ minWidth: 150 }}>
+                <input className={input} placeholder="處理場所名稱"
+                  value={bulk[st.key].destination_name}
+                  onChange={(e) => setBulk((b) => ({ ...b, [st.key]: { ...b[st.key], destination_name: e.target.value } }))} />
+              </div>
+              <div style={{ minWidth: 220 }}>
+                <input className={input} placeholder="處理場所地址"
+                  value={bulk[st.key].destination_address}
+                  onChange={(e) => setBulk((b) => ({ ...b, [st.key]: { ...b[st.key], destination_address: e.target.value } }))} />
+              </div>
+              <div style={{ minWidth: 110 }}>
+                <input className={`${input} text-right`} type="number" step="any" min="0" placeholder="單程距離 km"
+                  value={bulk[st.key].distance_km}
+                  onChange={(e) => setBulk((b) => ({ ...b, [st.key]: { ...b[st.key], distance_km: e.target.value } }))} />
+              </div>
+              <button onClick={() => applyToAll(st.key)} disabled={applying === st.key}
+                className="px-3 py-1 text-xs rounded text-white disabled:opacity-50" style={{ backgroundColor: HEADER_BG }}>
+                {applying === st.key ? '套用中…' : '套用到全年'}
+              </button>
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead className="bg-gray-50 text-xs text-gray-600">
