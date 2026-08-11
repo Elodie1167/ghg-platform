@@ -157,25 +157,18 @@ export default function UpstreamTab({
     };
 
     try {
-      if (cell.id) {
-        const res = await fetch(`/api/records/${cell.id}`, {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) throw new Error();
-      } else {
-        const res = await fetch('/api/records', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        const nextMap = new Map(tkmRef.current);
-        const cur = nextMap.get(key);
-        if (cur) nextMap.set(key, { ...cur, id: data.data.id });
-        tkmRef.current = nextMap;
-        setCellState((s) => ({ ...s, tkm: nextMap }));
-      }
+      const url = cell.id ? `/api/records/${cell.id}` : '/api/records';
+      const res = await fetch(url, {
+        method: cell.id ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const nextMap = new Map(tkmRef.current);
+      const cur = nextMap.get(key);
+      if (cur) nextMap.set(key, { ...cur, id: data.data.id, co2e_total: data.data.co2e_total ?? null });
+      tkmRef.current = nextMap;
+      setCellState((s) => ({ ...s, tkm: nextMap }));
       markSaved(key, 'tkm');
     } catch {
       markError(key, 'tkm');
