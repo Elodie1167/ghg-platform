@@ -34,6 +34,7 @@ interface AnnualRow {
   value: string;
   notes: string;
   co2e: number | null;
+  is_reviewed: boolean;
   status: SaveStatus;
 }
 
@@ -75,6 +76,7 @@ export default function PurchaseTab({
           existingRec={existingRecords.find(
             (r) => r.emission_source_id === fabricSource.id && r.month === ANNUAL_MONTH
           ) ?? null}
+          onReviewToggle={onReviewToggle}
         />
       )}
 
@@ -90,6 +92,7 @@ export default function PurchaseTab({
                   <th className="px-4 py-2.5 text-left">採購品項</th>
                   <th className="px-4 py-2.5 text-right w-40">年度採購重量 (ton)</th>
                   <th className="px-4 py-2.5 text-right w-32">CO₂e (t)</th>
+                  <th className="px-4 py-2.5 text-center w-16">查核</th>
                 </tr>
               </thead>
               <tbody>
@@ -107,6 +110,7 @@ export default function PurchaseTab({
                       existingRec={existingRecords.find(
                         (r) => r.emission_source_id === src.id && r.month === ANNUAL_MONTH
                       ) ?? null}
+                      onReviewToggle={onReviewToggle}
                     />
                   );
                 })}
@@ -322,7 +326,7 @@ function WaterMonthly({
 // 線料/紙箱/塑料袋（3-1-B/C/D）：重量唯讀來自上游運輸，重量變動時自動同步 activity_value
 // 觸發後端依已指派的 scope3_factor 計算 CO₂e（需先於 /admin/factors 指派該廠係數）。
 function DerivedRow({
-  idx, source, ton, factory, year, existingRec,
+  idx, source, ton, factory, year, existingRec, onReviewToggle,
 }: {
   idx: number;
   source: EmissionSource;
@@ -330,9 +334,11 @@ function DerivedRow({
   factory: TabProps['factory'];
   year: number;
   existingRec: ActivityRecord | null;
+  onReviewToggle?: TabProps['onReviewToggle'];
 }) {
   const [recordId, setRecordId] = useState<string | null>(existingRec?.id ?? null);
   const [co2e, setCo2e] = useState<number | null>(existingRec?.co2e_total ?? null);
+  const [isReviewed, setIsReviewed] = useState<boolean>(existingRec?.is_reviewed ?? false);
   const [status, setStatus] = useState<SaveStatus>('idle');
   const savedTonRef = useRef<number | null>(existingRec?.activity_value ?? null);
   const recordIdRef = useRef(recordId);
@@ -376,6 +382,17 @@ function DerivedRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ton]);
 
+  async function toggleReview() {
+    if (!recordId) return;
+    const newVal = !isReviewed;
+    setIsReviewed(newVal);
+    await fetch(`/api/records/${recordId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_reviewed: newVal }),
+    });
+    onReviewToggle?.(recordId, newVal);
+  }
+
   return (
     <tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
       <td className="px-4 py-2">
@@ -392,12 +409,21 @@ function DerivedRow({
           ? <span className="text-amber-600" title="需先於 /admin/factors 指派此排放源的範疇三係數">尚未指派係數</span>
           : '—')}
       </td>
+      <td className="px-4 py-2 text-center">
+        <button onClick={toggleReview} disabled={!recordId}
+          title={isReviewed ? '已查核（點擊取消）' : recordId ? '點擊標記查核' : '請先有重量資料'}
+          className={`text-sm leading-none transition-all shrink-0
+            ${isReviewed ? 'text-green-500' : 'text-gray-300'}
+            ${!recordId ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+          {isReviewed ? '✅' : '⬜'}
+        </button>
+      </td>
     </tr>
   );
 }
 
 function FabricRow({
-  sourceId, sourceName, sourceCode, factory, year, existingRec,
+  sourceId, sourceName, sourceCode, factory, year, existingRec, onReviewToggle,
 }: {
   sourceId: string;
   sourceName: string;
@@ -405,12 +431,14 @@ function FabricRow({
   factory: TabProps['factory'];
   year: number;
   existingRec: ActivityRecord | null;
+  onReviewToggle?: TabProps['onReviewToggle'];
 }) {
   const [row, setRow] = useState<AnnualRow>({
     id: existingRec?.id ?? null,
     value: existingRec?.activity_value != null ? String(existingRec.activity_value) : '',
     notes: existingRec?.notes ?? '',
     co2e: existingRec?.co2e_total ?? null,
+    is_reviewed: existingRec?.is_reviewed ?? false,
     status: 'idle',
   });
   const rowRef = useRef(row);
@@ -466,6 +494,19 @@ function FabricRow({
     } catch { /* 忽略；畫面已清 */ }
   }
 
+  async function toggleReview() {
+    const id = rowRef.current.id;
+    if (!id) return;
+    const newVal = !rowRef.current.is_reviewed;
+    const next = { ...rowRef.current, is_reviewed: newVal };
+    rowRef.current = next; setRow(next);
+    await fetch(`/api/records/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_reviewed: newVal }),
+    });
+    onReviewToggle?.(id, newVal);
+  }
+
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-2xl">
       <table className="w-full text-sm border-collapse">
@@ -474,6 +515,7 @@ function FabricRow({
             <th className="px-4 py-2.5 text-left">採購品項</th>
             <th className="px-4 py-2.5 text-right w-48">年度 CO₂e 總量 (tCO₂e)</th>
             <th className="px-4 py-2.5 text-left w-44">備註</th>
+            <th className="px-4 py-2.5 text-center w-16">查核</th>
             <th className="px-4 py-2.5 text-center w-8">狀</th>
           </tr>
         </thead>
@@ -500,6 +542,15 @@ function FabricRow({
                 onChange={(e) => onChange('notes', e.target.value)}
                 className="w-full border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
               />
+            </td>
+            <td className="px-4 py-2 text-center">
+              <button onClick={toggleReview} disabled={!row.id}
+                title={row.is_reviewed ? '已查核（點擊取消）' : row.id ? '點擊標記查核' : '請先儲存資料'}
+                className={`text-sm leading-none transition-all shrink-0
+                  ${row.is_reviewed ? 'text-green-500' : 'text-gray-300'}
+                  ${!row.id ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+                {row.is_reviewed ? '✅' : '⬜'}
+              </button>
             </td>
             <td className="px-4 py-2 text-center text-xs whitespace-nowrap">
               {row.status === 'saving' && '⏳'}
