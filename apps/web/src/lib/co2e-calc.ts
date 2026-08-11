@@ -165,7 +165,7 @@ export async function calcCo2e(params: {
   if (params.source_code === '1-4B-1') {
     const CH4_CARBON_MASS_RATIO = 16 / 12;
     const SEPTIC_GWP_CH4 = 27;
-    const ch4_kg = (value / 24) * (f.factor_co2 ?? 0.04) * (f.factor_ch4 ?? 0.6) * (f.factor_substance ?? 0.5) * CH4_CARBON_MASS_RATIO;
+    const ch4_kg = (params.activity_value / 24) * (f.factor_co2 ?? 0.04) * (f.factor_ch4 ?? 0.6) * (f.factor_substance ?? 0.5) * CH4_CARBON_MASS_RATIO;
     const gwpCh4 = f.gwp_ch4 ?? SEPTIC_GWP_CH4;
     return {
       co2e_total: r4(ch4_kg * gwpCh4 / 1000), co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
