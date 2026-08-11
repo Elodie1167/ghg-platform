@@ -2033,7 +2033,7 @@ export default function FillPageClient({
     if (activeTab === 'fugitive') {
       const selFactors = tabFactors.filter(({ source }) => selectedSourceIds.has(source.id));
       if (selFactors.length === 0) return null;
-      const CH4_GWP = 27.9;
+      const SEPTIC_GWP_CH4_DEFAULT = 27;
       return (
         <div className="mt-6 border border-blue-100 rounded-xl bg-blue-50/40">
           <button
@@ -2083,8 +2083,10 @@ export default function FillPageClient({
                   const BOD = Number(factor!.factor_co2) || 0;
                   const Bo  = Number(factor!.factor_ch4) || 0;
                   const MCF = Number(factor!.factor_substance) || 0;
+                  const CH4_CARBON_MASS_RATIO = 16 / 12;
+                  const CH4_GWP = factor!.gwp_ch4 != null ? Number(factor!.gwp_ch4) : SEPTIC_GWP_CH4_DEFAULT;
                   const ch4T = BOD > 0 && Bo > 0 && MCF > 0 && totalHoursY > 0
-                    ? totalHoursY * BOD * Bo * MCF / 24 / 1000
+                    ? totalHoursY * BOD * Bo * MCF * CH4_CARBON_MASS_RATIO / 24 / 1000
                     : null;
                   return (
                     <div key={source.id} className="text-xs bg-white rounded-lg px-3 py-2.5 border border-teal-100">
