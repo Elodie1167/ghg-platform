@@ -17,6 +17,9 @@ import RECPanel from './RECPanel';
 import LineItemsModal from './LineItemsModal';
 import LineItemsCell from './LineItemsCell';
 import WasteDetailSection from './WasteDetailSection';
+import WasteTransportGrid from './WasteTransportGrid';
+import WastewaterGrid from './WastewaterGrid';
+import type { WasteApiData } from './WasteApiTypes';
 import SourceNotApplicablePanel from './SourceNotApplicablePanel';
 
 const SOURCE_GROUPS = [
@@ -173,10 +176,25 @@ export default function FillPageClient({
     } catch { /* 靜默失敗，保留現有資料 */ }
   }, [factory.id, year]);
 
+  // 3-5 清運／廢水是衍生資料（tkm = 廢棄物重量×距離、推估廢水量 = 採購水×係數），
+  // 與 activity_records 的通用查詢欄位不同，另走 /api/waste 取。
+  const [wasteData, setWasteData] = useState<WasteApiData | null>(null);
+  const refreshWaste = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/waste?factory_id=${factory.id}&year=${year}`);
+      const { data } = await res.json();
+      if (data) setWasteData(data as WasteApiData);
+    } catch { /* 靜默失敗，保留現有資料 */ }
+  }, [factory.id, year]);
+
   // 每次切換分頁時從 DB 重新載入（含本 session 新增的列）
   useEffect(() => {
     refreshRecords();
   }, [activeTab, refreshRecords]);
+
+  useEffect(() => {
+    if (activeTab === 'waste' || activeTab === 'purchase') refreshWaste();
+  }, [activeTab, refreshWaste]);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [importModalOpen, setImportModalOpen] = useState(false);
 
@@ -322,6 +340,79 @@ export default function FillPageClient({
 
   // ─── BasicTab ──────────────────────────────────────────────────
   function BasicTab() {
+    // 廢水量統計方式：決定 3-5-G 怎麼填。
+    //   外購水量推估 → 廢水量 = 3-1-E 採購水 × 廢水產生係數，使用者完全不用填
+    //   廠內實測    → 逐月填 m³（或用 Excel 範本匯入）
+    // 係數與引用依據不在這裡改（那是集團層設定），要改到 /admin/factory-settings。
+    function WastewaterModeRow() {
+      const cur = wasteData?.settings;
+      const [mode, setMode] = useState<'MEASURED' | 'ESTIMATED'>(
+        cur?.wastewater_input_mode ?? factorySettings.wastewater_input_mode,
+      );
+      const [busy, setBusy] = useState(false);
+      const [note, setNote] = useState<string | null>(null);
+      const ratio = cur?.discharge_ratio ?? factorySettings.discharge_ratio;
+      const basis = cur?.ratio_basis ?? factorySettings.ratio_basis;
+      const isDefault = cur?.is_default ?? factorySettings.is_default;
+
+      async function pick(next: 'MEASURED' | 'ESTIMATED') {
+        const prev = mode;
+        setMode(next); setBusy(true); setNote(null);
+        try {
+          const res = await fetch('/api/waste', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              kind: 'settings', factory_id: factory.id, year, wastewater_input_mode: next,
+            }),
+          });
+          if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? '儲存失敗');
+          await refreshWaste();
+          setNote(next === 'ESTIMATED'
+            ? '已切換，並依採購水資源重新推估全年廢水量。'
+            : '已切換，請至「廢棄物 3.5」分頁逐月填實測量，或用 Excel 範本匯入。');
+        } catch (e) {
+          setMode(prev);
+          setNote(e instanceof Error ? e.message : '儲存失敗');
+        } finally { setBusy(false); }
+      }
+
+      return (
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <h4 className="font-semibold text-gray-700 text-sm mb-1">廢水量統計方式（3-5-G 廢水處理）</h4>
+          <p className="text-xs text-gray-500 mb-2">
+            同一廠同一年度只能用一種方式，這裡選好之後填報頁就鎖定，不會兩種混用。
+          </p>
+          <div className="space-y-1.5">
+            <label className="flex items-start gap-2 text-sm">
+              <input type="radio" className="mt-1" disabled={busy}
+                checked={mode === 'ESTIMATED'} onChange={() => pick('ESTIMATED')} />
+              <span>
+                外購水量推估
+                <span className="text-xs text-gray-500 ml-1">
+                  廢水量 ＝ 每月「3-1-E 採購水資源」× {(ratio * 100).toFixed(0)}%，
+                  <strong>系統自動算，不需另外填</strong>（係數依據：{basis}）
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="radio" className="mt-1" disabled={busy}
+                checked={mode === 'MEASURED'} onChange={() => pick('MEASURED')} />
+              <span>
+                廠內實測（有廢水流量計）
+                <span className="text-xs text-gray-500 ml-1">
+                  於填報頁逐月填 m³，或下載 Excel 範本填好匯入
+                </span>
+              </span>
+            </label>
+          </div>
+          {isDefault && (
+            <p className="text-xs text-gray-400 mt-1.5">本廠尚未設定，目前套用集團預設（外購水量推估 × 80%）。</p>
+          )}
+          {note && <p className="text-xs text-green-700 mt-1.5">{note}</p>}
+        </div>
+      );
+    }
+
     const [pendingIds, setPendingIds] = useState<Set<string>>(new Set(selectedSourceIds));
     const [pendingWaste, setPendingWaste] = useState<WasteConfig>(wasteConfig);
     const [pendingTravel, setPendingTravel] = useState<TravelModeConfig>(travelConfig);
@@ -459,6 +550,8 @@ export default function FillPageClient({
                   cfg={pendingWaste.textile}
                   onChange={(c) => setPendingWaste((p) => ({ ...p, textile: c }))}
                 />
+
+                <WastewaterModeRow />
               </div>
             );
           }
@@ -1315,6 +1408,8 @@ export default function FillPageClient({
       src ? existingRecords.filter((r) => r.emission_source_id === src.id) : [];
     const factorOf = (src: EmissionSource | undefined) =>
       src ? (factorBySourceId[src.id]?.scope3_factor ?? null) : null;
+    // 清運係數與 3-4-A 上下游運輸-陸運共用（V45），畫面提示直接取那一筆
+    const roadFactor = factorOf(emissionSources.find((s) => s.source_code === '3-4-A'));
     const naOf = (src: EmissionSource | undefined) =>
       src ? applicability.find((a) => a.emission_source_id === src.id) : undefined;
     const t2NotApplicable = naOf(t2Source)?.not_applicable ?? false;
@@ -1444,6 +1539,9 @@ export default function FillPageClient({
               }),
             });
             if (!res.ok) throw new Error();
+            // 清運 tkm 由伺服器端 cascadeWasteDerived 連帶重算（見 /api/records/autosave），
+            // 這裡只要把畫面上的清運表拉新即可
+            refreshWaste();
             setSecStatus('saved');
             setTimeout(() => setSecStatus('idle'), 2000);
           } catch { setSecStatus('error'); }
@@ -1592,19 +1690,24 @@ export default function FillPageClient({
           <WasteSection source={w2Source} cfg={wasteConfig.textile} />
         )}
 
-        {t1Source && (
-          <WasteDetailSection
-            factory={factory} year={year} source={t1Source}
-            records={recordsOf(t1Source)} factorySettings={factorySettings}
-            scope3Factor={factorOf(t1Source)} onChanged={refreshRecords}
+        {t1Source && wasteData && (
+          <WasteTransportGrid
+            factory={factory} year={year}
+            records={wasteData.records} sourceValues={wasteData.sourceValues}
+            roadFactor={roadFactor}
+            onChanged={() => { refreshWaste(); refreshRecords(); }}
           />
         )}
-        {gSource && (
-          <WasteDetailSection
-            factory={factory} year={year} source={gSource}
-            records={recordsOf(gSource)} factorySettings={factorySettings}
-            scope3Factor={factorOf(gSource)} onChanged={refreshRecords}
+        {gSource && wasteData && (
+          <WastewaterGrid
+            factory={factory} year={year}
+            records={wasteData.records} sourceValues={wasteData.sourceValues}
+            settings={wasteData.settings} scope3Factor={factorOf(gSource)}
+            onChanged={() => { refreshWaste(); refreshRecords(); }}
           />
+        )}
+        {(t1Source || gSource) && !wasteData && (
+          <div className="mb-8 py-8 text-center text-gray-400 text-sm">載入清運與廢水資料中…</div>
         )}
         {t2Source && (
           <>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
+import { cascadeWasteDerived } from '@/lib/waste-derive';
 
 // ── FastAPI 計算服務 URL ───────────────────────────────────────────
 // 未設定時（例如 Vercel serverless）留空，直接走 TypeScript 備援，
@@ -191,6 +192,11 @@ export async function POST(req: NextRequest) {
       recordId = insertResult.rows[0].id;
       updatedAt = insertResult.rows[0].updated_at;
     }
+
+    // 1b. 3-5-T1 清運與 3-5-G 廢水（推估）是衍生值，來源一動就得重算，
+    //     否則會停在舊數字而且不會報錯（CLAUDE.md 鐵則 3 的坑）。
+    //     掛在伺服器端而非各個填報元件，才能涵蓋所有寫入路徑。
+    await cascadeWasteDerived(meta.source_code, factory_id, year, month);
 
     // 2. 同步計算 CO₂e 並寫回（必須在回應前完成，見 computeAndStore 說明）
     let co2eTotal: number | null = null;

@@ -8,6 +8,7 @@ import {
 import {
   WasteDetailSchema, applyFactorySettingsToDetail, upsertWasteDetail, getWasteDetail,
 } from '@/lib/waste-detail-db';
+import { cascadeWasteDerived } from '@/lib/waste-derive';
 
 // 未設定時（Vercel serverless）留空，直接走 TypeScript 備援
 const FASTAPI_URL = process.env.FASTAPI_URL ?? '';
@@ -317,6 +318,13 @@ export async function PUT(
       await recomputeScope2ForFactoryYear(updatedRow.factory_id, updatedRow.year);
     }
 
+    // 廢棄物重量／採購水量異動 → 連帶重算清運 tkm 與推估廢水量
+    if (updates.activity_value !== undefined) {
+      await cascadeWasteDerived(
+        existing.rows[0].source_code, updatedRow.factory_id, updatedRow.year, updatedRow.month,
+      );
+    }
+
     return NextResponse.json({ data: updatedRow, error: null });
   } catch (err) {
     console.error('[PUT /api/records/:id]', err);
@@ -342,7 +350,7 @@ export async function DELETE(
   try {
     // 確認記錄存在且未審查（一併取回範疇/廠/年，供刪除後範疇二重算）
     const existing = await query(
-      `SELECT ar.id, ar.is_reviewed, ar.factory_id, ar.year, es.scope
+      `SELECT ar.id, ar.is_reviewed, ar.factory_id, ar.year, ar.month, es.scope, es.source_code
        FROM activity_records ar
        JOIN emission_sources es ON ar.emission_source_id = es.id
        WHERE ar.id = $1`,
@@ -364,6 +372,10 @@ export async function DELETE(
     }
 
     await query('DELETE FROM activity_records WHERE id = $1', [id]);
+
+    // 刪掉廢棄物重量／採購水量 → 依賴它的清運 tkm 與推估廢水量要跟著歸零
+    const del = existing.rows[0];
+    await cascadeWasteDerived(del.source_code, del.factory_id, del.year, del.month);
 
     // 範疇二（外購電力）刪除 → 依年度基礎重算整年各月分攤
     if (existing.rows[0].scope === 2) {

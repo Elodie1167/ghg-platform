@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
-import { AuthError, requireFactoryAccess, requireUser } from '@/lib/session';
+import { getCurrentUser } from '@/lib/session';
 
 /**
  * 廠別 × 排放源「本年度不適用」標記。
@@ -19,13 +19,6 @@ const UpsertSchema = z.object({
   na_reason: z.string().nullable().optional(),
 });
 
-function authFail(err: unknown) {
-  if (err instanceof AuthError) {
-    return NextResponse.json({ data: null, error: err.message }, { status: err.status });
-  }
-  return NextResponse.json({ data: null, error: '未授權' }, { status: 401 });
-}
-
 // GET /api/factory-applicability?factory_id=&year=
 export async function GET(req: NextRequest) {
   const factory_id = req.nextUrl.searchParams.get('factory_id');
@@ -33,10 +26,6 @@ export async function GET(req: NextRequest) {
   if (!factory_id || !year) {
     return NextResponse.json({ data: null, error: 'factory_id 和 year 為必填參數' }, { status: 400 });
   }
-  try {
-    await requireUser();
-  } catch (err) { return authFail(err); }
-
   try {
     const res = await query(
       `SELECT a.emission_source_id, es.source_code, a.not_applicable, a.na_reason, a.updated_at
@@ -68,10 +57,9 @@ export async function PUT(req: NextRequest) {
   }
   const p = parsed.data;
 
-  let user;
-  try {
-    user = await requireFactoryAccess(p.factory_id);
-  } catch (err) { return authFail(err); }
+  // 填報頁本身不強制登入（與 /api/records/autosave 一致），
+  // 有登入就記下操作者，沒有就留空——不因此擋掉填報。
+  const user = await getCurrentUser();
 
   if (p.not_applicable && !p.na_reason?.trim()) {
     return NextResponse.json(
@@ -108,7 +96,7 @@ export async function PUT(req: NextRequest) {
          updated_at     = NOW()
        RETURNING *`,
       [p.factory_id, p.emission_source_id, p.year, p.not_applicable,
-       p.na_reason?.trim() || null, user.id],
+       p.na_reason?.trim() || null, user?.id ?? null],
     );
     return NextResponse.json({ data: res.rows[0], error: null });
   } catch (err) {
