@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { calcCo2e, recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
+import {
+  WASTE_DETAIL_CODES, WASTEWATER_CODE, deriveActivityValue, validateWasteDetail,
+} from '@/lib/waste-detail';
+import {
+  WasteDetailSchema, applyFactorySettingsToDetail, upsertWasteDetail, getWasteDetails,
+} from '@/lib/waste-detail-db';
 
 // ── FastAPI 計算服務 URL ───────────────────────────────────────────
 // 未設定時（Vercel serverless）留空，直接走 TypeScript 備援
@@ -25,6 +31,8 @@ const CreateRecordSchema = z.object({
   manual_co2e_kg: z.number().min(0).nullable().optional(),
   // 商務旅行「往返」：距離欄位維持單程輸入，計算時乘2
   is_round_trip: z.boolean().optional().default(false),
+  // 3-5 廢棄物清運 / 廢水處理：activity_value 由明細推導，不接受前端直接指定
+  waste_detail: WasteDetailSchema.optional(),
 });
 
 // ── FastAPI 回傳型別 ──────────────────────────────────────────────
@@ -159,6 +167,17 @@ export async function GET(req: NextRequest) {
     `;
 
     const result = await query(sql, params);
+
+    // 3-5 廢棄物清運/廢水處理的明細一併帶回，否則切分頁重抓後畫面欄位會空掉
+    // （見 CLAUDE.md 鐵則 6：填報頁查詢欄位與這支必須同步）
+    const wasteIds = result.rows
+      .filter((r) => WASTE_DETAIL_CODES.includes(r.source_code))
+      .map((r) => r.id as string);
+    if (wasteIds.length) {
+      const details = await getWasteDetails(wasteIds);
+      for (const r of result.rows) r.waste_detail = details[r.id] ?? null;
+    }
+
     return NextResponse.json({ data: result.rows, error: null });
   } catch (err) {
     console.error('[GET /api/records]', err);
@@ -196,8 +215,6 @@ export async function POST(req: NextRequest) {
     emission_source_id,
     year,
     month,
-    activity_value,
-    activity_unit,
     notes,
     sub_location,
     meter_number,
@@ -206,9 +223,45 @@ export async function POST(req: NextRequest) {
     is_manual_co2e,
     manual_co2e_kg,
     is_round_trip,
+    waste_detail,
   } = parsed.data;
 
+  let activity_value = parsed.data.activity_value;
+  let activity_unit = parsed.data.activity_unit;
+
   try {
+    // Step 0：3-5 廢棄物清運 / 廢水處理 —— 活動數據一律由明細推導，不採用前端送的值。
+    // 廢水處理的 input_mode / 廢水產生係數由廠別設定帶入並快照，工廠端不可自行切換。
+    let detail = waste_detail;
+    if (detail) {
+      const srcRow = await query(
+        `SELECT source_code FROM emission_sources WHERE id = $1`, [emission_source_id],
+      );
+      const srcCode: string = srcRow.rows[0]?.source_code ?? '';
+      if (!WASTE_DETAIL_CODES.includes(srcCode)) {
+        return NextResponse.json(
+          { data: null, error: `排放源 ${srcCode || emission_source_id} 不接受廢棄物明細欄位` },
+          { status: 400 },
+        );
+      }
+      if (srcCode === WASTEWATER_CODE) {
+        detail = await applyFactorySettingsToDetail(factory_id, year, detail);
+      }
+      const errs = validateWasteDetail(srcCode, detail);
+      if (errs.length) {
+        return NextResponse.json({ data: null, error: errs.join('; ') }, { status: 400 });
+      }
+      const derived = deriveActivityValue(srcCode, detail);
+      if (!derived) {
+        return NextResponse.json(
+          { data: null, error: '明細欄位不足，無法推導活動數據' },
+          { status: 400 },
+        );
+      }
+      activity_value = derived.value;
+      activity_unit = derived.unit;
+    }
+
     // Step 1：寫入 DB（co2e 先存 null）
     const insertResult = await query(
       `INSERT INTO activity_records
@@ -225,6 +278,8 @@ export async function POST(req: NextRequest) {
     );
 
     const newId: string = insertResult.rows[0].id;
+
+    if (detail) await upsertWasteDetail(newId, detail);
 
     // 機票/車票碳排法：直接用使用者輸入的 kg CO2e，不套排放係數
     if (is_manual_co2e) {

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Factory, FactoryListItem, EmissionSource, ActivityRecord, WasteConfig, WasteMethodConfig, AssignedFactor, TravelModeConfig, TravelSourceMode } from './page';
+import type { Factory, FactoryListItem, EmissionSource, ActivityRecord, WasteConfig, WasteMethodConfig, AssignedFactor, TravelModeConfig, TravelSourceMode, FactorySettings, SourceApplicability } from './page';
 import { MONTHS, HEADER_BG } from './tabTypes';
 import ImportModal from './ImportModal';
 import FuelTab from './FuelTab';
@@ -16,6 +16,8 @@ import CommuteTab from './CommuteTab';
 import RECPanel from './RECPanel';
 import LineItemsModal from './LineItemsModal';
 import LineItemsCell from './LineItemsCell';
+import WasteDetailSection from './WasteDetailSection';
+import SourceNotApplicablePanel from './SourceNotApplicablePanel';
 
 const SOURCE_GROUPS = [
   { tabId: 'elec',        label: '電力來源',                 prefix: '2-'  },
@@ -112,6 +114,8 @@ interface Props {
   initialTravelConfig: TravelModeConfig;
   assignedFactors: AssignedFactor[];
   recMwh: number;
+  factorySettings: FactorySettings;
+  applicability: SourceApplicability[];
 }
 
 function buildRecordMap(records: ActivityRecord[]): Map<string, ActivityRecord> {
@@ -136,6 +140,8 @@ export default function FillPageClient({
   initialTravelConfig,
   assignedFactors,
   recMwh,
+  factorySettings,
+  applicability,
 }: Props) {
   // Build a lookup: emission_source_id → assigned factor for quick access in tabs.
   // 共用係數的來源（如太陽能 2-1-B 的 factor_source_id 指到 2-1-A）本身沒有自己的
@@ -1300,21 +1306,18 @@ export default function FillPageClient({
   function WasteTab() {
     const w1Source = emissionSources.find((s) => s.source_code === '3-5-W1');
     const w2Source = emissionSources.find((s) => s.source_code === '3-5-W2');
-
-    if (!wasteConfig.general.enabled && !wasteConfig.textile.enabled) {
-      return (
-        <div className="flex flex-col items-center py-20 text-gray-400">
-          <p className="text-base mb-2">尚未設定廢棄物處置方式</p>
-          <p className="text-sm">
-            請至
-            <button onClick={() => setActiveTab('basic')} className="text-green-600 underline mx-1">
-              基本資訊
-            </button>
-            設定廢棄物處置 % 後再填報。
-          </p>
-        </div>
-      );
-    }
+    // V42 新增：清運與廢水處理。這三個源一個月可有多筆、每筆都有查證要看的明細，
+    // 用 WasteDetailSection（一列一筆記錄），不是 W1/W2 那種一格一個月的數值格。
+    const t1Source = emissionSources.find((s) => s.source_code === '3-5-T1');
+    const gSource  = emissionSources.find((s) => s.source_code === '3-5-G');
+    const t2Source = emissionSources.find((s) => s.source_code === '3-5-T2');
+    const recordsOf = (src: EmissionSource | undefined) =>
+      src ? existingRecords.filter((r) => r.emission_source_id === src.id) : [];
+    const factorOf = (src: EmissionSource | undefined) =>
+      src ? (factorBySourceId[src.id]?.scope3_factor ?? null) : null;
+    const naOf = (src: EmissionSource | undefined) =>
+      src ? applicability.find((a) => a.emission_source_id === src.id) : undefined;
+    const t2NotApplicable = naOf(t2Source)?.not_applicable ?? false;
 
     function formatMethods(cfg: WasteMethodConfig) {
       const parts: string[] = [];
@@ -1567,15 +1570,56 @@ export default function FillPageClient({
       <div>
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-lg font-semibold text-gray-800">廢棄物 3.5 — 月度重量填報</h2>
-            <p className="text-sm text-gray-500 mt-0.5">CO₂e 依基本資訊設定之處置%自動計算（計算引擎建置中）</p>
+            <h2 className="text-lg font-semibold text-gray-800">營運產生之廢棄物 3.5</h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              廢棄物處理（月度重量，依基本資訊設定之處置%計算）／廢棄物清運／廢水處理／廢水清運
+            </p>
           </div>
         </div>
+        {!wasteConfig.general.enabled && !wasteConfig.textile.enabled && (
+          <div className="mb-6 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500">
+            尚未設定廢棄物處置方式（焚化／回收／掩埋 %），3-5-W1／W2 無法填報。請至
+            <button onClick={() => setActiveTab('basic')} className="text-green-600 underline mx-1">
+              基本資訊
+            </button>
+            設定後再填。下方清運與廢水處理不受此設定影響，可先填。
+          </div>
+        )}
         {wasteConfig.general.enabled && w1Source && (
           <WasteSection source={w1Source} cfg={wasteConfig.general} />
         )}
         {wasteConfig.textile.enabled && w2Source && (
           <WasteSection source={w2Source} cfg={wasteConfig.textile} />
+        )}
+
+        {t1Source && (
+          <WasteDetailSection
+            factory={factory} year={year} source={t1Source}
+            records={recordsOf(t1Source)} factorySettings={factorySettings}
+            scope3Factor={factorOf(t1Source)} onChanged={refreshRecords}
+          />
+        )}
+        {gSource && (
+          <WasteDetailSection
+            factory={factory} year={year} source={gSource}
+            records={recordsOf(gSource)} factorySettings={factorySettings}
+            scope3Factor={factorOf(gSource)} onChanged={refreshRecords}
+          />
+        )}
+        {t2Source && (
+          <>
+            <SourceNotApplicablePanel
+              factory={factory} year={year} source={t2Source}
+              initial={naOf(t2Source)} onChanged={refreshRecords}
+            />
+            {!t2NotApplicable && (
+              <WasteDetailSection
+                factory={factory} year={year} source={t2Source}
+                records={recordsOf(t2Source)} factorySettings={factorySettings}
+                scope3Factor={factorOf(t2Source)} onChanged={refreshRecords}
+              />
+            )}
+          </>
         )}
       </div>
     );

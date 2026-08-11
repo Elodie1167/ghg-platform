@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { calcCo2e, recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
+import {
+  WASTE_DETAIL_CODES, WASTEWATER_CODE, deriveActivityValue, validateWasteDetail,
+} from '@/lib/waste-detail';
+import {
+  WasteDetailSchema, applyFactorySettingsToDetail, upsertWasteDetail, getWasteDetail,
+} from '@/lib/waste-detail-db';
 
 // 未設定時（Vercel serverless）留空，直接走 TypeScript 備援
 const FASTAPI_URL = process.env.FASTAPI_URL ?? '';
@@ -54,6 +60,8 @@ const UpdateRecordSchema = z.object({
   manual_co2e_kg: z.number().min(0).nullable().optional(),
   // 商務旅行「往返」：距離欄位維持單程輸入，計算時乘2
   is_round_trip: z.boolean().optional(),
+  // 3-5 廢棄物清運 / 廢水處理：activity_value 由明細推導，不接受前端直接指定
+  waste_detail: WasteDetailSchema.optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────
@@ -94,7 +102,10 @@ export async function PUT(
   try {
     // 確認記錄存在
     const existing = await query(
-      'SELECT id, is_reviewed FROM activity_records WHERE id = $1',
+      `SELECT ar.id, ar.is_reviewed, ar.factory_id, ar.year, es.source_code
+       FROM activity_records ar
+       JOIN emission_sources es ON es.id = ar.emission_source_id
+       WHERE ar.id = $1`,
       [id],
     );
     if (existing.rowCount === 0) {
@@ -102,6 +113,37 @@ export async function PUT(
         { data: null, error: '記錄不存在' },
         { status: 404 },
       );
+    }
+
+    // 3-5 廢棄物清運 / 廢水處理：明細改了就重推 activity_value，
+    // 前端送來的 activity_value 一律忽略（唯讀欄位，見規格文件）
+    let mergedDetail: Awaited<ReturnType<typeof getWasteDetail>> = null;
+    if (updates.waste_detail) {
+      const { source_code: srcCode, factory_id: fid, year: recYear } = existing.rows[0];
+      if (!WASTE_DETAIL_CODES.includes(srcCode)) {
+        return NextResponse.json(
+          { data: null, error: `排放源 ${srcCode} 不接受廢棄物明細欄位` },
+          { status: 400 },
+        );
+      }
+      // 前端可能只送異動欄位，先跟既有明細合併再驗證，避免誤判為缺漏
+      mergedDetail = { ...(await getWasteDetail(id)), ...updates.waste_detail };
+      if (srcCode === WASTEWATER_CODE) {
+        mergedDetail = await applyFactorySettingsToDetail(fid, updates.year ?? recYear, mergedDetail);
+      }
+      const errs = validateWasteDetail(srcCode, mergedDetail);
+      if (errs.length) {
+        return NextResponse.json({ data: null, error: errs.join('; ') }, { status: 400 });
+      }
+      const derived = deriveActivityValue(srcCode, mergedDetail);
+      if (!derived) {
+        return NextResponse.json(
+          { data: null, error: '明細欄位不足，無法推導活動數據' },
+          { status: 400 },
+        );
+      }
+      updates.activity_value = derived.value;
+      updates.activity_unit = derived.unit;
     }
 
     // 動態組裝 SET 子句
@@ -187,6 +229,11 @@ export async function PUT(
 
     const result = await query(updateSql, values);
     const updatedRow = result.rows[0];
+
+    if (mergedDetail) {
+      await upsertWasteDetail(id, mergedDetail);
+      updatedRow.waste_detail = mergedDetail;
+    }
 
     // 若 activity_value、meter_number 或 is_round_trip 有變動，觸發重新計算
     const needsCalc = updates.activity_value !== undefined || updates.meter_number !== undefined

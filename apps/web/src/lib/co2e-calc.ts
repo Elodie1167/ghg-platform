@@ -3,6 +3,7 @@
  * 與 apps/agents/agents/calculation_agent.py 邏輯一致
  */
 import { query } from '@/lib/db';
+import { WASTE_DETAIL_CODES } from '@/lib/waste-detail';
 
 export interface CalcResult {
   co2e_total: number | null;
@@ -144,6 +145,19 @@ export async function calcCo2e(params: {
     // 係數單位為 kg CO2e/tonnes（每噸廢棄物），activity_value 為 kg，故先除 1000 換算成噸再乘係數，
     // 結果為 kg CO2e，再除 1000 得 tCO2e
     const co2e = r4(value * weightedFactor / 1_000_000);
+    return {
+      co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
+      emission_factor_id: f.id, warnings: [],
+      co2_t: co2e, ch4_t: null, n2o_t: null, hfc_t: null,
+    };
+  }
+
+  // Scope 3 — 廢棄物清運(3-5-T1/T2)、廢水處理(3-5-G)：activity_value 已是最終單位
+  // （tkm / m³，由 lib/waste-detail.ts 的 deriveActivityValue 推導），不可再套 UNIT_CONV。
+  // 'm3' 在 UNIT_CONV 是燃料體積→公升的 ×1000，套到廢水量會整整放大 1000 倍。
+  if (params.scope === 3 && WASTE_DETAIL_CODES.includes(params.source_code)) {
+    if (f.scope3_factor == null) return null; // 係數未維護 → 不算，留 NULL 讓填報頁顯示待補
+    const co2e = r4(params.activity_value * f.scope3_factor / 1000);
     return {
       co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
       emission_factor_id: f.id, warnings: [],

@@ -1,6 +1,18 @@
 import { notFound } from 'next/navigation';
 import { query } from '@/lib/db';
 import FillPageClient from './FillPageClient';
+import { getFactorySettings, type FactorySettings } from '@/lib/waste-detail-db';
+import type { WasteDetail } from '@/lib/waste-detail';
+
+export type { FactorySettings };
+
+/** 廠別 × 排放源「本年度不適用」標記（3-5-T2 等已鑑別但無此排放的源） */
+export interface SourceApplicability {
+  emission_source_id: string;
+  source_code: string;
+  not_applicable: boolean;
+  na_reason: string | null;
+}
 
 export interface Factory {
   id: string;
@@ -56,6 +68,8 @@ export interface ActivityRecord {
   date_from: string | null;
   date_to: string | null;
   line_items_count: number;
+  /** 3-5 廢棄物清運／廢水處理的填報明細；其他排放源為 null */
+  waste_detail: WasteDetail | null;
 }
 
 export interface WasteMethodConfig {
@@ -162,9 +176,11 @@ export default async function FillPage({
             ar.co2_t::float, ar.ch4_t::float, ar.n2o_t::float, ar.hfc_t::float,
             ar.is_reviewed, ar.is_manual_co2e, ar.is_round_trip, ar.sub_location, ar.meter_number,
             ar.date_from::text AS date_from, ar.date_to::text AS date_to,
-            (SELECT COUNT(*)::int FROM activity_line_items li WHERE li.activity_record_id = ar.id) AS line_items_count
+            (SELECT COUNT(*)::int FROM activity_line_items li WHERE li.activity_record_id = ar.id) AS line_items_count,
+            CASE WHEN d.record_id IS NULL THEN NULL ELSE to_jsonb(d) - 'record_id' - 'created_at' - 'updated_at' END AS waste_detail
      FROM activity_records ar
      JOIN emission_sources es ON ar.emission_source_id = es.id
+     LEFT JOIN activity_waste_detail d ON d.record_id = ar.id
      WHERE ar.factory_id = $1 AND ar.year = $2
      ORDER BY ar.month ASC, es.source_code ASC`,
     [factory.id, currentYear],
@@ -205,6 +221,18 @@ export default async function FillPage({
   );
   const recMwh = Number(recResult.rows[0]?.rec_mwh) || 0;
 
+  // 廢水量統計方式：由 admin 於工廠基本資訊設定，填報端唯讀帶入（不可自行切換）
+  const factorySettings = await getFactorySettings(factory.id, currentYear);
+
+  const applicabilityResult = await query(
+    `SELECT a.emission_source_id, es.source_code, a.not_applicable, a.na_reason
+     FROM factory_source_applicability a
+     JOIN emission_sources es ON es.id = a.emission_source_id
+     WHERE a.factory_id = $1 AND a.year = $2`,
+    [factory.id, currentYear],
+  );
+  const applicability: SourceApplicability[] = applicabilityResult.rows;
+
   return (
     <FillPageClient
       factory={factory}
@@ -217,6 +245,8 @@ export default async function FillPage({
       initialTravelConfig={initialTravelConfig}
       assignedFactors={assignedFactors}
       recMwh={recMwh}
+      factorySettings={factorySettings}
+      applicability={applicability}
     />
   );
 }

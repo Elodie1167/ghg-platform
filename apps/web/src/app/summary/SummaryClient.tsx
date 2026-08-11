@@ -11,10 +11,12 @@ const CAT_PREFIX: Record<string, string> = {
 };
 
 // These categories are collapsed to a single merged row
+// 3-5 原本也收合成一列，V42 之後底下有 5 個性質不同的排放源（廢棄物處理／清運／
+// 廢水處理／廢水清運），收合會讓新排放源在彙整表上看不見，故改為展開＋小計。
+// 這份常數與 lib/summary-data.ts 的 MERGED_CAT 必須一致，否則畫面與匯出會走鐘。
 const MERGED_CAT: Record<string, string> = {
   '1-1': '鍋爐類',
   '1-3': '焊條',
-  '3-5': '廢棄物處理',
 };
 
 const SCOPE_NAMES: Record<number, string> = {
