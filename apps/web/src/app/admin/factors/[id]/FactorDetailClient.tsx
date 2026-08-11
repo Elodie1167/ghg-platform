@@ -601,7 +601,8 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               const bo = edit.factor_ch4 ?? 0.6;
               const mcf = edit.factor_substance ?? 0.5;
               const effectiveMandays = actVal / 24;
-              const ch4Kg = effectiveMandays * bod * bo * mcf;
+              const CH4_CARBON_MASS_RATIO = 16 / 12;
+              const ch4Kg = effectiveMandays * bod * bo * mcf * CH4_CARBON_MASS_RATIO;
               const tCH4 = ch4Kg / 1000;
               const tCO2e = tCH4 * GWP_CH4;
               return (
@@ -614,7 +615,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                   </div>
                   <div className="flex items-center gap-2 flex-wrap pl-4 border-l-2 border-gray-200">
                     <span className="text-gray-500">CH₄:</span>
-                    <span>{effectiveMandays.toFixed(10)} mandays × BOD {bod} × Bo {bo} × MCF {mcf}</span>
+                    <span>{effectiveMandays.toFixed(10)} mandays × BOD {bod} × Bo {bo} × MCF {mcf} × 16/12</span>
                     <span className="text-gray-400">=</span>
                     <span className="text-gray-700">{ch4Kg.toFixed(10)} kg CH₄</span>
                     <span className="text-gray-400">= {tCH4.toFixed(10)} tCH₄</span>

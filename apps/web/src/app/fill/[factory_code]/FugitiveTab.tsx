@@ -376,7 +376,7 @@ function SepticSection({
         <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-xs text-gray-600 space-y-1">
           <div><span className="font-medium">AVE Hour</span> = {totalHours.toFixed(1)} hr ÷ {avgWorkers.toFixed(1)} 人 ÷ {totalDays} 天 = <span className="font-mono font-semibold">{aveHour.toFixed(4)}</span> hr/人/天</div>
           <div><span className="font-medium">日比例</span> = {aveHour.toFixed(4)} ÷ 24 = <span className="font-mono font-semibold">{proportion.toFixed(6)}</span></div>
-          <div className="text-gray-400 pt-1">CO₂e = 日比例 × {avgWorkers.toFixed(1)} 人 × {totalDays} 天 × BOD × Bo × MCF × CH₄ GWP</div>
+          <div className="text-gray-400 pt-1">CO₂e = 日比例 × {avgWorkers.toFixed(1)} 人 × {totalDays} 天 × BOD × Bo × MCF × 16/12 × CH₄ GWP</div>
         </div>
       )}
     </div>
