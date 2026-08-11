@@ -334,7 +334,7 @@ function DerivedRow({
   const [recordId, setRecordId] = useState<string | null>(existingRec?.id ?? null);
   const [co2e, setCo2e] = useState<number | null>(existingRec?.co2e_total ?? null);
   const [status, setStatus] = useState<SaveStatus>('idle');
-  const savedTonRef = useRef<number | null>(existingRec?.activity_value != null ? existingRec.activity_value / 1000 : null);
+  const savedTonRef = useRef<number | null>(existingRec?.activity_value ?? null);
   const recordIdRef = useRef(recordId);
   useEffect(() => { recordIdRef.current = recordId; }, [recordId]);
 
@@ -344,14 +344,15 @@ function DerivedRow({
     savedTonRef.current = ton;
     if (ton <= 0 && !recordIdRef.current) return; // 從未存過且無重量，不建立空紀錄
 
-    const kg = ton * 1000;
+    // 係數（UK Government）單位為 kg CO2e/公噸，故直接存「公噸」數值，
+    // activity_unit 用不在 UNIT_CONV 換算表裡的字串，避免被誤乘 1000 轉成公斤。
     const payload = {
       factory_id: factory.id,
       emission_source_id: source.id,
       year,
       month: ANNUAL_MONTH,
-      activity_value: ton > 0 ? kg : null,
-      activity_unit: source.default_unit || 'kg',
+      activity_value: ton > 0 ? ton : null,
+      activity_unit: 'tonne-material',
     };
     setStatus('saving');
     (async () => {
