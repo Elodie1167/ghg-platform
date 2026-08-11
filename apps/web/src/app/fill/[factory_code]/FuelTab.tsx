@@ -173,8 +173,15 @@ function FuelSection({
   }
 
   async function bulkDelete() {
-    const targets = targetRows().filter((r) => r.id && !r.is_reviewed);
-    if (targets.length === 0) { setSelected(new Set()); return; }
+    const candidates = targetRows();
+    const targets = candidates.filter((r) => r.id && !r.is_reviewed);
+    if (targets.length === 0) {
+      if (candidates.some((r) => r.is_reviewed)) {
+        alert('所選記錄都已查核，無法刪除，請先取消查核再刪除。');
+      }
+      setSelected(new Set());
+      return;
+    }
     if (!confirm(`確定要刪除 ${targets.length} 筆尚未查核的資料？`)) return;
     await Promise.all(targets.map((r) => deleteRow(r.tempKey)));
     setSelected(new Set());

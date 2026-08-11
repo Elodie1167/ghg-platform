@@ -710,8 +710,15 @@ export default function FillPageClient({
     }
 
     async function bulkDelete() {
-      const targets = targetRows().filter((r) => r.id && !r.is_reviewed);
-      if (targets.length === 0) { setSelected(new Set()); return; }
+      const candidates = targetRows();
+      const targets = candidates.filter((r) => r.id && !r.is_reviewed);
+      if (targets.length === 0) {
+        if (candidates.some((r) => r.is_reviewed)) {
+          alert('所選記錄都已查核，無法刪除，請先取消查核再刪除。');
+        }
+        setSelected(new Set());
+        return;
+      }
       if (!confirm(`確定要刪除 ${targets.length} 筆尚未查核的資料？`)) return;
       await Promise.all(targets.map((r) => deleteRow(r.tempKey)));
       setSelected(new Set());
@@ -1389,12 +1396,20 @@ export default function FillPageClient({
       }
 
       async function bulkDelete() {
-        const targets = targetMonths().filter((m) => {
+        const candidates = targetMonths();
+        const targets = candidates.filter((m) => {
           const existing = existingRecords.find((r) => r.emission_source_id === source.id && r.month === m);
           const isReviewed = reviewedOverride[m] ?? existing?.is_reviewed ?? false;
           return existing?.id && !isReviewed;
         });
-        if (targets.length === 0) return;
+        if (targets.length === 0) {
+          const hasReviewed = candidates.some((m) => {
+            const existing = existingRecords.find((r) => r.emission_source_id === source.id && r.month === m);
+            return reviewedOverride[m] ?? existing?.is_reviewed ?? false;
+          });
+          if (hasReviewed) alert('所選記錄都已查核，無法刪除，請先取消查核再刪除。');
+          return;
+        }
         if (!confirm(`確定要刪除 ${targets.length} 筆尚未查核的資料？`)) return;
         await Promise.all(targets.map((m) => {
           const existing = existingRecords.find((r) => r.emission_source_id === source.id && r.month === m)!;
