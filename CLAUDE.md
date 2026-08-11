@@ -74,9 +74,38 @@ npm run build && pm2 restart ghg-platform && git push
 ```
 在 `apps/web/` 下執行。`deploy.bat` 有包好前兩步。平台跑在 http://192.168.6.102:3000。
 
+> #### ⚠️ 這台機器是 Windows + PowerShell 5.1，上面那行不能直接貼
+>
+> 這行是 bash 寫法。在 PowerShell 貼上會連續踩到兩個坑：
+>
+> 1. **`&&` 不是有效的分隔符號**（`ParserError: '&&' 語彙基元不是有效的陳述式分隔符號`）。
+>    PowerShell 5.1 沒有 `&&`。要「前一步成功才繼續」得寫 `; if ($?) { ... }`。
+> 2. **`npm` / `pm2` 被執行原則擋掉**（`因為這個系統上已停用指令碼執行，所以無法載入
+>    npm.ps1`）。PowerShell 會去找 `npm.ps1` / `pm2.ps1`，而本機 ExecutionPolicy
+>    不允許執行 .ps1。**加 `.cmd` 後綴改叫批次檔版本即可**，不需要改系統設定。
+>
+> PowerShell 可用的等價寫法：
+> ```powershell
+> cd "C:\Users\elodiecheng\Desktop\Claude\溫盤\ghg-platform\apps\web"
+> npm.cmd run build; if ($?) { pm2.cmd restart ghg-platform; git push }
+> ```
+>
+> 或直接用批次檔（`.bat` 不受執行原則限制，已包好 build + restart）：
+> ```powershell
+> cd "C:\Users\elodiecheng\Desktop\Claude\溫盤\ghg-platform"; .\deploy.bat
+> ```
+>
+> 同理，`node` 是 .exe 不受影響，所有 `node scripts/*.mjs` 都能直接跑；
+> 受影響的只有透過 npm 安裝的 CLI（`npm`、`npx`、`pm2`、`next` …）。
+>
+> 相關：`pg_dump` 與 `psql.exe`（`溫盤\postgres\pgsql\bin`）則是被 OS 直接擋
+> （`Access is denied`），連加後綴也沒用——要下 SQL 請寫 `.mjs` 用 `pg` 套件，
+> 參考 `scripts/verify-v40-v41.mjs`。
+
 > dev server 開著的時候 `npm run build` 會和它搶 `.next` 目錄（症狀：
 > `Compiled successfully` 之後冒出 `Cannot find module for page`）。
 > 這時用 `NEXT_DIST_DIR=.next-build npm run build` 輸出到別的目錄。
+> PowerShell 設環境變數的寫法不同：`$env:NEXT_DIST_DIR=".next-build"; npm.cmd run build`。
 
 ### 2. 資料庫變更只走 `scripts/migrate.mjs`
 ```bash

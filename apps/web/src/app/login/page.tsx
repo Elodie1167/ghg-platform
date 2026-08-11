@@ -9,7 +9,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') ?? '/';
 
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,7 +20,7 @@ function LoginForm() {
     setLoading(true);
 
     const result = await signIn('credentials', {
-      username,
+      email,
       password,
       redirect: false,
     });
@@ -28,7 +28,8 @@ function LoginForm() {
     setLoading(false);
 
     if (result?.error) {
-      setError('帳號或密碼不正確，請重新輸入');
+      // 不區分「帳號不存在」與「密碼錯誤」，避免洩漏誰是平台使用者
+      setError('Email 或密碼不正確，請重新輸入');
     } else {
       router.push(callbackUrl);
     }
@@ -63,13 +64,15 @@ function LoginForm() {
 
         <form onSubmit={handleSubmit}>
           <label style={{ display: 'block', marginBottom: '0.25rem', fontSize: '0.9rem' }}>
-            帳號
+            Email
           </label>
           <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required
+            autoComplete="username"
+            placeholder="yourname@makalot.com.tw"
             style={{
               width: '100%',
               padding: '0.5rem',
@@ -88,6 +91,7 @@ function LoginForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            autoComplete="current-password"
             style={{
               width: '100%',
               padding: '0.5rem',
