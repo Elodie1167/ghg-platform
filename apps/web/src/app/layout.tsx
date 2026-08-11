@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { SessionProvider } from 'next-auth/react';
+import PasswordGate from './PasswordGate';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -13,6 +14,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="zh-Hant">
       <body style={{ margin: 0, padding: 0 }}>
         <SessionProvider>
+          {/* 未改密碼者一律先導到 /change-password，見 PasswordGate 註解 */}
+          <PasswordGate />
           {children}
         </SessionProvider>
       </body>

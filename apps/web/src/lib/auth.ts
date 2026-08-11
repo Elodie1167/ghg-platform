@@ -30,6 +30,7 @@ interface UserRow {
   factory_code: string | null;
   can_freeze: boolean;
   password_hash: string | null;
+  must_change_password: boolean;
 }
 
 /**
@@ -59,7 +60,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           // 使用者不該因為打了大寫就登不進來）
           const result = await query(
             `SELECT u.id, u.email, u.display_name, u.role, u.factory_id,
-                    u.can_freeze, u.password_hash, f.factory_code
+                    u.can_freeze, u.password_hash, u.must_change_password,
+                    f.factory_code
                FROM users u
                LEFT JOIN factories f ON f.id = u.factory_id
               WHERE lower(u.email) = lower($1)
@@ -85,6 +87,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           factoryId: row.factory_id,
           factoryCode: row.factory_code,
           canFreeze: row.can_freeze,
+          mustChangePassword: row.must_change_password,
         };
       },
     }),
@@ -100,7 +103,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
 
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       // user 只在登入當次有值；之後的請求靠 token 內已存的資料
       if (user) {
         const u = user as typeof user & {
@@ -108,13 +111,56 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           factoryId?: string | null;
           factoryCode?: string | null;
           canFreeze?: boolean;
+          mustChangePassword?: boolean;
         };
         token.id = u.id;
         token.role = u.role;
         token.factoryId = u.factoryId ?? null;
         token.factoryCode = u.factoryCode ?? null;
         token.canFreeze = u.canFreeze ?? false;
+        token.mustChangePassword = u.mustChangePassword ?? false;
+        token.refreshedAt = Date.now();
       }
+
+      // ⚠️ JWT 策略下 token 一發出去 8 小時內不會回頭查資料庫，因此
+      // grant-freeze.mjs --revoke（收回封存權限）或停用帳號，對已登入的人
+      // 最多還要等 8 小時才生效——對「查證封存」這種不可逆操作而言太久。
+      // 故每次請求都檢查 token 年齡，超過門檻就強制回資料庫重讀一次。
+      // trigger === 'update' 走同一段重讀邏輯（改完密碼呼叫 update() 時）。
+      const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 分鐘
+      const stale =
+        typeof token.refreshedAt !== 'number' || Date.now() - token.refreshedAt > REFRESH_INTERVAL_MS;
+
+      if ((trigger === 'update' || stale) && token.id) {
+        try {
+          const r = await query(
+            `SELECT role, factory_id, can_freeze, must_change_password
+               FROM users WHERE id = $1 AND is_active`,
+            [token.id as string],
+          );
+          const row = r.rows[0];
+          if (row) {
+            token.role = row.role;
+            token.factoryId = row.factory_id ?? null;
+            token.canFreeze = row.can_freeze;
+            token.mustChangePassword = row.must_change_password;
+            token.refreshedAt = Date.now();
+          } else {
+            // 查無此帳號或已被停用（is_active = false）：清空權限旗標，
+            // 讓 requireAdmin / requireFreeze 這類檢查在下一次請求就失效，
+            // 不讓被停用的帳號繼續帶著舊權限動作到 token 過期為止。
+            token.role = 'reporter';
+            token.canFreeze = false;
+            token.factoryId = null;
+            token.refreshedAt = Date.now();
+          }
+        } catch (err) {
+          // DB 連不上時保留舊值繼續放行，不讓資料庫短暫故障變成全站無法登入；
+          // 下一次請求（5 分鐘後）會再試一次重讀。
+          console.error('[auth] 權限重讀失敗，暫時沿用舊權限：', err);
+        }
+      }
+
       return token;
     },
     async session({ session, token }) {
@@ -125,6 +171,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           factoryId: (token.factoryId as string | null) ?? null,
           factoryCode: (token.factoryCode as string | null) ?? null,
           canFreeze: (token.canFreeze as boolean) ?? false,
+          mustChangePassword: (token.mustChangePassword as boolean) ?? false,
         });
       }
       return session;

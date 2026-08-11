@@ -19,6 +19,8 @@ export interface AppUser {
   factoryCode: string | null;
   /** 是否可執行查證封存（不可逆操作，見設計文件 §8） */
   canFreeze: boolean;
+  /** 為 true 時必須先改密碼才能使用平台（管理者代設密碼後的首次登入） */
+  mustChangePassword: boolean;
 }
 
 /** 取得目前登入者；未登入回 null。不丟錯，供需要「有就用、沒有就算了」的場合使用。 */
@@ -34,6 +36,7 @@ export async function getCurrentUser(): Promise<AppUser | null> {
     factoryId: u.factoryId ?? null,
     factoryCode: u.factoryCode ?? null,
     canFreeze: u.canFreeze ?? false,
+    mustChangePassword: u.mustChangePassword ?? false,
   };
 }
 

@@ -147,6 +147,7 @@ async function readNewPassword(label) {
 async function listUsers() {
   const r = await client.query(`
     SELECT u.email, u.display_name, u.role, u.can_freeze, u.is_active,
+           u.must_change_password,
            f.factory_code,
            (u.password_hash IS NOT NULL) AS has_password,
            (u.azure_oid     IS NOT NULL) AS has_sso
@@ -168,6 +169,7 @@ async function listUsers() {
       可封存: u.can_freeze ? '✅' : '',
       啟用: u.is_active ? '✅' : '停用',
       登入方式: u.has_sso ? 'SSO' : u.has_password ? '密碼' : '⚠ 無',
+      待改密碼: u.must_change_password ? '⚠ 是' : '',
     })),
   );
   return r;
@@ -177,6 +179,12 @@ async function listUsers() {
 async function upsertUser({ email, name, role, canFreeze, factoryId, passwordHash }) {
   const existing = await client.query('SELECT id FROM users WHERE lower(email) = lower($1)', [email]);
 
+  // 由管理者代設的密碼一律標記 must_change_password：等於有第三人知道這組密碼，
+  // 使用者首次登入時平台會要求先改成只有自己知道的密碼才能進主畫面（V44）。
+  // 只有「這次真的設了新密碼」才標記；沿用原密碼時不動這個旗標，
+  // 否則只是改個顯示名稱也會把人踢去改密碼。
+  const markMustChange = passwordHash !== null;
+
   if (existing.rowCount > 0) {
     // 既有帳號：只更新有給值的欄位；沒給新密碼就不動原密碼
     await client.query(
@@ -185,17 +193,20 @@ async function upsertUser({ email, name, role, canFreeze, factoryId, passwordHas
               role          = $3,
               factory_id    = $4,
               can_freeze    = $5,
-              password_hash = COALESCE($6, password_hash)
+              password_hash = COALESCE($6, password_hash),
+              must_change_password = CASE WHEN $7 THEN TRUE ELSE must_change_password END
         WHERE id = $1`,
-      [existing.rows[0].id, name, role, factoryId, canFreeze, passwordHash],
+      [existing.rows[0].id, name, role, factoryId, canFreeze, passwordHash, markMustChange],
     );
     return 'updated';
   }
 
   await client.query(
-    `INSERT INTO users (email, display_name, role, factory_id, can_freeze, password_hash, is_active)
-     VALUES ($1, $2, $3, $4, $5, $6, TRUE)`,
-    [email, name, role, factoryId, canFreeze, passwordHash],
+    `INSERT INTO users
+       (email, display_name, role, factory_id, can_freeze, password_hash,
+        must_change_password, is_active)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)`,
+    [email, name, role, factoryId, canFreeze, passwordHash, markMustChange],
   );
   return 'created';
 }
@@ -249,8 +260,13 @@ async function main() {
     console.log(`\n重設密碼：${r.rows[0].email}（${r.rows[0].display_name ?? ''}）`);
     const pw = await readNewPassword('新');
     const hash = await bcrypt.hash(pw, BCRYPT_ROUNDS);
-    await client.query('UPDATE users SET password_hash = $2 WHERE id = $1', [r.rows[0].id, hash]);
+    // 管理者代設 → 標記須更改，使用者下次登入會被要求改成只有自己知道的密碼
+    await client.query(
+      'UPDATE users SET password_hash = $2, must_change_password = TRUE WHERE id = $1',
+      [r.rows[0].id, hash],
+    );
     console.log('✅ 密碼已更新。請以公司密碼保管流程交付本人，不要用未加密的管道傳送。');
+    console.log('ℹ 對方下次登入時，平台會要求先改成只有本人知道的密碼才能進入主畫面。');
     return;
   }
 
