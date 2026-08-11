@@ -513,7 +513,6 @@ export default function FillPageClient({
                   <p className="text-xs text-gray-500 mb-3">
                     飛機／高鐵可選擇填報方式：「距離法」填人次與距離、套排放係數自動算；
                     「機票/車票碳排法」直接填票證上標示的 CO₂e（kg），不套係數。
-                    住宿（3-6-B）僅支援房晚計算，無此選項。
                   </p>
                   <div className="grid grid-cols-2 gap-4 max-w-md">
                     {Object.entries(TRAVEL_MANUAL_CODES).map(([code, label]) => {

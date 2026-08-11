@@ -5,9 +5,8 @@ import type { TabProps, SaveStatus } from './tabTypes';
 import { MONTHS, HEADER_BG, BTN_BG } from './tabTypes';
 import type { EmissionSource, ActivityRecord } from './page';
 
-// 3-6-A 飛機, 3-6-B 飯店, 3-6-C 高鐵
-const TRAVEL_CODES = ['3-6-A', '3-6-B', '3-6-C'];
-const HOTEL_CODE = '3-6-B';
+// 3-6-A 飛機, 3-6-C 高鐵（3-6-B 飯店住宿已停用，不再計算）
+const TRAVEL_CODES = ['3-6-A', '3-6-C'];
 
 interface EventRow {
   tempKey: string;
@@ -40,7 +39,7 @@ export default function TravelTab({
         <p className="text-sm">
           請至
           <button onClick={() => setActiveTab('basic')} className="text-green-600 underline mx-1">基本資訊</button>
-          勾選飛機、高鐵或住宿。
+          勾選飛機或高鐵。
         </p>
       </div>
     );
@@ -50,7 +49,7 @@ export default function TravelTab({
     <div>
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-gray-800">差旅 S3</h2>
-        <p className="text-sm text-gray-500 mt-0.5">商務出差飛機、高鐵、住宿記錄，每次出差一筆</p>
+        <p className="text-sm text-gray-500 mt-0.5">商務出差飛機、高鐵記錄，每次出差一筆</p>
       </div>
       {sources.map((src) => (
         <TravelSection
@@ -77,8 +76,6 @@ function TravelSection({
   onReviewToggle?: (id: string, newVal: boolean) => void;
   isManualMode: boolean;
 }) {
-  const isHotel = source.source_code === HOTEL_CODE;
-
   const [rows, setRows] = useState<EventRow[]>(() =>
     records.map((r) => ({
       tempKey: r.id, id: r.id, month: r.month,
@@ -272,16 +269,14 @@ function TravelSection({
                 </th>
                 <th className="px-3 py-2.5 text-left w-20">月份</th>
                 <th className="px-3 py-2.5 text-left w-28">出發日期</th>
-                <th className="px-3 py-2.5 text-left">{isHotel ? '旅館 / 城市' : '路線（起→訖）'}</th>
-                {!isHotel && !isManualMode && <th className="px-3 py-2.5 text-right w-20">人次</th>}
+                <th className="px-3 py-2.5 text-left">路線（起→訖）</th>
+                {!isManualMode && <th className="px-3 py-2.5 text-right w-20">人次</th>}
                 {!isManualMode && (
-                  <th className="px-3 py-2.5 text-right w-28">
-                    {isHotel ? `房晚 (${source.default_unit})` : `單程距離 (${source.default_unit})`}
-                  </th>
+                  <th className="px-3 py-2.5 text-right w-28">單程距離 ({source.default_unit})</th>
                 )}
                 {isManualMode && <th className="px-3 py-2.5 text-right w-32">機票/車票 CO₂e (kg)</th>}
-                {!isHotel && !isManualMode && <th className="px-3 py-2.5 text-center w-16">往返</th>}
-                {!isHotel && !isManualMode && (
+                {!isManualMode && <th className="px-3 py-2.5 text-center w-16">往返</th>}
+                {!isManualMode && (
                   <th className="px-3 py-2.5 text-right w-28">往返距離 ({source.default_unit})</th>
                 )}
                 <th className="px-3 py-2.5 text-left w-28">備註</th>
@@ -314,12 +309,12 @@ function TravelSection({
                   </td>
                   <td className="px-2 py-1.5">
                     <input type="text"
-                      placeholder={isHotel ? '台北 / 喜來登' : 'TPE→SHA（來回）'}
+                      placeholder="TPE→SHA（來回）"
                       value={row.sub_location}
                       onChange={(e) => updateRow(row.tempKey, 'sub_location', e.target.value)}
                       className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </td>
-                  {!isHotel && !isManualMode && (
+                  {!isManualMode && (
                     <td className="px-2 py-1.5">
                       <input type="number" min="1" step="1" placeholder="人次"
                         value={row.meter_number}
@@ -330,13 +325,13 @@ function TravelSection({
                   {!isManualMode && (
                     <td className="px-2 py-1.5">
                       <input type="number" min="0" step="any"
-                        placeholder={isHotel ? '房晚' : '單程 km'}
+                        placeholder="單程 km"
                         value={row.activity_value}
                         onChange={(e) => updateRow(row.tempKey, 'activity_value', e.target.value)}
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                     </td>
                   )}
-                  {!isHotel && !isManualMode && (
+                  {!isManualMode && (
                     <td className="px-2 py-1.5 text-center">
                       <input type="checkbox" checked={row.is_round_trip}
                         title="勾選代表上方距離為單程，計算碳排時系統自動乘2"
@@ -344,7 +339,7 @@ function TravelSection({
                         className="w-4 h-4" style={{ accentColor: '#16a34a' }} />
                     </td>
                   )}
-                  {!isHotel && !isManualMode && (
+                  {!isManualMode && (
                     <td className="px-3 py-1.5 text-right text-gray-500 text-xs font-mono">
                       {row.is_round_trip && row.activity_value !== ''
                         ? (parseFloat(row.activity_value) * 2).toLocaleString(undefined, { maximumFractionDigits: 10 })
@@ -389,14 +384,14 @@ function TravelSection({
             </tbody>
             <tfoot>
               <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
-                <td colSpan={isHotel || isManualMode ? 4 : 5} className="px-3 py-2 text-gray-700">合計</td>
+                <td colSpan={isManualMode ? 4 : 5} className="px-3 py-2 text-gray-700">合計</td>
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {isManualMode
                     ? '—'
                     : `${totalAct.toLocaleString(undefined, { maximumFractionDigits: 10 })} ${source.default_unit}`}
                 </td>
-                {!isHotel && !isManualMode && <td />}
-                {!isHotel && !isManualMode && <td />}
+                {!isManualMode && <td />}
+                {!isManualMode && <td />}
                 <td />
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}

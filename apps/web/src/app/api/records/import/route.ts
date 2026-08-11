@@ -121,7 +121,7 @@ function parseTransportSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
   return rows;
 }
 
-/** 解析「S3_商務旅行」：可變列數，col A=月份、B=類型、D=航班km、F=住宿晚數 */
+/** 解析「S3_商務旅行」：可變列數，col A=月份、B=類型、D=航班km（3-6-B 飯店住宿已停用，不再解析） */
 function parseBusinessTravelSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
   const rows: ParsedRow[] = [];
   const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1');
@@ -134,11 +134,6 @@ function parseBusinessTravelSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
       const km = toNum(cellVal(sheet, r, 3)); // col D
       if (km !== null) {
         rows.push({ month: monthVal, source_code: '3-6-A', activity_value: km, activity_unit: 'km' });
-      }
-    } else if (type.includes('飯店') || type.includes('住宿')) {
-      const nights = toNum(cellVal(sheet, r, 5)); // col F
-      if (nights !== null) {
-        rows.push({ month: monthVal, source_code: '3-6-B', activity_value: nights, activity_unit: 'room-nights' });
       }
     }
   }
