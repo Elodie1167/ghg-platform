@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
 import { HEADER_BG, MONTHS } from './tabTypes';
 import type { ActivityRecord, EmissionSource, AssignedFactor } from './page';
@@ -97,17 +97,17 @@ export default function PurchaseTab({
                   const label = DERIVED_MAP[src.source_code];
                   const ton = upstreamTons?.[label] ?? derivedTonTotal(existingRecords, label);
                   return (
-                    <tr key={src.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-4 py-2">
-                        <div className="font-medium text-gray-800">{src.name_zh}</div>
-                        <div className="text-xs font-mono text-gray-400">{src.source_code}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">重量由上游運輸帶入（唯讀）</div>
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono text-gray-700">
-                        {ton > 0 ? ton.toLocaleString(undefined, { maximumFractionDigits: 10 }) : <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-4 py-2 text-right text-xs text-gray-400">計算引擎建置中</td>
-                    </tr>
+                    <DerivedRow
+                      key={src.id}
+                      idx={idx}
+                      source={src}
+                      ton={ton}
+                      factory={factory}
+                      year={year}
+                      existingRec={existingRecords.find(
+                        (r) => r.emission_source_id === src.id && r.month === ANNUAL_MONTH
+                      ) ?? null}
+                    />
                   );
                 })}
               </tbody>
@@ -316,6 +316,82 @@ function WaterMonthly({
         </table>
       </div>
     </div>
+  );
+}
+
+// 線料/紙箱/塑料袋（3-1-B/C/D）：重量唯讀來自上游運輸，重量變動時自動同步 activity_value
+// 觸發後端依已指派的 scope3_factor 計算 CO₂e（需先於 /admin/factors 指派該廠係數）。
+function DerivedRow({
+  idx, source, ton, factory, year, existingRec,
+}: {
+  idx: number;
+  source: EmissionSource;
+  ton: number;
+  factory: TabProps['factory'];
+  year: number;
+  existingRec: ActivityRecord | null;
+}) {
+  const [recordId, setRecordId] = useState<string | null>(existingRec?.id ?? null);
+  const [co2e, setCo2e] = useState<number | null>(existingRec?.co2e_total ?? null);
+  const [status, setStatus] = useState<SaveStatus>('idle');
+  const savedTonRef = useRef<number | null>(existingRec?.activity_value != null ? existingRec.activity_value / 1000 : null);
+  const recordIdRef = useRef(recordId);
+  useEffect(() => { recordIdRef.current = recordId; }, [recordId]);
+
+  useEffect(() => {
+    // 重量與上次存檔一致就不重複寫入（避免每次渲染都打 API）
+    if (savedTonRef.current === ton) return;
+    savedTonRef.current = ton;
+    if (ton <= 0 && !recordIdRef.current) return; // 從未存過且無重量，不建立空紀錄
+
+    const kg = ton * 1000;
+    const payload = {
+      factory_id: factory.id,
+      emission_source_id: source.id,
+      year,
+      month: ANNUAL_MONTH,
+      activity_value: ton > 0 ? kg : null,
+      activity_unit: source.default_unit || 'kg',
+    };
+    setStatus('saving');
+    (async () => {
+      try {
+        const url = recordIdRef.current ? `/api/records/${recordIdRef.current}` : '/api/records';
+        const res = await fetch(url, {
+          method: recordIdRef.current ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setRecordId(data.data.id);
+        setCo2e(data.data.co2e_total ?? null);
+        setStatus('saved');
+        setTimeout(() => setStatus('idle'), 2000);
+      } catch {
+        setStatus('error');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ton]);
+
+  return (
+    <tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+      <td className="px-4 py-2">
+        <div className="font-medium text-gray-800">{source.name_zh}</div>
+        <div className="text-xs font-mono text-gray-400">{source.source_code}</div>
+        <div className="text-xs text-gray-400 mt-0.5">重量由上游運輸帶入（唯讀）</div>
+      </td>
+      <td className="px-4 py-2 text-right font-mono text-gray-700">
+        {ton > 0 ? ton.toLocaleString(undefined, { maximumFractionDigits: 10 }) : <span className="text-gray-300">—</span>}
+      </td>
+      <td className="px-4 py-2 text-right font-mono text-gray-700 text-xs">
+        {status === 'saving' && '⏳ '}
+        {co2e != null ? co2e.toFixed(4) : (ton > 0
+          ? <span className="text-amber-600" title="需先於 /admin/factors 指派此排放源的範疇三係數">尚未指派係數</span>
+          : '—')}
+      </td>
+    </tr>
   );
 }
 
