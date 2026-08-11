@@ -343,6 +343,9 @@ function DerivedRow({
   const savedTonRef = useRef<number | null>(existingRec?.activity_value ?? null);
   const recordIdRef = useRef(recordId);
   useEffect(() => { recordIdRef.current = recordId; }, [recordId]);
+  // 序列化儲存：避免 ton 短時間內連續變動時，前一筆還沒回應（尚無 id）
+  // 下一筆又送出，兩者都判定「無 id」各自 POST，造成同一排放源重複建立紀錄。
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     // 重量與上次存檔一致就不重複寫入（避免每次渲染都打 API）
@@ -350,18 +353,18 @@ function DerivedRow({
     savedTonRef.current = ton;
     if (ton <= 0 && !recordIdRef.current) return; // 從未存過且無重量，不建立空紀錄
 
-    // 係數（UK Government）單位為 kg CO2e/公噸，故直接存「公噸」數值，
-    // activity_unit 用不在 UNIT_CONV 換算表裡的字串，避免被誤乘 1000 轉成公斤。
-    const payload = {
-      factory_id: factory.id,
-      emission_source_id: source.id,
-      year,
-      month: ANNUAL_MONTH,
-      activity_value: ton > 0 ? ton : null,
-      activity_unit: 'tonne-material',
-    };
-    setStatus('saving');
-    (async () => {
+    const runSave = async () => {
+      // 係數（UK Government）單位為 kg CO2e/公噸，故直接存「公噸」數值，
+      // activity_unit 用不在 UNIT_CONV 換算表裡的字串，避免被誤乘 1000 轉成公斤。
+      const payload = {
+        factory_id: factory.id,
+        emission_source_id: source.id,
+        year,
+        month: ANNUAL_MONTH,
+        activity_value: ton > 0 ? ton : null,
+        activity_unit: 'tonne-material',
+      };
+      setStatus('saving');
       try {
         const url = recordIdRef.current ? `/api/records/${recordIdRef.current}` : '/api/records';
         const res = await fetch(url, {
@@ -371,6 +374,7 @@ function DerivedRow({
         });
         if (!res.ok) throw new Error();
         const data = await res.json();
+        recordIdRef.current = data.data.id;
         setRecordId(data.data.id);
         setCo2e(data.data.co2e_total ?? null);
         setStatus('saved');
@@ -378,7 +382,8 @@ function DerivedRow({
       } catch {
         setStatus('error');
       }
-    })();
+    };
+    saveChainRef.current = saveChainRef.current.then(runSave, runSave);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ton]);
 

@@ -109,6 +109,15 @@ export default function UpstreamTab({
   useEffect(() => { tkmRef.current = tkmCells; }, [tkmCells]);
   useEffect(() => { weightRef.current = weightCells; }, [weightCells]);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // 同一 key 的儲存請求需序列化執行，避免使用者連續編輯時前一筆還沒回應（尚無 id）
+  // 就送出下一筆，兩個請求都判定「無 id」而各自 POST，造成同一格重複建立紀錄。
+  const saveChains = useRef<Record<string, Promise<void>>>({});
+  function runSerially(key: string, task: () => Promise<void>) {
+    const prev = saveChains.current[key] ?? Promise.resolve();
+    const next = prev.then(task, task);
+    saveChains.current[key] = next;
+    return next;
+  }
 
   function getTkmCell(sourceId: string, supply: SupplyType): CellState {
     return tkmRef.current.get(`${sourceId}-${supply}`) ?? EMPTY_CELL;
@@ -125,7 +134,7 @@ export default function UpstreamTab({
     tkmRef.current = next;
     setCellState((s) => ({ ...s, tkm: next }));
     if (timers.current[key]) clearTimeout(timers.current[key]);
-    timers.current[key] = setTimeout(() => saveTkm(sourceId, supply), 1000);
+    timers.current[key] = setTimeout(() => runSerially(key, () => saveTkm(sourceId, supply)), 1000);
   }
 
   function updateWeight(supply: SupplyType, item: ItemCode, value: string) {
@@ -136,7 +145,7 @@ export default function UpstreamTab({
     weightRef.current = next;
     setCellState((s) => ({ ...s, weight: next }));
     if (timers.current[key]) clearTimeout(timers.current[key]);
-    timers.current[key] = setTimeout(() => saveWeight(supply, item), 1000);
+    timers.current[key] = setTimeout(() => runSerially(key, () => saveWeight(supply, item)), 1000);
   }
 
   async function saveTkm(sourceId: string, supply: SupplyType) {
