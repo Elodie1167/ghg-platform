@@ -644,7 +644,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               </div>
             )}
 
-            {/* 廢棄物：活動量 × 加權係數 ÷ 1000（預覽用假設 %，實際依各廠設定） */}
+            {/* 廢棄物：活動量(kg) × 加權係數(kg CO2e/tonnes) ÷ 1,000,000（預覽用假設 %，實際依各廠設定） */}
             {isWaste && (() => {
               const incin = parseFloat(previewIncin) || 0;
               const recyc = parseFloat(previewRecyc) || 0;
@@ -653,7 +653,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               const weighted = (incin * (edit.waste_incineration_factor ?? 0)
                 + recyc * (edit.waste_recycling_factor ?? 0)
                 + landfill * (edit.waste_landfill_factor ?? 0)) / 100;
-              const co2eWaste = actVal * weighted / 1000;
+              const co2eWaste = actVal * weighted / 1_000_000;
               return (
                 <div className="space-y-2">
                   <div className="flex items-center gap-3 flex-wrap text-xs">
@@ -677,7 +677,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
                   <div className="space-y-2 font-mono text-xs">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="bg-blue-50 text-blue-800 px-2 py-1 rounded">{previewActivity} {previewUnit}</span>
-                      <span className="text-gray-400">× 加權係數 {weighted.toFixed(6)} ÷ 1000</span>
+                      <span className="text-gray-400">× 加權係數 {weighted.toFixed(6)} ÷ 1,000,000</span>
                       <span className="text-gray-400">=</span>
                       <span className="bg-green-50 text-green-800 px-2 py-1 rounded font-semibold">
                         {co2eWaste.toFixed(10)} tCO₂e
