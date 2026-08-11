@@ -23,16 +23,34 @@ const SOURCE_GROUPS = [
   { tabId: 'fuel',        label: '移動燃燒 (公務車/堆高機)',  prefix: '1-2' },
   { tabId: 'process',     label: '製程排放 S1',              prefix: '1-3' },
   { tabId: 'fugitive',    label: '逸散排放 (冷媒/滅火器)',    prefix: '1-4' },
+  // 以下依 GHG Protocol Scope 3 類別編號排序（Cat1/3/4/5/6/7/9），不要憑感覺調換
   { tabId: 'purchase',    label: '採購商品與服務 3.1',         prefix: '3-1' },
   { tabId: 'energy',      label: '燃料及能源相關 3.3',         prefix: '3-3' },
-  { tabId: 'waste',       label: '廢棄物處理 3.5',             prefix: '3-5' },
   { tabId: 'upstream',    label: '上游運輸 3.4',               prefix: '3-4' },
-  { tabId: 'downstream',  label: '下游運輸 3.9',               prefix: '3-9' },
+  { tabId: 'waste',       label: '廢棄物處理 3.5',             prefix: '3-5' },
   { tabId: 'travel',      label: '商務旅行 3.6',               prefix: '3-6' },
   { tabId: 'commute',     label: '員工通勤 3.7',               prefix: '3-7' },
+  { tabId: 'downstream',  label: '下游運輸 3.9',               prefix: '3-9' },
 ] as const;
 
 type SourceGroupTabId = typeof SOURCE_GROUPS[number]['tabId'];
+
+// 碳排彙總分頁（SummaryTab）分類用：依 GHG Protocol 類別編號排序，不用資料庫
+// emission_sources.category 欄位（新舊排放源分別存過中英文，不統一）
+const CAT_ORDER: { prefix: string; label: string }[] = [
+  { prefix: '1-1', label: '固定燃燒' },
+  { prefix: '1-2', label: '移動燃燒' },
+  { prefix: '1-3', label: '製程排放' },
+  { prefix: '1-4', label: '逸散排放' },
+  { prefix: '2-1', label: '外購電力' },
+  { prefix: '3-1', label: '採購商品與服務' },
+  { prefix: '3-3', label: '燃料及能源相關' },
+  { prefix: '3-4', label: '上游運輸' },
+  { prefix: '3-5', label: '廢棄物處理' },
+  { prefix: '3-6', label: '商務旅行' },
+  { prefix: '3-7', label: '員工通勤' },
+  { prefix: '3-9', label: '下游運輸' },
+];
 
 const TABS = [
   { id: 'basic',       label: '基本資訊' },
@@ -43,11 +61,11 @@ const TABS = [
   { id: 'process',     label: '製程 S1' },
   { id: 'purchase',    label: '採購商品 3.1' },
   { id: 'energy',      label: '能源相關 3.3' },
-  { id: 'waste',       label: '廢棄物 3.5' },
   { id: 'upstream',    label: '上游運輸 3.4' },
-  { id: 'downstream',  label: '下游運輸 3.9' },
+  { id: 'waste',       label: '廢棄物 3.5' },
   { id: 'travel',      label: '商務旅行 3.6' },
   { id: 'commute',     label: '員工通勤 3.7' },
+  { id: 'downstream',  label: '下游運輸 3.9' },
   { id: 'summary',     label: '碳排彙總' },
 ] as const;
 
@@ -1783,15 +1801,20 @@ export default function FillPageClient({
       { scope: 2, label: 'Scope 2 間接排放（能源）', cats: [] },
       { scope: 3, label: 'Scope 3 其他間接排放', cats: [] },
     ];
+    // 依 GHG Protocol Scope 3 類別編號排序分組（Cat1/3/4/5/6/7/9），不用資料庫裡不一致的
+    // category 欄位（新舊排放源分別存過中文/英文 snake_case，字串不統一會拆成重複分類、
+    // 且插入順序不保證符合協議編號順序）
     for (const sg of scopeGroups) {
       const scopeRows = activeRows.filter((r) => r.source.scope === sg.scope);
-      const catMap = new Map<string, SourceRow[]>();
-      for (const row of scopeRows) {
-        const cat = row.source.category ?? '其他';
-        if (!catMap.has(cat)) catMap.set(cat, []);
-        catMap.get(cat)!.push(row);
+      const matched = new Set<SourceRow>();
+      for (const { prefix, label } of CAT_ORDER) {
+        const rows = scopeRows.filter((r) => r.source.source_code.startsWith(prefix));
+        if (rows.length === 0) continue;
+        rows.forEach((r) => matched.add(r));
+        sg.cats.push({ cat: label, rows });
       }
-      for (const [cat, rows] of catMap) sg.cats.push({ cat, rows });
+      const leftover = scopeRows.filter((r) => !matched.has(r));
+      if (leftover.length > 0) sg.cats.push({ cat: '其他', rows: leftover });
     }
 
     function scopeCo2eTotal(scope: number): number {
