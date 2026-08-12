@@ -6,6 +6,7 @@ import { calcCo2e, recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
 import { clearReviewStatus } from '@/lib/review-reset';
 import { snapshotRecordBeforeOverwrite, snapshotLineItemsBeforeDelete } from '@/lib/import-history';
 import { isFrozen, FROZEN_MESSAGE } from '@/lib/freeze-guard';
+import { getCurrentUser } from '@/lib/session';
 
 // ─────────────────────────────────────────────────────────────────
 // 型別定義
@@ -826,6 +827,31 @@ export async function POST(req: NextRequest) {
       errors.push(`單據明細 ${source_code} 月份 ${month}：寫入失敗`);
       skipped += items.length;
     }
+  }
+
+  // 稽核留痕（設計文件 §9）：一個檔案可能同時含固定分頁與單據明細兩條路徑，
+  // 各記一筆 import_batches；skipped 是兩條路徑共用的計數器，無法拆分，
+  // 兩筆各自完整記錄（詳見 db/migrations/V47 的簡化說明）。
+  const importUser = await getCurrentUser().catch(() => null);
+  if (hasFixedRows) {
+    await query(
+      `INSERT INTO import_batches
+         (factory_id, year, imported_by, filename, import_path, fixed_mode,
+          imported_count, skipped_count, line_items_imported, error_count, errors)
+       VALUES ($1, $2, $3, $4, 'fixed_sheet', $5, $6, $7, 0, $8, $9)`,
+      [factory_id, year, importUser?.id ?? null, file.name, fixedMode,
+       imported, skipped, errors.length, errors.length ? JSON.stringify(errors) : null],
+    );
+  }
+  if (hasLineItems) {
+    await query(
+      `INSERT INTO import_batches
+         (factory_id, year, imported_by, filename, import_path, line_item_mode,
+          imported_count, skipped_count, line_items_imported, error_count, errors)
+       VALUES ($1, $2, $3, $4, 'line_item', $5, 0, $6, $7, $8, $9)`,
+      [factory_id, year, importUser?.id ?? null, file.name, lineItemMode,
+       skipped, lineItemsImported, errors.length, errors.length ? JSON.stringify(errors) : null],
+    );
   }
 
   return NextResponse.json({

@@ -140,8 +140,15 @@ async function main() {
     console.log('⚠ 注意：此帳號目前為停用狀態，需啟用後才能實際使用。');
   }
 
-  // TODO：audit_log 表建立後（設計文件 §9），此處須寫入授權/取消記錄。
-  console.log('ℹ 提醒：audit_log 尚未建立，本次變更未留下稽核記錄，請自行記載於交接文件。');
+  // actor_id 留 NULL：CLI 腳本無登入 session，執行者身分只能靠終端機/交接紀錄追溯，
+  // 這裡至少留下「誰被改了權限、改成什麼」（設計文件 §9）。
+  await client.query(
+    `INSERT INTO audit_log (actor_id, action, target_type, target_id, detail)
+     VALUES (NULL, $1, 'user', $2, $3)`,
+    [revoke ? 'revoke_freeze' : 'grant_freeze', u.id,
+     JSON.stringify({ email: u.email, display_name: u.display_name ?? null, via: 'grant-freeze.mjs' })],
+  );
+  console.log('ℹ 已寫入 audit_log（actor 為 NULL，CLI 執行無登入 session）。');
 
   await listHolders();
 }

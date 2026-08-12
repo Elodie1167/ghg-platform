@@ -17,8 +17,9 @@ export async function DELETE(
 ) {
   const { id } = await params;
 
+  let user;
   try {
-    await requireFreeze();
+    user = await requireFreeze();
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ data: null, error: err.message }, { status: err.status });
@@ -31,7 +32,7 @@ export async function DELETE(
     if (!period.rows.length) {
       return NextResponse.json({ data: null, error: '找不到此封存期間' }, { status: 404 });
     }
-    await unfreezePeriod(period.rows[0].factory_id, period.rows[0].year);
+    await unfreezePeriod(period.rows[0].factory_id, period.rows[0].year, user.id);
     return NextResponse.json({ data: { id }, error: null });
   } catch (err) {
     console.error('[DELETE /api/verification-periods/[id]]', err);

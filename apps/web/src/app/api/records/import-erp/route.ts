@@ -4,6 +4,7 @@ import { query } from '@/lib/db';
 import { recomputeRecordFromLineItems } from '@/lib/line-items';
 import { recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
 import { isFrozen, FROZEN_MESSAGE } from '@/lib/freeze-guard';
+import { getCurrentUser } from '@/lib/session';
 
 // ERP 原生檔直匯：使用者已選定「排放源」與「工廠」，
 // 故忽略檔內 Item Name（品名）與 PO 前綴（廠內棟別），所有列都歸到選定的源×廠。
@@ -184,6 +185,15 @@ export async function POST(req: NextRequest) {
     );
     sourceEnabled = (upd.rowCount ?? 0) > 0;
   }
+
+  const importUser = await getCurrentUser().catch(() => null);
+  await query(
+    `INSERT INTO import_batches
+       (factory_id, year, imported_by, filename, import_path,
+        imported_count, skipped_count, line_items_imported, error_count)
+     VALUES ($1, $2, $3, $4, 'erp', 0, $5, $6, 0)`,
+    [factory_id, year, importUser?.id ?? null, file.name, skipped, lineItemsImported],
+  );
 
   return NextResponse.json({
     data: { lineItemsImported, months: months.sort((a, b) => a - b), skipped, source_code, sourceEnabled },

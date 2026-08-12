@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import pool, { query } from '@/lib/db';
+import { writeAuditLog } from '@/lib/audit-log';
 
 /**
  * 查證封存（設計文件 §6.2–§6.3、§7）。
@@ -150,6 +151,13 @@ export async function freezePeriod(input: FreezeInput): Promise<FreezeResult> {
       [factory_id, year, verifier_org ?? null, verified_date ?? null, frozen_by, dataHash, version],
     );
 
+    await client.query(
+      `INSERT INTO audit_log (actor_id, action, target_type, target_id, detail)
+       VALUES ($1, 'freeze_period', 'verification_period', $2, $3)`,
+      [frozen_by, `${factory_id}/${year}`,
+       JSON.stringify({ factory_id, year, version, verifier_org: verifier_org ?? null, verified_date: verified_date ?? null, data_hash: dataHash })],
+    );
+
     await client.query('COMMIT');
     return {
       data_hash: dataHash,
@@ -176,7 +184,7 @@ export async function freezePeriod(input: FreezeInput): Promise<FreezeResult> {
  * **僅限誤封存等情境使用，且需 can_freeze 權限**，實際適用範圍請永續
  * 發展部與查證單位確認。
  */
-export async function unfreezePeriod(factory_id: string, year: number): Promise<void> {
+export async function unfreezePeriod(factory_id: string, year: number, actor_id: string): Promise<void> {
   const result = await query(
     `UPDATE verification_periods SET status = 'open' WHERE factory_id = $1 AND year = $2 AND status = 'verified'`,
     [factory_id, year],
@@ -184,6 +192,13 @@ export async function unfreezePeriod(factory_id: string, year: number): Promise<
   if (!result.rowCount) {
     throw new Error('此 (廠, 年度) 目前未在封存狀態');
   }
+  await writeAuditLog({
+    actor_id,
+    action: 'unfreeze_period',
+    target_type: 'verification_period',
+    target_id: `${factory_id}/${year}`,
+    detail: { factory_id, year },
+  });
 }
 
 export interface VerifyHashResult {
