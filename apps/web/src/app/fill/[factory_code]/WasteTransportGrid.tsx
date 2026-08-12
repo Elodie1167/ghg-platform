@@ -239,12 +239,24 @@ export default function WasteTransportGrid({
         <span className="font-mono text-xs opacity-80">3-5-T1</span>
         <span className="font-semibold text-sm">廢棄物清運</span>
         <span className="text-xs opacity-80">tkm ＝ 廢棄物重量(mt) × 單程距離(km)</span>
-        <span className="ml-auto flex items-center gap-4 text-xs">
-          <span>兩類合計重量 <strong className="font-mono">{grandWeightTotal > 0 ? grandWeightTotal.toLocaleString() : '—'}</strong> kg</span>
-          <span>合計 <strong className="font-mono">{grandTkmTotal > 0 ? grandTkmTotal.toLocaleString() : '—'}</strong> tkm</span>
-          <span>合計 <strong className="font-mono">{grandCo2eTotal > 0 ? grandCo2eTotal.toFixed(4) : '—'}</strong> tCO₂e</span>
+        <span className="ml-auto flex items-center gap-2">
+          <span className="flex items-center gap-1.5 bg-white/15 rounded px-2.5 py-1">
+            <span className="text-xs opacity-90">兩類合計重量</span>
+            <strong className="font-mono text-base">{grandWeightTotal > 0 ? grandWeightTotal.toLocaleString() : '—'}</strong>
+            <span className="text-xs opacity-90">kg</span>
+          </span>
+          <span className="flex items-center gap-1.5 bg-white/15 rounded px-2.5 py-1">
+            <span className="text-xs opacity-90">合計</span>
+            <strong className="font-mono text-base">{grandTkmTotal > 0 ? grandTkmTotal.toLocaleString() : '—'}</strong>
+            <span className="text-xs opacity-90">tkm</span>
+          </span>
+          <span className="flex items-center gap-1.5 bg-white/15 rounded px-2.5 py-1">
+            <span className="text-xs opacity-90">合計</span>
+            <strong className="font-mono text-base">{grandCo2eTotal > 0 ? grandCo2eTotal.toFixed(4) : '—'}</strong>
+            <span className="text-xs opacity-90">tCO₂e</span>
+          </span>
           {(status === 'saving' || status === 'saved') && (
-            <span>{status === 'saving' ? '儲存中…' : '已儲存'}</span>
+            <span className="text-xs">{status === 'saving' ? '儲存中…' : '已儲存'}</span>
           )}
         </span>
       </div>
@@ -391,7 +403,7 @@ export default function WasteTransportGrid({
                   <tr className="bg-green-50 font-semibold text-sm border-t-2 border-green-400">
                     <td className={cell} colSpan={2}>年度合計</td>
                     <td className={`${cell} text-right font-mono`}>{weightTotal > 0 ? weightTotal.toLocaleString() : '—'}</td>
-                    <td className={cell} colSpan={2} />
+                    <td className={cell} colSpan={3} />
                     <td className={`${cell} text-right font-mono`}>{tkmTotal > 0 ? tkmTotal.toLocaleString() : '—'}</td>
                     <td className={`${cell} text-right font-mono`}>{streamTotal > 0 ? streamTotal.toFixed(4) : '—'}</td>
                     <td className={cell} />
