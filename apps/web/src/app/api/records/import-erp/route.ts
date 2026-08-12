@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { query } from '@/lib/db';
 import { recomputeRecordFromLineItems } from '@/lib/line-items';
 import { recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
+import { isFrozen, FROZEN_MESSAGE } from '@/lib/freeze-guard';
 
 // ERP 原生檔直匯：使用者已選定「排放源」與「工廠」，
 // 故忽略檔內 Item Name（品名）與 PO 前綴（廠內棟別），所有列都歸到選定的源×廠。
@@ -58,6 +59,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ data: null, error: 'factory_id、year、source_code、file 為必填' }, { status: 400 });
   }
   const year = parseInt(yearStr, 10);
+
+  if (await isFrozen(factory_id, year)) {
+    return NextResponse.json({ data: null, error: FROZEN_MESSAGE }, { status: 409 });
+  }
 
   const src = await query(`SELECT id, default_unit, scope FROM emission_sources WHERE source_code = $1`, [source_code]);
   if (!src.rows.length) return NextResponse.json({ data: null, error: `找不到排放源 ${source_code}` }, { status: 404 });

@@ -10,6 +10,7 @@ import {
 } from '@/lib/waste-detail-db';
 import { cascadeWasteDerived } from '@/lib/waste-derive';
 import { clearReviewStatus } from '@/lib/review-reset';
+import { assertNotFrozen, FrozenError } from '@/lib/freeze-guard';
 
 // 這些欄位任一被改動，視為「人為改動活動數據」（見設計文件 §5.3），
 // 覆蓋後須清除檢核狀態。刻意不含 notes/sub_location/meter_number/
@@ -124,6 +125,8 @@ export async function PUT(
         { status: 404 },
       );
     }
+
+    await assertNotFrozen(existing.rows[0].factory_id, existing.rows[0].year);
 
     // 3-5 廢棄物清運 / 廢水處理：明細改了就重推 activity_value，
     // 前端送來的 activity_value 一律忽略（唯讀欄位，見規格文件）
@@ -347,6 +350,9 @@ export async function PUT(
 
     return NextResponse.json({ data: updatedRow, error: null });
   } catch (err) {
+    if (err instanceof FrozenError) {
+      return NextResponse.json({ data: null, error: err.message }, { status: 409 });
+    }
     console.error('[PUT /api/records/:id]', err);
     return NextResponse.json(
       { data: null, error: '更新記錄失敗' },
@@ -391,6 +397,8 @@ export async function DELETE(
       );
     }
 
+    await assertNotFrozen(existing.rows[0].factory_id, existing.rows[0].year);
+
     await query('DELETE FROM activity_records WHERE id = $1', [id]);
 
     // 刪掉廢棄物重量／採購水量 → 依賴它的清運 tkm 與推估廢水量要跟著歸零
@@ -404,6 +412,9 @@ export async function DELETE(
 
     return NextResponse.json({ data: { id }, error: null });
   } catch (err) {
+    if (err instanceof FrozenError) {
+      return NextResponse.json({ data: null, error: err.message }, { status: 409 });
+    }
     console.error('[DELETE /api/records/:id]', err);
     return NextResponse.json(
       { data: null, error: '刪除記錄失敗' },

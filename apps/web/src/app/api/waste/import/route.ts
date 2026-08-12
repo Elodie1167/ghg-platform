@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { query } from '@/lib/db';
 import { getFactorySettings } from '@/lib/waste-detail-db';
 import { upsertWastewaterMeasured } from '@/lib/waste-derive';
+import { isFrozen, FROZEN_MESSAGE } from '@/lib/freeze-guard';
 
 /**
  * 3-5-G 廢水處理「廠內實測」的 Excel 範本下載與匯入。
@@ -83,6 +84,10 @@ export async function POST(req: NextRequest) {
 
     if (!(file instanceof File) || !factory_id || isNaN(year)) {
       return NextResponse.json({ data: null, error: 'file、factory_id、year 為必填' }, { status: 400 });
+    }
+
+    if (await isFrozen(factory_id, year)) {
+      return NextResponse.json({ data: null, error: FROZEN_MESSAGE }, { status: 409 });
     }
 
     const settings = await getFactorySettings(factory_id, year);

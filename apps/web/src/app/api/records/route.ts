@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { calcCo2e, recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
+import { assertNotFrozen, FrozenError } from '@/lib/freeze-guard';
 import {
   WASTE_DETAIL_CODES, WASTEWATER_CODE, deriveActivityValue, validateWasteDetail,
 } from '@/lib/waste-detail';
@@ -230,6 +231,8 @@ export async function POST(req: NextRequest) {
   let activity_unit = parsed.data.activity_unit;
 
   try {
+    await assertNotFrozen(factory_id, year);
+
     // Step 0：3-5 廢棄物清運 / 廢水處理 —— 活動數據一律由明細推導，不採用前端送的值。
     // 廢水處理的 input_mode / 廢水產生係數由廠別設定帶入並快照，工廠端不可自行切換。
     let detail = waste_detail;
@@ -372,6 +375,9 @@ export async function POST(req: NextRequest) {
       { status: 201 },
     );
   } catch (err) {
+    if (err instanceof FrozenError) {
+      return NextResponse.json({ data: null, error: err.message }, { status: 409 });
+    }
     console.error('[POST /api/records]', err);
     return NextResponse.json(
       { data: null, error: '新增活動記錄失敗' },

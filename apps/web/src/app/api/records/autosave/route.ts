@@ -4,6 +4,7 @@ import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
 import { cascadeWasteDerived } from '@/lib/waste-derive';
 import { clearReviewStatus } from '@/lib/review-reset';
+import { assertNotFrozen, FrozenError } from '@/lib/freeze-guard';
 
 // ── FastAPI 計算服務 URL ───────────────────────────────────────────
 // 未設定時（例如 Vercel serverless）留空，直接走 TypeScript 備援，
@@ -143,6 +144,8 @@ export async function POST(req: NextRequest) {
     : (notes ?? null);
 
   try {
+    await assertNotFrozen(factory_id, year);
+
     // 查詢排放源 & 廠區附加資訊（計算必填欄位）
     const metaRow = await query(
       `SELECT es.scope, es.is_biomass, es.source_code, es.substance, f.country_code
@@ -235,6 +238,9 @@ export async function POST(req: NextRequest) {
       { status: isUpdate ? 200 : 201 },
     );
   } catch (err) {
+    if (err instanceof FrozenError) {
+      return NextResponse.json({ data: null, error: err.message }, { status: 409 });
+    }
     console.error('[POST /api/records/autosave]', err);
     return NextResponse.json(
       { data: null, error: '自動儲存失敗，請稍後再試' },

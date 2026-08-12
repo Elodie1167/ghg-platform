@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
+import { assertNotFrozen, FrozenError } from '@/lib/freeze-guard';
 
 const PatchSchema = z.object({
   month: z.number().int().min(1).max(12).optional(),
@@ -48,6 +49,12 @@ export async function PATCH(
 
   vals.push(id);
   try {
+    const existing = await query(`SELECT factory_id, year FROM rec_certificates WHERE id = $1`, [id]);
+    if (existing.rows.length === 0) {
+      return NextResponse.json({ data: null, error: '找不到此 REC 記錄' }, { status: 404 });
+    }
+    await assertNotFrozen(existing.rows[0].factory_id, existing.rows[0].year);
+
     const result = await query(
       `UPDATE rec_certificates SET ${sets.join(', ')} WHERE id = $${idx}
        RETURNING id, factory_id, year, month, rec_kwh::float, generation_type,
@@ -61,6 +68,9 @@ export async function PATCH(
     await recomputeScope2ForFactoryYear(result.rows[0].factory_id, result.rows[0].year);
     return NextResponse.json({ data: result.rows[0], error: null });
   } catch (err) {
+    if (err instanceof FrozenError) {
+      return NextResponse.json({ data: null, error: err.message }, { status: 409 });
+    }
     console.error('[PATCH /api/rec-certificates/[id]]', err);
     return NextResponse.json({ data: null, error: '更新 REC 憑證失敗' }, { status: 500 });
   }
@@ -73,17 +83,23 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
+    const existing = await query(`SELECT factory_id, year FROM rec_certificates WHERE id = $1`, [id]);
+    if (existing.rows.length === 0) {
+      return NextResponse.json({ data: null, error: '找不到此 REC 記錄' }, { status: 404 });
+    }
+    await assertNotFrozen(existing.rows[0].factory_id, existing.rows[0].year);
+
     const result = await query(
       `DELETE FROM rec_certificates WHERE id = $1 RETURNING id, factory_id, year`,
       [id],
     );
-    if (result.rows.length === 0) {
-      return NextResponse.json({ data: null, error: '找不到此 REC 記錄' }, { status: 404 });
-    }
     // iREC 移除 → 重算該廠該年範疇二（扣減量回補）
     await recomputeScope2ForFactoryYear(result.rows[0].factory_id, result.rows[0].year);
     return NextResponse.json({ data: { id }, error: null });
   } catch (err) {
+    if (err instanceof FrozenError) {
+      return NextResponse.json({ data: null, error: err.message }, { status: 409 });
+    }
     console.error('[DELETE /api/rec-certificates/[id]]', err);
     return NextResponse.json({ data: null, error: '刪除 REC 憑證失敗' }, { status: 500 });
   }

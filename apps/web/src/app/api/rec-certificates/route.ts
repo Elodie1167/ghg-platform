@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
+import { assertNotFrozen, FrozenError } from '@/lib/freeze-guard';
 
 const CreateRecSchema = z.object({
   factory_id: z.string().uuid(),
@@ -64,6 +65,7 @@ export async function POST(req: NextRequest) {
   const { factory_id, year, month, rec_kwh, generation_type, certificate_no, notes } = parsed.data;
 
   try {
+    await assertNotFrozen(factory_id, year);
     const result = await query(
       `INSERT INTO rec_certificates
          (factory_id, year, month, rec_kwh, generation_type, certificate_no, notes, created_at)
@@ -76,6 +78,9 @@ export async function POST(req: NextRequest) {
     await recomputeScope2ForFactoryYear(factory_id, year);
     return NextResponse.json({ data: result.rows[0], error: null }, { status: 201 });
   } catch (err) {
+    if (err instanceof FrozenError) {
+      return NextResponse.json({ data: null, error: err.message }, { status: 409 });
+    }
     console.error('[POST /api/rec-certificates]', err);
     return NextResponse.json({ data: null, error: '新增 REC 憑證失敗' }, { status: 500 });
   }

@@ -1,6 +1,7 @@
 import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
 import { clearReviewStatus } from '@/lib/review-reset';
+import { FrozenError, isFrozen } from '@/lib/freeze-guard';
 
 /**
  * 重算某 activity_record 的月加總與 CO₂e：
@@ -15,6 +16,13 @@ import { clearReviewStatus } from '@/lib/review-reset';
  * 明細與加總，畫面卻仍顯示「已檢核」。
  */
 export async function recomputeRecordFromLineItems(recordId: string): Promise<number> {
+  const frozenCheck = await query(
+    `SELECT factory_id, year FROM activity_records WHERE id = $1`,
+    [recordId],
+  );
+  const fc = frozenCheck.rows[0];
+  if (fc && await isFrozen(fc.factory_id, fc.year)) throw new FrozenError();
+
   const sumRes = await query(
     `SELECT COALESCE(SUM(quantity), 0)::float AS total
      FROM activity_line_items WHERE activity_record_id = $1`,

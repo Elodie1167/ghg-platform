@@ -6,6 +6,7 @@ import {
   recomputeWasteTransport, recomputeWastewater,
 } from '@/lib/waste-derive';
 import { getFactorySettings } from '@/lib/waste-detail-db';
+import { assertNotFrozen, FrozenError } from '@/lib/freeze-guard';
 
 /**
  * 3-5 廢棄物清運／廢水處理的填報端點。
@@ -96,6 +97,8 @@ export async function POST(req: NextRequest) {
   const p = parsed.data;
 
   try {
+    await assertNotFrozen(p.factory_id, p.year);
+
     if (p.kind === 'transport') {
       const id = await upsertWasteTransport({
         factory_id: p.factory_id, year: p.year, month: p.month, stream: p.stream,
@@ -167,6 +170,9 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ data: { ok: true }, error: null });
   } catch (err) {
+    if (err instanceof FrozenError) {
+      return NextResponse.json({ data: null, error: err.message }, { status: 409 });
+    }
     console.error('[POST /api/waste]', err);
     return NextResponse.json({ data: null, error: '儲存失敗' }, { status: 500 });
   }
