@@ -1338,8 +1338,10 @@ export default function FillPageClient({
                 {MONTHS.map((m) => {
                   const row = rows[m];
                   const kgVal = parseFloat(row.value) || 0;
-                  const ccVal = parseFloat(row.carbonContent) || 0;
-                  const estC = kgVal > 0 && ccVal > 0 ? kgVal * ccVal / 100 : null;
+                  const ccFilled = row.carbonContent !== '' && !isNaN(parseFloat(row.carbonContent));
+                  const ccVal = ccFilled ? parseFloat(row.carbonContent) : 0;
+                  // 含碳量填 0（真的 0%）是有效輸入，不能跟「沒填」一樣顯示「—」，否則會誤以為沒算
+                  const estC = kgVal > 0 && ccFilled ? kgVal * ccVal / 100 : null;
                   return (
                     <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                       <td className="px-3 py-1.5 font-medium text-gray-700">{m} 月</td>

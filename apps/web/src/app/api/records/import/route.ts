@@ -42,6 +42,13 @@ function toNum(val: unknown): number | null {
   return isNaN(n) || n === 0 ? null : n;
 }
 
+/** 安全取得數值，但保留 0（用於「填 0」與「沒填」意義不同的欄位，例如焊條含碳量） */
+function toNumKeepZero(val: unknown): number | null {
+  if (val == null || val === '' || val === '-') return null;
+  const n = Number(val);
+  return isNaN(n) ? null : n;
+}
+
 /** 從 sheet 取得指定 row（0-indexed）、col（0-indexed）的原始值 */
 function cellVal(sheet: XLSX.WorkSheet, row: number, col: number): unknown {
   const addr = XLSX.utils.encode_cell({ r: row, c: col });
@@ -184,7 +191,7 @@ function parseWeldingRodSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
     const month = parseMonth(cellVal(sheet, r, 0)); // col A
     if (month === null) continue;
     const qty = toNum(cellVal(sheet, r, 1));           // col B 採購量(kg)
-    const carbonContent = toNum(cellVal(sheet, r, 2));  // col C 含碳量(%)
+    const carbonContent = toNumKeepZero(cellVal(sheet, r, 2));  // col C 含碳量(%)，0 是有效值（真的 0%），不當作沒填
     const notes = strOrNull(cellVal(sheet, r, 3));      // col D 備註
     if (qty === null) continue; // activity_value 為 NOT NULL 且需 > 0，缺採購量無法建立紀錄
     rows.push({
@@ -724,12 +731,13 @@ export async function POST(req: NextRequest) {
       // 寫入後立即用含碳量算 CO₂e（公式見 co2e-calc.ts）
       if (row.source_code === WELDING_ROD_SOURCE_CODE && row.activity_value != null) {
         try {
-          const bio_fraction_raw = row.meter_number ? parseFloat(row.meter_number) : 0;
+          // 未填與「填 0」意義不同（焊條含碳量 0% 是有效輸入），未填傳 undefined，見 api/records/route.ts 同段註解
+          const bio_fraction_raw = row.meter_number ? parseFloat(row.meter_number) : NaN;
           const calc = await calcCo2e({
             factory_id, emission_source_id: source.id, country_code: factoryCountryCode,
             year, activity_value: row.activity_value, activity_unit: row.activity_unit,
             scope: source.scope, is_biomass: false, source_code: row.source_code,
-            bio_fraction: isNaN(bio_fraction_raw) ? 0 : bio_fraction_raw,
+            bio_fraction: isNaN(bio_fraction_raw) ? undefined : bio_fraction_raw,
           });
           if (calc) {
             await query(

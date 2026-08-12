@@ -312,12 +312,16 @@ export async function POST(req: NextRequest) {
       if (srcRow.rows.length) {
         const { scope, is_biomass, source_code: srcCode, substance, country_code } = srcRow.rows[0];
         recordScope = scope;
-        const bio_fraction = meter_number ? parseFloat(meter_number) : 0;
+        // 未填 meter_number 與「填了 0」意義不同（前者無資料、後者是真的 0%），
+        // 故未填時傳 undefined 而非 0：一般燃燒源的生質占比預設 0% 沒有影響（下游 ?? 0），
+        // 但焊條含碳量 0% 是有效輸入，不能被當成「未填」而略過計算（見 co2e-calc.ts）
+        const bio_fraction_raw = meter_number ? parseFloat(meter_number) : NaN;
+        const bio_fraction = isNaN(bio_fraction_raw) ? undefined : bio_fraction_raw;
         const fastApiPayload = {
           emission_source_id, factory_id, country_code, year, month,
           activity_value, activity_unit, scope, is_biomass,
           source_code: srcCode ?? '', activity_record_id: newId,
-          bio_fraction: isNaN(bio_fraction) ? 0 : bio_fraction,
+          bio_fraction,
         };
         calc = await callCalculate(fastApiPayload)
           ?? await calcCo2e({ ...fastApiPayload, substance: substance ?? null, is_round_trip });

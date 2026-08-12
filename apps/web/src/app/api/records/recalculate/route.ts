@@ -42,7 +42,8 @@ export async function POST(req: NextRequest) {
   let succeeded = 0, failed = 0;
 
   for (const row of pending.rows) {
-    const bio_fraction_raw = row.meter_number ? parseFloat(row.meter_number) : 0;
+    // 未填與「填 0」意義不同（焊條含碳量 0% 是有效輸入），未填傳 undefined，見 api/records/route.ts 同段註解
+    const bio_fraction_raw = row.meter_number ? parseFloat(row.meter_number) : NaN;
     const calc = await calcCo2e({
       factory_id,
       emission_source_id: row.emission_source_id,
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
       source_code: row.source_code,
       substance: row.substance ?? null,
       is_round_trip: row.is_round_trip,
-      bio_fraction: isNaN(bio_fraction_raw) ? 0 : bio_fraction_raw,
+      bio_fraction: isNaN(bio_fraction_raw) ? undefined : bio_fraction_raw,
     });
 
     if (calc) {

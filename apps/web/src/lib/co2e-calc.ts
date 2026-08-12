@@ -51,8 +51,8 @@ export async function calcCo2e(params: {
   // × 碳氧化成 CO2 的分子量比(44/12) 直接算，含碳量由填報頁逐筆填寫（存於 meter_number，
   // 呼叫端已轉成 bio_fraction 傳入），非查表用年度係數，故不經 emission_factors 查詢。
   if (params.source_code === '1-3A-1') {
-    const carbonPct = params.bio_fraction ?? 0;
-    if (carbonPct <= 0) return null; // 未填含碳量，無法計算
+    if (params.bio_fraction == null) return null; // 未填含碳量，無法計算（0% 是有效輸入，不能用 ?? 0 頂替）
+    const carbonPct = params.bio_fraction;
     const CO2_CARBON_MASS_RATIO = 44 / 12;
     const co2_kg = params.activity_value * (carbonPct / 100) * CO2_CARBON_MASS_RATIO;
     return {

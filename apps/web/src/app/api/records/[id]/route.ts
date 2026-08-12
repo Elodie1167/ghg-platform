@@ -273,8 +273,9 @@ export async function PUT(
       if (srcRow.rows.length) {
         const { scope, is_biomass, source_code: srcCode, substance, country_code } = srcRow.rows[0];
         recordScope = scope;
-        const bio_fraction_raw = updatedRow.meter_number ? parseFloat(updatedRow.meter_number) : 0;
-        const bio_fraction = isNaN(bio_fraction_raw) ? 0 : bio_fraction_raw;
+        // 未填與「填 0」意義不同（焊條含碳量 0% 是有效輸入），未填傳 undefined，見 route.ts 同段註解
+        const bio_fraction_raw = updatedRow.meter_number ? parseFloat(updatedRow.meter_number) : NaN;
+        const bio_fraction = isNaN(bio_fraction_raw) ? undefined : bio_fraction_raw;
         const calcParams = {
           emission_source_id: updatedRow.emission_source_id,
           factory_id: updatedRow.factory_id,
