@@ -4,13 +4,14 @@
  */
 import { query } from '@/lib/db';
 import { WASTE_DETAIL_CODES } from '@/lib/waste-detail';
+import { skipIfFrozen } from '@/lib/freeze-guard';
 
 export interface CalcResult {
   co2e_total: number | null;
   co2e_location: number | null;
   co2e_market: number | null;
   co2e_biomass_co2: number | null;
-  emission_factor_id: string;
+  emission_factor_id: string | null;
   warnings: string[];
   co2_t: number | null;
   ch4_t: number | null;
@@ -46,6 +47,32 @@ export async function calcCo2e(params: {
   bio_fraction?: number;
   is_round_trip?: boolean;
 }): Promise<CalcResult | null> {
+  // Scope 1 — 焊條（製程排放，1-3A-1）：無 NCV/年度係數概念，用「含碳量%」× 採購重量(kg)
+  // × 碳氧化成 CO2 的分子量比(44/12) 直接算，含碳量由填報頁逐筆填寫（存於 meter_number，
+  // 呼叫端已轉成 bio_fraction 傳入），非查表用年度係數，故不經 emission_factors 查詢。
+  if (params.source_code === '1-3A-1') {
+    const carbonPct = params.bio_fraction ?? 0;
+    if (carbonPct <= 0) return null; // 未填含碳量，無法計算
+    const CO2_CARBON_MASS_RATIO = 44 / 12;
+    const co2_kg = params.activity_value * (carbonPct / 100) * CO2_CARBON_MASS_RATIO;
+    return {
+      co2e_total: r4(co2_kg / 1000), co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
+      emission_factor_id: null, warnings: [],
+      co2_t: r4(co2_kg / 1000), ch4_t: null, n2o_t: null, hfc_t: null,
+    };
+  }
+
+  // 使用者已直接填最終 CO2e（例如 3-1-A 採購布料，由 Higg MSI 外部試算後貼入年度總量），
+  // 沒有、也不需要對應的排放係數，原樣存回即可，不查 emission_factors。
+  if (params.activity_unit === 'tCO2e') {
+    const co2e = r4(params.activity_value);
+    return {
+      co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
+      emission_factor_id: null, warnings: [],
+      co2_t: co2e, ch4_t: null, n2o_t: null, hfc_t: null,
+    };
+  }
+
   const fRow = await query(
     `SELECT ef.id, ef.factor_co2::float, ef.factor_ch4::float, ef.factor_n2o::float,
             ef.factor_substance::float, ef.grid_emission_factor::float,
@@ -260,6 +287,7 @@ export async function recomputeScope2ForFactoryYear(
   factory_id: string,
   year: number,
 ): Promise<void> {
+  if (await skipIfFrozen(factory_id, year, 'recomputeScope2ForFactoryYear')) return;
   const recs = await query(
     `SELECT ar.id, ar.emission_source_id, ar.activity_value::float AS av, ar.activity_unit,
             es.scope, es.is_biomass, es.source_code, es.substance, f.country_code

@@ -9,8 +9,42 @@ import { refLabel } from '@/lib/ref-label';
 // 與其他排放源的「用量/單位/發票號」單據明細模式不同，範本欄名對應顯示。
 const SEPTIC_TANK_SOURCE_CODE = '1-4B-1';
 
+// 焊條（1-3A-1）填報頁實際欄位為「採購量／含碳量」，用含碳量 × 採購量 × 44/12 算碳重，
+// 與其他排放源的「用量/單位/發票號」單據明細模式不同，範本欄名對應顯示。
+const WELDING_ROD_SOURCE_CODE = '1-3A-1';
+
 export function buildTemplateWorkbook(sourceCode: string, year: string, nameZh: string, unit: string): Buffer {
   const isSepticTank = sourceCode === SEPTIC_TANK_SOURCE_CODE;
+  const isWeldingRod = sourceCode === WELDING_ROD_SOURCE_CODE;
+
+  if (isWeldingRod) {
+    // 焊條專用格式：每月一列，採購量(kg) + 含碳量(%)，估計碳重欄僅供預覽，實際碳重由系統
+    // 依含碳量% × 採購量 × 44/12（碳氧化成 CO2 的分子量比）計算，欄位比照填報頁 ProcessTab。
+    const header = ['月份*', '採購量(kg)*', '含碳量(%)*', '估計碳重(kg，僅供參考)'];
+    const example = [
+      [6, 120, 0.08, 0.096],
+      [7, 95, 0.08, 0.076],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([header, ...example]);
+    ws['!cols'] = [{ wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 20 }];
+
+    const note = XLSX.utils.aoa_to_sheet([
+      ['焊條匯入範本 — 說明'],
+      [''],
+      [`排放源：${nameZh || '(未指定)'}（代碼 ${sourceCode}）`],
+      [''],
+      ['1. 焊條為製程排放，每月一列，填「採購量(kg)」與「含碳量(%)」，不分單據。'],
+      ['2. 欄名有 * 者為必填：月份、採購量、含碳量。'],
+      ['3. 「估計碳重」欄僅供你自行核對，不會被系統讀取；系統會依含碳量% × 採購量 × 44/12（碳轉CO2的分子量比）自動算出 CO₂e。'],
+      ['4. 同一月份若出現多列，系統只會採用最後一列，不會加總。'],
+      ['5. 範例列可刪除或覆蓋。'],
+    ]);
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'S1_焊條');
+    XLSX.utils.book_append_sheet(wb, note, '說明');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
 
   if (isSepticTank) {
     // 化糞池專用格式：每月一列，上班天數/人數/總時數三欄各自填，不套用單據明細（用量/單位）模式

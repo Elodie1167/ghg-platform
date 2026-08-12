@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
+import { isFrozen, FROZEN_MESSAGE } from '@/lib/freeze-guard';
 
 /**
  * POST /api/records/recalculate
@@ -18,10 +19,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'factory_id 和 year 為必填' }, { status: 400 });
   }
 
+  if (await isFrozen(factory_id, year)) {
+    return NextResponse.json({ error: FROZEN_MESSAGE }, { status: 409 });
+  }
+
   // 查出該廠該年有 activity_value 且 co2e_total 未填 或 co2_t 未填 的記錄（僅已查核）
   const pending = await query(
     `SELECT ar.id, ar.emission_source_id, ar.activity_value::float, ar.activity_unit,
-            ar.is_round_trip, es.scope, es.is_biomass, es.source_code, es.substance,
+            ar.is_round_trip, ar.meter_number, es.scope, es.is_biomass, es.source_code, es.substance,
             f.country_code
      FROM activity_records ar
      JOIN emission_sources es ON ar.emission_source_id = es.id
@@ -37,6 +42,7 @@ export async function POST(req: NextRequest) {
   let succeeded = 0, failed = 0;
 
   for (const row of pending.rows) {
+    const bio_fraction_raw = row.meter_number ? parseFloat(row.meter_number) : 0;
     const calc = await calcCo2e({
       factory_id,
       emission_source_id: row.emission_source_id,
@@ -49,6 +55,7 @@ export async function POST(req: NextRequest) {
       source_code: row.source_code,
       substance: row.substance ?? null,
       is_round_trip: row.is_round_trip,
+      bio_fraction: isNaN(bio_fraction_raw) ? 0 : bio_fraction_raw,
     });
 
     if (calc) {

@@ -5,6 +5,7 @@ import { recomputeRecordFromLineItems } from '@/lib/line-items';
 import { calcCo2e, recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
 import { clearReviewStatus } from '@/lib/review-reset';
 import { snapshotRecordBeforeOverwrite, snapshotLineItemsBeforeDelete } from '@/lib/import-history';
+import { isFrozen, FROZEN_MESSAGE } from '@/lib/freeze-guard';
 
 // ─────────────────────────────────────────────────────────────────
 // 型別定義
@@ -168,6 +169,34 @@ function parseSepticSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
   return rows;
 }
 
+/**
+ * 解析「S1_焊條」：固定 1-3A-1，可變列數，col A=月份 B=採購量(kg) C=含碳量(%)
+ * （col D 估計碳重僅供人工核對，不讀取）。含碳量存入 meter_number，比照填報頁 ProcessTab，
+ * 由 co2e-calc.ts 依含碳量% × 採購量 × 44/12 算出 CO₂e。
+ * 同月若出現多列，取最後一列（比照化糞池，不加總）。
+ */
+const WELDING_ROD_SOURCE_CODE = '1-3A-1';
+
+function parseWeldingRodSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
+  const rows: ParsedRow[] = [];
+  const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1');
+  for (let r = 1; r <= range.e.r; r++) {
+    const month = parseMonth(cellVal(sheet, r, 0)); // col A
+    if (month === null) continue;
+    const qty = toNum(cellVal(sheet, r, 1));           // col B 採購量(kg)
+    const carbonContent = toNum(cellVal(sheet, r, 2));  // col C 含碳量(%)
+    if (qty === null) continue; // activity_value 為 NOT NULL 且需 > 0，缺採購量無法建立紀錄
+    rows.push({
+      month,
+      source_code: WELDING_ROD_SOURCE_CODE,
+      activity_value: qty,
+      activity_unit: 'kg',
+      meter_number: carbonContent !== null ? String(carbonContent) : undefined,
+    });
+  }
+  return rows;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // 單據明細 Sheet（每一列 = 一張單據）
 // 欄位：A=月份 B=排放源代碼 C=單據號碼 D=單據日期 E=用量 F=單位 G=ERP參照 H=備註
@@ -324,6 +353,8 @@ function parseWorkbook(wb: XLSX.WorkBook): ParsedRow[] {
       ]),
 
     'S1_化糞池': () => parseSepticSheet(wb.Sheets['S1_化糞池']),
+
+    'S1_焊條': () => parseWeldingRodSheet(wb.Sheets['S1_焊條']),
   };
 
   for (const sheetName of wb.SheetNames) {
@@ -603,6 +634,12 @@ export async function POST(req: NextRequest) {
   }
 
   // ── phase = commit：依使用者選的模式真正寫入 ──
+  // 封存年度整批拒絕，不提供覆蓋選項（設計文件 §6.4）；擋在任何寫入之前，
+  // 不逐列判斷，因為「整月完整檔」模式一開始就會先刪明細。
+  if (await isFrozen(factory_id, year)) {
+    return NextResponse.json({ data: null, error: FROZEN_MESSAGE }, { status: 409 });
+  }
+
   const fixedModeRaw = formData.get('fixed_mode');
   const lineItemModeRaw = formData.get('line_item_mode');
   const fixedMode: FixedMode = isFixedMode(fixedModeRaw) ? fixedModeRaw : 'add_only';
@@ -678,6 +715,30 @@ export async function POST(req: NextRequest) {
           }
         } catch (err) {
           console.error('[import 化糞池 co2e]', err);
+        }
+      }
+
+      // 焊條（1-3A-1）：比照填報頁 ProcessTab，含碳量存於 meter_number，
+      // 寫入後立即用含碳量算 CO₂e（公式見 co2e-calc.ts）
+      if (row.source_code === WELDING_ROD_SOURCE_CODE && row.activity_value != null) {
+        try {
+          const bio_fraction_raw = row.meter_number ? parseFloat(row.meter_number) : 0;
+          const calc = await calcCo2e({
+            factory_id, emission_source_id: source.id, country_code: factoryCountryCode,
+            year, activity_value: row.activity_value, activity_unit: row.activity_unit,
+            scope: source.scope, is_biomass: false, source_code: row.source_code,
+            bio_fraction: isNaN(bio_fraction_raw) ? 0 : bio_fraction_raw,
+          });
+          if (calc) {
+            await query(
+              `UPDATE activity_records
+               SET co2e_total = $1, co2_t = $2, emission_factor_id = $3, updated_at = NOW()
+               WHERE factory_id = $4 AND emission_source_id = $5 AND year = $6 AND month = $7`,
+              [calc.co2e_total, calc.co2_t, calc.emission_factor_id, factory_id, source.id, year, row.month],
+            );
+          }
+        } catch (err) {
+          console.error('[import 焊條 co2e]', err);
         }
       }
     } catch (err) {
