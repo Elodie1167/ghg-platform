@@ -1,11 +1,18 @@
 import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
+import { clearReviewStatus } from '@/lib/review-reset';
 
 /**
  * 重算某 activity_record 的月加總與 CO₂e：
  *   activity_value = SUM(該紀錄所有單據明細 quantity)
  *   再依加總跑 calcCo2e 回寫 co2e_*。
  * 供單據明細 API 與匯入共用。
+ *
+ * 呼叫這支代表單據明細被新增/修改/刪除/重新匯入過，activity_value
+ * 一定是「人為改值」（即使觸發者是系統性的整批匯入，改動的仍是使用者
+ * 上傳的資料），故一律清除 is_reviewed，不需要比對新舊值是否相同——
+ * 這正是 2026-08-11 CAB_MOHA 電力踩到的問題：重新匯入覆蓋了 1~6 月的
+ * 明細與加總，畫面卻仍顯示「已檢核」。
  */
 export async function recomputeRecordFromLineItems(recordId: string): Promise<number> {
   const sumRes = await query(
@@ -25,6 +32,7 @@ export async function recomputeRecordFromLineItems(recordId: string): Promise<nu
     `UPDATE activity_records SET activity_value = $1, updated_at = NOW() WHERE id = $2`,
     [total, recordId],
   );
+  await clearReviewStatus(recordId);
 
   const meta = await query(
     `SELECT ar.emission_source_id, ar.factory_id, ar.year, ar.month, ar.activity_unit,

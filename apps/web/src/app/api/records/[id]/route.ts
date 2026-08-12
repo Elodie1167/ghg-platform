@@ -9,6 +9,15 @@ import {
   WasteDetailSchema, applyFactorySettingsToDetail, upsertWasteDetail, getWasteDetail,
 } from '@/lib/waste-detail-db';
 import { cascadeWasteDerived } from '@/lib/waste-derive';
+import { clearReviewStatus } from '@/lib/review-reset';
+
+// 這些欄位任一被改動，視為「人為改動活動數據」（見設計文件 §5.3），
+// 覆蓋後須清除檢核狀態。刻意不含 notes/sub_location/meter_number/
+// date_from/date_to/source_doc_url/year/month 等中繼資料欄位——
+// 那些不改變回報的排放數量本身。
+const VALUE_CHANGING_FIELDS = [
+  'activity_value', 'activity_unit', 'manual_co2e_kg', 'is_manual_co2e', 'is_round_trip',
+] as const;
 
 // 未設定時（Vercel serverless）留空，直接走 TypeScript 備援
 const FASTAPI_URL = process.env.FASTAPI_URL ?? '';
@@ -230,6 +239,17 @@ export async function PUT(
 
     const result = await query(updateSql, values);
     const updatedRow = result.rows[0];
+
+    // 人為改動活動數據 → 清除檢核狀態，除非本次請求已明確自行處理
+    // is_reviewed（例如「審核並儲存」一次送出兩者，尊重呼叫端的明確意圖，
+    // 不要反過來把它剛設的 true 蓋回 false）。
+    const valueChanged = VALUE_CHANGING_FIELDS.some((f) => updates[f] !== undefined);
+    if (valueChanged && updates.is_reviewed === undefined) {
+      await clearReviewStatus(id);
+      updatedRow.is_reviewed = false;
+      updatedRow.reviewed_by = null;
+      updatedRow.reviewed_at = null;
+    }
 
     if (mergedDetail) {
       await upsertWasteDetail(id, mergedDetail);

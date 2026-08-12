@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
 import { cascadeWasteDerived } from '@/lib/waste-derive';
+import { clearReviewStatus } from '@/lib/review-reset';
 
 // ── FastAPI 計算服務 URL ───────────────────────────────────────────
 // 未設定時（例如 Vercel serverless）留空，直接走 TypeScript 備援，
@@ -179,6 +180,8 @@ export async function POST(req: NextRequest) {
       );
       recordId = updateResult.rows[0].id;
       updatedAt = updateResult.rows[0].updated_at;
+      // 填報頁編輯是人為改值，清除檢核狀態（見 lib/review-reset.ts）
+      await clearReviewStatus(recordId);
     } else {
       const insertResult = await query(
         `INSERT INTO activity_records

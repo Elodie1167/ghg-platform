@@ -21,6 +21,23 @@
 import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
 import { getFactorySettings } from '@/lib/waste-detail-db';
+import { clearReviewStatus } from '@/lib/review-reset';
+
+/**
+ * 衍生值（T1 清運 tkm / G 廢水推估 m³）的重算會定期整批跑過同廠同年所有月份，
+ * 即使上游沒有異動、算出來的數字跟原本一樣。若每次都無條件清除 is_reviewed，
+ * 會變成「只要有人動了同廠任一筆採購水或廢棄物重量，其他不相關月份的檢核
+ * 狀態也被一起清空」。故只在算出來的新值與現有值不同時才清除，
+ * 呼叫端請把「查詢現有值」與「寫入新值」包在一起用這支小工具比對。
+ */
+async function updateValueAndMaybeClearReview(
+  recordId: string, newValue: number | null,
+): Promise<void> {
+  const prev = await query(`SELECT activity_value::float AS v FROM activity_records WHERE id = $1`, [recordId]);
+  const prevValue = prev.rows[0]?.v ?? null;
+  const changed = prevValue == null ? newValue != null : (newValue == null || Math.abs(prevValue - newValue) > 1e-9);
+  if (changed) await clearReviewStatus(recordId);
+}
 
 export type WasteStream = 'general' | 'textile';
 
@@ -171,6 +188,7 @@ export async function recomputeWasteTransport(
     const km = rec.distance_km;
     const tkm = mt != null && km != null && km > 0 ? r4(mt * km) : null;
 
+    await updateValueAndMaybeClearReview(rec.id, tkm);
     await query(
       `UPDATE activity_records SET activity_value = $1, activity_unit = 'tonne-km', updated_at = NOW()
        WHERE id = $2`,
@@ -318,6 +336,7 @@ export async function recomputeWastewater(
     }
 
     const id = existing.rows[0].id;
+    await updateValueAndMaybeClearReview(id, volume);
     await query(
       `UPDATE activity_records
        SET activity_value = $1, activity_unit = 'm3', notes = $2, updated_at = NOW()
@@ -366,6 +385,8 @@ export async function upsertWastewaterMeasured(input: {
        WHERE id = $2`,
       [input.volume_m3, id],
     );
+    // 廠內實測是使用者直接填的數字，人為改值一律清除檢核狀態
+    await clearReviewStatus(id);
   } else {
     if (input.volume_m3 == null) return null;
     id = (await query(

@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { query } from '@/lib/db';
 import { recomputeRecordFromLineItems } from '@/lib/line-items';
 import { calcCo2e, recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
+import { clearReviewStatus } from '@/lib/review-reset';
 
 // ─────────────────────────────────────────────────────────────────
 // 型別定義
@@ -447,6 +448,8 @@ export async function POST(req: NextRequest) {
           [row.activity_value, row.activity_unit, row.notes ?? null,
            row.meter_number ?? null, row.sub_location ?? null, existing.rows[0].id],
         );
+        // 匯入覆蓋既有記錄一律視為人為改值，清除檢核狀態（見 lib/review-reset.ts）
+        await clearReviewStatus(existing.rows[0].id);
       } else {
         await query(
           `INSERT INTO activity_records
