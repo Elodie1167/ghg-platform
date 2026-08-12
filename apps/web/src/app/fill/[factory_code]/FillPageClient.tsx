@@ -1684,6 +1684,61 @@ export default function FillPageClient({
       );
     }
 
+    // 一般廢棄物（3-5-W1）+ 廢布（3-5-W2）碳排合計，放在廢布表格下方
+    function WasteCombinedTotal({ w1Source, w2Source }: { w1Source: EmissionSource; w2Source: EmissionSource }) {
+      const co2eOf = (sourceId: string, m: number) =>
+        existingRecords.find((r) => r.emission_source_id === sourceId && r.month === m)?.co2e_total ?? null;
+      const rows = months.map((m) => ({
+        month: m,
+        general: co2eOf(w1Source.id, m),
+        textile: co2eOf(w2Source.id, m),
+      }));
+      const sum = (vals: (number | null)[]) => vals.reduce<number>((s, v) => s + (v ?? 0), 0);
+      const generalTotal = sum(rows.map((r) => r.general));
+      const textileTotal = sum(rows.map((r) => r.textile));
+      const grandTotal = generalTotal + textileTotal;
+
+      return (
+        <div className="mb-8">
+          <h3 className="text-base font-semibold text-gray-800 mb-2">一般廢棄物＋廢布　碳排合計</h3>
+          <table className="w-full border-collapse text-sm max-w-lg">
+            <thead>
+              <tr style={{ backgroundColor: '#0C3D2E' }} className="text-white">
+                <th className="px-4 py-2 text-left w-16">月份</th>
+                <th className="px-4 py-2 text-right">一般廢棄物 CO₂e (t)</th>
+                <th className="px-4 py-2 text-right">廢布 CO₂e (t)</th>
+                <th className="px-4 py-2 text-right">合計 CO₂e (t)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.month} className={r.month % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                  <td className="px-4 py-1.5 font-medium text-gray-700">{r.month} 月</td>
+                  <td className="px-4 py-1.5 text-right text-gray-600 font-mono text-xs">
+                    {r.general != null ? r.general.toFixed(4) : '—'}
+                  </td>
+                  <td className="px-4 py-1.5 text-right text-gray-600 font-mono text-xs">
+                    {r.textile != null ? r.textile.toFixed(4) : '—'}
+                  </td>
+                  <td className="px-4 py-1.5 text-right text-gray-800 font-mono text-xs font-semibold">
+                    {((r.general ?? 0) + (r.textile ?? 0)).toFixed(4)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-green-50 font-semibold border-t-2 border-green-400">
+                <td className="px-4 py-2 text-gray-800">年度合計</td>
+                <td className="px-4 py-2 text-right text-gray-800 font-mono">{generalTotal.toFixed(4)}</td>
+                <td className="px-4 py-2 text-right text-gray-800 font-mono">{textileTotal.toFixed(4)}</td>
+                <td className="px-4 py-2 text-right text-gray-800 font-mono">{grandTotal.toFixed(4)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      );
+    }
+
     return (
       <div>
         <div className="flex items-center justify-between mb-6">
@@ -1708,6 +1763,9 @@ export default function FillPageClient({
         )}
         {wasteConfig.textile.enabled && w2Source && (
           <WasteSection source={w2Source} cfg={wasteConfig.textile} />
+        )}
+        {wasteConfig.general.enabled && wasteConfig.textile.enabled && w1Source && w2Source && (
+          <WasteCombinedTotal w1Source={w1Source} w2Source={w2Source} />
         )}
 
         {t1Source && wasteData && (
