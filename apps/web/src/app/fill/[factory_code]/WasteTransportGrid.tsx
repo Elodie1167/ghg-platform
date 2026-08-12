@@ -223,14 +223,29 @@ export default function WasteTransportGrid({
     }
   }
 
+  const grandWeightTotal = STREAMS.reduce(
+    (s, st) => s + MONTHS.reduce((sm, m) => sm + (weightKgOf(st.weightCode, m) ?? 0), 0), 0,
+  );
+  const grandTkmTotal = STREAMS.reduce(
+    (s, st) => s + MONTHS.reduce((sm, m) => sm + (recOf(st.key, m)?.activity_value ?? 0), 0), 0,
+  );
+  const grandCo2eTotal = STREAMS.reduce(
+    (s, st) => s + MONTHS.reduce((sm, m) => sm + (recOf(st.key, m)?.co2e_total ?? 0), 0), 0,
+  );
+
   return (
     <div className="mb-8 border border-gray-200 rounded-lg overflow-hidden">
-      <div className="px-4 py-2.5 text-white flex items-center gap-3" style={{ backgroundColor: HEADER_BG }}>
+      <div className="px-4 py-2.5 text-white flex items-center gap-3 flex-wrap" style={{ backgroundColor: HEADER_BG }}>
         <span className="font-mono text-xs opacity-80">3-5-T1</span>
         <span className="font-semibold text-sm">廢棄物清運</span>
         <span className="text-xs opacity-80">tkm ＝ 廢棄物重量(mt) × 單程距離(km)</span>
-        <span className="ml-auto text-xs">
-          {status === 'saving' ? '儲存中…' : status === 'saved' ? '已儲存' : ''}
+        <span className="ml-auto flex items-center gap-4 text-xs">
+          <span>兩類合計重量 <strong className="font-mono">{grandWeightTotal > 0 ? grandWeightTotal.toLocaleString() : '—'}</strong> kg</span>
+          <span>合計 <strong className="font-mono">{grandTkmTotal > 0 ? grandTkmTotal.toLocaleString() : '—'}</strong> tkm</span>
+          <span>合計 <strong className="font-mono">{grandCo2eTotal > 0 ? grandCo2eTotal.toFixed(4) : '—'}</strong> tCO₂e</span>
+          {(status === 'saving' || status === 'saved') && (
+            <span>{status === 'saving' ? '儲存中…' : '已儲存'}</span>
+          )}
         </span>
       </div>
 
