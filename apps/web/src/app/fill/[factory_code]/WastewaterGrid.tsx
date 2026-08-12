@@ -38,6 +38,7 @@ export default function WastewaterGrid({
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [err, setErr] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState<number | null>(null);
   const timers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -96,6 +97,25 @@ export default function WastewaterGrid({
       setTimeout(() => setStatus('idle'), 1500);
     } catch (e) {
       setStatus('error'); setErr(e instanceof Error ? e.message : '重算失敗');
+    }
+  }
+
+  async function toggleReview(m: number) {
+    const r = recOf(m);
+    if (!r) return;
+    setReviewBusy(m);
+    try {
+      const res = await fetch(`/api/records/${r.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_reviewed: !r.is_reviewed }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? '更新查核狀態失敗');
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '更新查核狀態失敗');
+      setStatus('error');
+    } finally {
+      setReviewBusy(null);
     }
   }
 
@@ -218,6 +238,7 @@ export default function WastewaterGrid({
               )}
               <th className={cell}>活動數據 m³</th>
               <th className={cell}>tCO₂e</th>
+              <th className={cell}>查核</th>
             </tr>
           </thead>
           <tbody>
@@ -247,6 +268,15 @@ export default function WastewaterGrid({
                   </td>
                   <td className={`${cell} text-right font-mono text-xs`}>
                     {r?.co2e_total != null ? r.co2e_total.toFixed(4) : '—'}
+                  </td>
+                  <td className={`${cell} text-center`}>
+                    <button onClick={() => toggleReview(m)} disabled={!r || reviewBusy === m}
+                      title={r?.is_reviewed ? '已查核（點擊取消）' : r ? '點擊標記查核' : '請先儲存資料'}
+                      className={`text-sm leading-none transition-all shrink-0
+                        ${r?.is_reviewed ? 'text-green-500' : 'text-gray-300'}
+                        ${!r ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+                      {r?.is_reviewed ? '✅' : '⬜'}
+                    </button>
                   </td>
                 </tr>
               );

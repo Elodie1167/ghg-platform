@@ -48,6 +48,7 @@ export default function WasteTransportGrid({
     textile: { destination_name: '', destination_address: '', distance_km: '' },
   });
   const [applying, setApplying] = useState<'general' | 'textile' | null>(null);
+  const [reviewBusy, setReviewBusy] = useState<string | null>(null);
 
   const recOf = (stream: string, m: number) =>
     records.find((r) => r.source_code === '3-5-T1' && r.month === m
@@ -112,6 +113,28 @@ export default function WasteTransportGrid({
     } catch (e) {
       setStatus('error');
       setErr(e instanceof Error ? e.message : '儲存失敗');
+    }
+  }
+
+  /** 查核 toggle。與其他分頁一致：只有已存在記錄（有 id）才能標記，查核後鎖定輸入。 */
+  async function toggleReview(stream: 'general' | 'textile', m: number) {
+    const r = recOf(stream, m);
+    if (!r) return;
+    const k = key(stream, m, 'review');
+    const newVal = !r.is_reviewed;
+    setReviewBusy(k);
+    try {
+      const res = await fetch(`/api/records/${r.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_reviewed: newVal }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? '更新查核狀態失敗');
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '更新查核狀態失敗');
+      setStatus('error');
+    } finally {
+      setReviewBusy(null);
     }
   }
 
@@ -222,6 +245,7 @@ export default function WasteTransportGrid({
                     <th className={cell} style={{ minWidth: 110 }}>單程距離 km</th>
                     <th className={cell}>活動數據 tkm</th>
                     <th className={cell}>tCO₂e</th>
+                    <th className={cell}>查核</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -255,6 +279,16 @@ export default function WasteTransportGrid({
                         </td>
                         <td className={`${cell} text-right font-mono text-xs`}>
                           {r?.co2e_total != null ? r.co2e_total.toFixed(4) : '—'}
+                        </td>
+                        <td className={`${cell} text-center`}>
+                          <button onClick={() => toggleReview(st.key, m)}
+                            disabled={!r || reviewBusy === key(st.key, m, 'review')}
+                            title={r?.is_reviewed ? '已查核（點擊取消）' : r ? '點擊標記查核' : '請先儲存資料'}
+                            className={`text-sm leading-none transition-all shrink-0
+                              ${r?.is_reviewed ? 'text-green-500' : 'text-gray-300'}
+                              ${!r ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:scale-110'}`}>
+                            {r?.is_reviewed ? '✅' : '⬜'}
+                          </button>
                         </td>
                       </tr>
                     );
