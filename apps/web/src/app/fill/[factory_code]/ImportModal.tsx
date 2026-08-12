@@ -10,7 +10,8 @@ interface Props {
   onImported?: () => void;
 }
 
-type ImportStatus = 'idle' | 'uploading' | 'success' | 'error';
+// idle → previewing → previewed（等使用者選模式確認）→ committing → success
+type ImportStatus = 'idle' | 'previewing' | 'previewed' | 'committing' | 'success' | 'error';
 
 interface ImportResult {
   imported: number;
@@ -20,12 +21,58 @@ interface ImportResult {
   notice?: string;
 }
 
+interface FixedDiff {
+  source_code: string;
+  month: number;
+  status: 'new' | 'update' | 'same';
+  old_value: number | null;
+  old_unit: string | null;
+  is_reviewed: boolean;
+  new_value: number | null;
+  new_unit: string;
+}
+
+interface LineItemDiff {
+  source_code: string;
+  month: number;
+  is_reviewed: boolean;
+  existing_count: number;
+  existing_sum: number;
+  existing_unit: string | null;
+  incoming_count: number;
+  incoming_sum: number;
+  incoming_unit: string;
+  possible_duplicates: number;
+}
+
+interface PreviewResult {
+  hasFixedRows: boolean;
+  hasLineItems: boolean;
+  fixedDiffs: FixedDiff[];
+  lineItemDiffs: LineItemDiff[];
+  errors: string[];
+  notice?: string;
+}
+
+type FixedMode = 'add_only' | 'add_update';
+type LineItemMode = 'full_month' | 'supplement';
+
+function fmtNum(n: number | null): string {
+  if (n == null) return '—';
+  return n.toLocaleString('en-US', { maximumFractionDigits: 4 });
+}
+
 export default function ImportModal({ factory, year, onClose, onImported }: Props) {
   const erpFileRef = useRef<HTMLInputElement>(null);
   const tplFileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<ImportStatus>('idle');
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // 使用者對本次匯入的模式選擇（設計文件 §4.2）；預覽拿到後才顯示對應的選項
+  const [fixedMode, setFixedMode] = useState<FixedMode>('add_only');
+  const [lineItemMode, setLineItemMode] = useState<LineItemMode>('full_month');
 
   // 選排放源 → 下載對應範本 / 指定 ERP 匯入目標源
   const [sources, setSources] = useState<{ source_code: string; name_zh: string }[]>([]);
@@ -38,14 +85,63 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
       .catch(() => {});
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
+  // ── 方式 A（ERP 原生檔）維持原本行為：無預覽步驟，直接送 ──
+  async function handleErpSubmit(erpFile: File) {
+    if (!tplSource) {
+      setStatus('idle');
+      setErrorMsg('使用 ERP 匯出檔時，請先於上方選擇排放源。');
+      return;
+    }
+    setStatus('committing');
+    const body = new FormData();
+    body.append('factory_id', factory.id);
+    body.append('year', String(year));
+    body.append('source_code', tplSource);
+    body.append('file', erpFile);
+    if (docUrl.trim()) body.append('source_doc_url', docUrl.trim());
+    try {
+      const res = await fetch('/api/records/import-erp', { method: 'POST', body });
+      const j = await res.json();
+      if (!res.ok || j.error) {
+        setStatus('error');
+        setErrorMsg(j.error ?? `上傳失敗（HTTP ${res.status}）`);
+        return;
+      }
+      const months: number[] = j.data.months ?? [];
+      const skippedN: number = j.data.skipped ?? 0;
+      const noticeParts: string[] = [];
+      if (months.length) {
+        noticeParts.push(`已依 Year-Month 匯入月份：${months.join('、')} 月`);
+        if (j.data.sourceEnabled) noticeParts.push('已自動為本廠啟用此排放源分頁');
+      }
+      if (skippedN > 0 && months.length === 0) {
+        noticeParts.push(`⚠ 全部 ${skippedN} 列被略過，未匯入任何月份。最常見原因是檔案內的年份與所選盤查年度（${year} 年）不符，請確認年度或改選對應年度。`);
+      } else if (skippedN > 0) {
+        noticeParts.push(`略過 ${skippedN} 列（年份非 ${year} 年、或用量為空/0）。`);
+      }
+      setResult({
+        imported: months.length,
+        lineItemsImported: j.data.lineItemsImported ?? 0,
+        skipped: skippedN,
+        errors: [],
+        notice: noticeParts.length ? noticeParts.join('\n') : undefined,
+      });
+      setStatus('success');
+    } catch (err) {
+      console.error('[ImportModal ERP]', err);
+      setStatus('error');
+      setErrorMsg('網路錯誤，請稍後再試');
+    }
+  }
+
+  // ── 方式 B（範本檔）Step 1：先預覽，不寫入任何東西 ──
+  async function handlePreview(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg('');
 
     const erpFile = erpFileRef.current?.files?.[0] ?? null;
     const tplFile = tplFileRef.current?.files?.[0] ?? null;
 
-    // 自動偵測：哪一邊有檔案就用哪一邊
     if (erpFile && tplFile) {
       setErrorMsg('偵測到兩個檔案，請只保留一種（ERP 匯出檔 或 範本格式檔）。');
       return;
@@ -54,64 +150,56 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
       setErrorMsg('請選擇一個檔案：ERP 匯出檔 或 範本格式檔。');
       return;
     }
+    if (erpFile) {
+      await handleErpSubmit(erpFile);
+      return;
+    }
+    if (!tplFile!.name.endsWith('.xlsx')) {
+      setErrorMsg('範本格式檔僅接受 .xlsx。');
+      return;
+    }
 
-    setStatus('uploading');
-    setResult(null);
-
+    setStatus('previewing');
     try {
-      if (erpFile) {
-        // ── ERP 原生匯出檔 ──
-        if (!tplSource) {
-          setStatus('idle');
-          setErrorMsg('使用 ERP 匯出檔時，請先於上方選擇排放源。');
-          return;
-        }
-        const body = new FormData();
-        body.append('factory_id', factory.id);
-        body.append('year', String(year));
-        body.append('source_code', tplSource);
-        body.append('file', erpFile);
-        if (docUrl.trim()) body.append('source_doc_url', docUrl.trim());
-        const res = await fetch('/api/records/import-erp', { method: 'POST', body });
-        const j = await res.json();
-        if (!res.ok || j.error) {
-          setStatus('error');
-          setErrorMsg(j.error ?? `上傳失敗（HTTP ${res.status}）`);
-          return;
-        }
-        const months: number[] = j.data.months ?? [];
-        const skipped: number = j.data.skipped ?? 0;
-        const noticeParts: string[] = [];
-        if (months.length) {
-          noticeParts.push(`已依 Year-Month 匯入月份：${months.join('、')} 月`);
-          if (j.data.sourceEnabled) noticeParts.push('已自動為本廠啟用此排放源分頁');
-        }
-        if (skipped > 0 && months.length === 0) {
-          noticeParts.push(`⚠ 全部 ${skipped} 列被略過，未匯入任何月份。最常見原因是檔案內的年份與所選盤查年度（${year} 年）不符，請確認年度或改選對應年度。`);
-        } else if (skipped > 0) {
-          noticeParts.push(`略過 ${skipped} 列（年份非 ${year} 年、或用量為空/0）。`);
-        }
-        setResult({
-          imported: months.length,
-          lineItemsImported: j.data.lineItemsImported ?? 0,
-          skipped,
-          errors: [],
-          notice: noticeParts.length ? noticeParts.join('\n') : undefined,
-        });
-        setStatus('success');
-        return;
-      }
-
-      // ── 範本格式檔 ──
-      if (!tplFile!.name.endsWith('.xlsx')) {
-        setStatus('idle');
-        setErrorMsg('範本格式檔僅接受 .xlsx。');
-        return;
-      }
       const formData = new FormData();
       formData.append('factory_id', factory.id);
       formData.append('year', String(year));
       formData.append('file', tplFile!);
+      formData.append('phase', 'preview');
+      const res = await fetch('/api/records/import', { method: 'POST', body: formData });
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        setStatus('error');
+        setErrorMsg(json.error ?? `預覽失敗（HTTP ${res.status}）`);
+        return;
+      }
+      setPreview(json.data);
+      setStatus('previewed');
+    } catch (err) {
+      console.error('[ImportModal preview]', err);
+      setStatus('error');
+      setErrorMsg('網路錯誤，請稍後再試');
+    }
+  }
+
+  // ── Step 2：使用者看過差異、選好模式後才真正送出 ──
+  async function handleCommit() {
+    const tplFile = tplFileRef.current?.files?.[0];
+    if (!tplFile) {
+      setStatus('error');
+      setErrorMsg('找不到原始檔案，請重新選擇檔案再試一次。');
+      return;
+    }
+    setStatus('committing');
+    setErrorMsg('');
+    try {
+      const formData = new FormData();
+      formData.append('factory_id', factory.id);
+      formData.append('year', String(year));
+      formData.append('file', tplFile);
+      formData.append('phase', 'commit');
+      if (preview?.hasFixedRows) formData.append('fixed_mode', fixedMode);
+      if (preview?.hasLineItems) formData.append('line_item_mode', lineItemMode);
       if (docUrl.trim()) formData.append('source_doc_url', docUrl.trim());
       const res = await fetch('/api/records/import', { method: 'POST', body: formData });
       const json = await res.json();
@@ -123,7 +211,7 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
       setResult(json.data);
       setStatus('success');
     } catch (err) {
-      console.error('[ImportModal]', err);
+      console.error('[ImportModal commit]', err);
       setStatus('error');
       setErrorMsg('網路錯誤，請稍後再試');
     }
@@ -132,10 +220,17 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
   function handleReset() {
     setStatus('idle');
     setResult(null);
+    setPreview(null);
     setErrorMsg('');
+    setFixedMode('add_only');
+    setLineItemMode('full_month');
     if (erpFileRef.current) erpFileRef.current.value = '';
     if (tplFileRef.current) tplFileRef.current.value = '';
   }
+
+  const reviewedFixedCount = preview?.fixedDiffs.filter((d) => d.is_reviewed && d.status !== 'same').length ?? 0;
+  const reviewedLineCount = preview?.lineItemDiffs.filter((d) => d.is_reviewed).length ?? 0;
+  const changingFixed = preview?.fixedDiffs.filter((d) => d.status !== 'same') ?? [];
 
   return (
     /* 遮罩層 */
@@ -146,11 +241,11 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
       }}
     >
       {/* Modal 卡片 */}
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
         <div
           style={{ backgroundColor: '#0C3D2E' }}
-          className="px-6 py-4 text-white flex items-center justify-between"
+          className="px-6 py-4 text-white flex items-center justify-between shrink-0"
         >
           <div>
             <h2 className="text-lg font-bold">批次匯入 Excel</h2>
@@ -168,12 +263,12 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
         </div>
 
         {/* Body */}
-        <div className="px-6 py-6">
-          {status !== 'success' ? (
-            <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="px-6 py-6 overflow-y-auto">
+          {status === 'idle' || status === 'previewing' || status === 'error' ? (
+            <form onSubmit={handlePreview} className="space-y-5">
               {/* 簡短說明 */}
               <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800">
-                請選擇 ERP 匯出之單據上傳或是下載範本進行上傳。
+                請選擇 ERP 匯出之單據上傳或是下載範本進行上傳。範本格式檔會先預覽將發生的變化，確認後才會真正寫入。
               </div>
 
               {/* ① 選排放源（＋下載範本） */}
@@ -257,7 +352,7 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
                 </div>
               )}
 
-              {/* 按鈕：單一開始匯入，自動偵測 */}
+              {/* 按鈕 */}
               <div className="flex gap-3 pt-1">
                 <button
                   type="button"
@@ -269,15 +364,186 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
                 </button>
                 <button
                   type="submit"
-                  disabled={status === 'uploading'}
+                  disabled={status === 'previewing'}
                   style={{ backgroundColor: '#0C3D2E' }}
                   className="flex-1 text-white font-medium py-2.5 rounded-lg
                              hover:opacity-90 disabled:opacity-50 transition text-sm"
                 >
-                  {status === 'uploading' ? '上傳中…' : '開始匯入'}
+                  {status === 'previewing' ? '檢查中…' : '下一步：預覽差異'}
                 </button>
               </div>
             </form>
+          ) : status === 'previewed' ? (
+            /* ── 預覽畫面：看過差異、選模式再確認 ── */
+            <div className="space-y-5">
+              <h3 className="text-base font-bold text-gray-800">確認匯入內容</h3>
+
+              {preview?.errors && preview.errors.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+                  <p className="text-sm font-medium text-red-700 mb-1">以下內容無法辨識：</p>
+                  <ul className="text-xs text-red-600 space-y-1 list-disc list-inside">
+                    {preview.errors.map((e, i) => <li key={i}>{e}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              {preview?.notice && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+                  {preview.notice}
+                </div>
+              )}
+
+              {/* 固定分頁（月加總）差異 */}
+              {preview && preview.hasFixedRows && (
+                <div className="border border-gray-200 rounded-lg px-4 py-3">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">
+                    月加總資料（{changingFixed.length} 個月份將有變化）
+                    {reviewedFixedCount > 0 && (
+                      <span className="ml-2 text-amber-700">⚠ 其中 {reviewedFixedCount} 個月份已查核</span>
+                    )}
+                  </p>
+
+                  <div className="max-h-40 overflow-y-auto border border-gray-100 rounded mb-3">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="text-left px-2 py-1">排放源</th>
+                          <th className="text-left px-2 py-1">月份</th>
+                          <th className="text-left px-2 py-1">狀態</th>
+                          <th className="text-right px-2 py-1">舊值</th>
+                          <th className="text-right px-2 py-1">新值</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {preview.fixedDiffs.filter((d) => d.status !== 'same').map((d, i) => (
+                          <tr key={i} className={d.is_reviewed ? 'bg-amber-50' : ''}>
+                            <td className="px-2 py-1">{d.source_code}</td>
+                            <td className="px-2 py-1">{d.month} 月</td>
+                            <td className="px-2 py-1">
+                              {d.status === 'new' ? '🟢 新增' : '🟡 更新'}
+                              {d.is_reviewed && ' ⚠已查核'}
+                            </td>
+                            <td className="px-2 py-1 text-right">{fmtNum(d.old_value)}</td>
+                            <td className="px-2 py-1 text-right">{fmtNum(d.new_value)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <p className="text-xs font-medium text-gray-600 mb-1.5">匯入模式</p>
+                  <div className="space-y-1.5">
+                    <label className="flex items-start gap-2 text-sm cursor-pointer">
+                      <input type="radio" name="fixedMode" className="mt-0.5" checked={fixedMode === 'add_only'}
+                        onChange={() => setFixedMode('add_only')} />
+                      <span><strong>僅新增</strong>（預設）——只寫尚無資料的月份，已有資料一律略過，不覆蓋</span>
+                    </label>
+                    <label className="flex items-start gap-2 text-sm cursor-pointer">
+                      <input type="radio" name="fixedMode" className="mt-0.5" checked={fixedMode === 'add_update'}
+                        onChange={() => setFixedMode('add_update')} />
+                      <span><strong>新增 + 更新</strong>——已有資料的月份會被上表列出的新值覆蓋{reviewedFixedCount > 0 && '，包含已查核的月份'}</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* 單據明細差異 */}
+              {preview && preview.hasLineItems && (
+                <div className="border border-gray-200 rounded-lg px-4 py-3">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">
+                    單據明細（{preview.lineItemDiffs.length} 組排放源×月份）
+                    {reviewedLineCount > 0 && (
+                      <span className="ml-2 text-amber-700">⚠ 其中 {reviewedLineCount} 組已查核</span>
+                    )}
+                  </p>
+
+                  <div className="max-h-40 overflow-y-auto border border-gray-100 rounded mb-3">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="text-left px-2 py-1">排放源</th>
+                          <th className="text-left px-2 py-1">月份</th>
+                          <th className="text-right px-2 py-1">現有</th>
+                          <th className="text-right px-2 py-1">本次上傳</th>
+                          <th className="text-left px-2 py-1"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {preview.lineItemDiffs.map((d, i) => (
+                          <tr key={i} className={d.is_reviewed ? 'bg-amber-50' : ''}>
+                            <td className="px-2 py-1">{d.source_code}</td>
+                            <td className="px-2 py-1">{d.month} 月</td>
+                            <td className="px-2 py-1 text-right">{d.existing_count} 筆 / {fmtNum(d.existing_sum)}</td>
+                            <td className="px-2 py-1 text-right">{d.incoming_count} 筆 / {fmtNum(d.incoming_sum)}</td>
+                            <td className="px-2 py-1">
+                              {d.is_reviewed && <span className="text-amber-700">⚠已查核</span>}
+                              {d.possible_duplicates > 0 && (
+                                <span className="text-orange-600 ml-1">🟠可能重複{d.possible_duplicates}筆</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <p className="text-xs font-medium text-gray-600 mb-1.5">匯入模式</p>
+                  <div className="space-y-1.5">
+                    <label className="flex items-start gap-2 text-sm cursor-pointer">
+                      <input type="radio" name="lineItemMode" className="mt-0.5" checked={lineItemMode === 'full_month'}
+                        onChange={() => setLineItemMode('full_month')} />
+                      <span>
+                        <strong>整月完整檔</strong>（預設）——這批就是該月完整明細，
+                        {preview.lineItemDiffs.some((d) => d.existing_count > 0) && (
+                          <>將<span className="text-red-600 font-medium">刪除現有明細後重新寫入</span>，</>
+                        )}
+                        以本次上傳為準
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 text-sm cursor-pointer">
+                      <input type="radio" name="lineItemMode" className="mt-0.5" checked={lineItemMode === 'supplement'}
+                        onChange={() => setLineItemMode('supplement')} />
+                      <span><strong>補單</strong>——保留現有明細，只新增這批（例如漏了幾張單要補進去）</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {(reviewedFixedCount > 0 || reviewedLineCount > 0) && (
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                  ⚠ 本次匯入會影響已查核的資料。若確認送出，這些月份的查核狀態會被清除，需要重新查核才會納入彙總與報告書。
+                </div>
+              )}
+
+              {errorMsg && (
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                  {errorMsg}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="flex-1 border border-gray-300 text-gray-700 font-medium
+                             py-2.5 rounded-lg hover:bg-gray-50 transition text-sm"
+                >
+                  返回重選
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCommit}
+                  disabled={!preview?.hasFixedRows && !preview?.hasLineItems}
+                  style={{ backgroundColor: (reviewedFixedCount > 0 || reviewedLineCount > 0) ? '#b91c1c' : '#0C3D2E' }}
+                  className="flex-1 text-white font-medium py-2.5 rounded-lg
+                             hover:opacity-90 disabled:opacity-50 transition text-sm"
+                >
+                  {(reviewedFixedCount > 0 || reviewedLineCount > 0) ? '確認覆蓋並匯入' : '確認匯入'}
+                </button>
+              </div>
+            </div>
+          ) : status === 'committing' ? (
+            <div className="py-12 text-center text-gray-500 text-sm">寫入中…</div>
           ) : (
             /* 成功結果畫面 */
             <div className="space-y-5">

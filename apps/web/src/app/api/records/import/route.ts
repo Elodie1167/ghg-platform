@@ -340,8 +340,139 @@ function parseWorkbook(wb: XLSX.WorkBook): ParsedRow[] {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// 匯入模式（2026-08-12 新增，設計文件 §4.2）
+//
+// 起因：CAB_MOHA 2025 電力重新匯入後，1~6 月靜默被覆蓋，使用者要事後
+// 檢查才發現已查核的資料被換掉了（覆蓋後會清除 is_reviewed，見
+// lib/review-reset.ts，但那只是「事後留痕」，不會在覆蓋前提醒）。
+// 本次改動補上「事前預覽 + 使用者自選模式」，phase=preview 時完全
+// 不寫入資料庫，只回傳差異；使用者看過差異、選好模式後才送
+// phase=commit 真正寫入。
+// ─────────────────────────────────────────────────────────────────
+type FixedMode = 'add_only' | 'add_update';
+type LineItemMode = 'full_month' | 'supplement';
+
+function isFixedMode(v: unknown): v is FixedMode {
+  return v === 'add_only' || v === 'add_update';
+}
+function isLineItemMode(v: unknown): v is LineItemMode {
+  return v === 'full_month' || v === 'supplement';
+}
+
+interface FixedDiff {
+  source_code: string;
+  month: number;
+  status: 'new' | 'update' | 'same';
+  old_value: number | null;
+  old_unit: string | null;
+  is_reviewed: boolean;
+  new_value: number | null;
+  new_unit: string;
+}
+
+interface LineItemDiff {
+  source_code: string;
+  month: number;
+  is_reviewed: boolean;
+  existing_count: number;
+  existing_sum: number;
+  existing_unit: string | null;
+  incoming_count: number;
+  incoming_sum: number;
+  incoming_unit: string;
+  possible_duplicates: number;
+}
+
+/** 解析檔案並查資料庫算出「若匯入會發生什麼」，不做任何寫入 */
+async function buildPreview(
+  wb: XLSX.WorkBook,
+  factory_id: string,
+  year: number,
+  parsedRows: ParsedRow[],
+  lineItemGroups: Map<string, LineItemRow[]>,
+  sourceMap: Map<string, { id: string; default_unit: string; scope: number }>,
+  errors: string[],
+): Promise<{ fixedDiffs: FixedDiff[]; lineItemDiffs: LineItemDiff[] }> {
+  const fixedDiffs: FixedDiff[] = [];
+  for (const row of parsedRows) {
+    const source = sourceMap.get(row.source_code);
+    if (!source) continue; // 已在呼叫端記入 errors，這裡不重複
+    const existing = await query(
+      `SELECT activity_value::float AS v, activity_unit, is_reviewed
+         FROM activity_records
+        WHERE factory_id = $1 AND emission_source_id = $2 AND year = $3 AND month = $4
+        LIMIT 1`,
+      [factory_id, source.id, year, row.month],
+    );
+    const cur = existing.rows[0] as { v: number | null; activity_unit: string; is_reviewed: boolean } | undefined;
+    fixedDiffs.push({
+      source_code: row.source_code,
+      month: row.month,
+      status: !cur ? 'new' : (cur.v === row.activity_value ? 'same' : 'update'),
+      old_value: cur?.v ?? null,
+      old_unit: cur?.activity_unit ?? null,
+      is_reviewed: cur?.is_reviewed ?? false,
+      new_value: row.activity_value,
+      new_unit: row.activity_unit,
+    });
+  }
+
+  const lineItemDiffs: LineItemDiff[] = [];
+  for (const [key, items] of lineItemGroups) {
+    const [source_code, monthStr] = key.split('|');
+    const month = parseInt(monthStr, 10);
+    const source = sourceMap.get(source_code);
+    if (!source) continue;
+
+    const existing = await query(
+      `SELECT ar.is_reviewed,
+              (SELECT count(*)::int FROM activity_line_items li WHERE li.activity_record_id = ar.id) AS cnt,
+              (SELECT COALESCE(sum(quantity), 0)::float FROM activity_line_items li WHERE li.activity_record_id = ar.id) AS sum,
+              ar.activity_unit
+         FROM activity_records ar
+        WHERE ar.factory_id = $1 AND ar.emission_source_id = $2 AND ar.year = $3 AND ar.month = $4
+        LIMIT 1`,
+      [factory_id, source.id, year, month],
+    );
+    const cur = existing.rows[0] as
+      | { is_reviewed: boolean; cnt: number; sum: number; activity_unit: string | null }
+      | undefined;
+
+    // 可能重複：現有明細裡有數量與這批新明細任一筆完全相同者（§3.3 的簡化判定，
+    // 不阻擋匯入，只在預覽時提示）
+    let possibleDuplicates = 0;
+    if (cur && cur.cnt > 0) {
+      const existingQtys = await query(
+        `SELECT quantity::float AS q FROM activity_line_items WHERE activity_record_id =
+           (SELECT id FROM activity_records WHERE factory_id=$1 AND emission_source_id=$2 AND year=$3 AND month=$4 LIMIT 1)`,
+        [factory_id, source.id, year, month],
+      );
+      const existingSet = new Set(existingQtys.rows.map((r: { q: number }) => r.q));
+      possibleDuplicates = items.filter((li) => existingSet.has(Number(li.quantity))).length;
+    }
+
+    lineItemDiffs.push({
+      source_code, month,
+      is_reviewed: cur?.is_reviewed ?? false,
+      existing_count: cur?.cnt ?? 0,
+      existing_sum: cur?.sum ?? 0,
+      existing_unit: cur?.activity_unit ?? null,
+      incoming_count: items.length,
+      incoming_sum: items.reduce((s, li) => s + (Number(li.quantity) || 0), 0),
+      incoming_unit: items[0]?.unit ?? source.default_unit,
+      possible_duplicates: possibleDuplicates,
+    });
+  }
+
+  return { fixedDiffs, lineItemDiffs };
+}
+
+// ─────────────────────────────────────────────────────────────────
 // POST /api/records/import
-// multipart/form-data: factory_id, year, file (.xlsx)
+// multipart/form-data: factory_id, year, file (.xlsx), phase ('preview'|'commit')
+//   commit 時另需：fixed_mode ('add_only'|'add_update')、
+//                  line_item_mode ('full_month'|'supplement')
+//   （若檔案裡沒有對應類型的內容，缺該欄位不影響）
 // ─────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   let formData: FormData;
@@ -358,6 +489,10 @@ export async function POST(req: NextRequest) {
   const yearStr = formData.get('year') as string | null;
   const file = formData.get('file') as File | null;
   const formDocUrl = (formData.get('source_doc_url') as string | null)?.trim() || null; // 表單層公檔連結（各組無逐列連結時的後備）
+  const phase = (formData.get('phase') as string | null) ?? 'preview';
+  if (phase !== 'preview' && phase !== 'commit') {
+    return NextResponse.json({ data: null, error: 'phase 必須是 preview 或 commit' }, { status: 400 });
+  }
 
   if (!factory_id || !yearStr || !file) {
     return NextResponse.json(
@@ -399,7 +534,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 解析所有 sheets
+  // 解析所有 sheets（純函式，preview / commit 共用，不寫入任何東西）
   const parsedRows = parseWorkbook(wb);
 
   // 查詢 emission_sources source_code → id 映射
@@ -413,17 +548,71 @@ export async function POST(req: NextRequest) {
     ]),
   );
 
+  const errors: string[] = [];
+  const lineItems = collectLineItems(wb, errors);
+  const lineItemGroups = new Map<string, LineItemRow[]>();
+  for (const li of lineItems) {
+    const key = `${li.source_code}|${li.month}`;
+    (lineItemGroups.get(key) ?? lineItemGroups.set(key, []).get(key)!).push(li);
+  }
+
+  // 找不到排放源代碼的一律先記錄，preview/commit 都要看到
+  for (const row of parsedRows) {
+    if (!sourceMap.has(row.source_code)) {
+      errors.push(`找不到排放源代碼：${row.source_code}（月份 ${row.month}）`);
+    }
+  }
+  for (const [key] of lineItemGroups) {
+    const [source_code, monthStr] = key.split('|');
+    if (!sourceMap.has(source_code)) {
+      errors.push(`單據明細找不到排放源代碼：${source_code}（月份 ${monthStr}）`);
+    }
+  }
+
+  const hasFixedRows = parsedRows.some((r) => sourceMap.has(r.source_code));
+  const hasLineItems = [...lineItemGroups.keys()].some((k) => sourceMap.has(k.split('|')[0]));
+
+  // ── phase = preview：只讀不寫，回傳差異供使用者確認 ──
+  if (phase === 'preview') {
+    if (!hasFixedRows && !hasLineItems) {
+      const erpLike = wb.SheetNames.some((n) => {
+        const s = wb.Sheets[n];
+        if (!s) return false;
+        const hdr = ((XLSX.utils.sheet_to_json(s, { header: 1, defval: '' })[0] as unknown[]) || [])
+          .map((x) => String(x).toLowerCase());
+        return hdr.some((h) => h.includes('year-month') || h.includes('po no'));
+      });
+      return NextResponse.json({
+        data: {
+          hasFixedRows, hasLineItems, fixedDiffs: [], lineItemDiffs: [], errors,
+          notice: erpLike
+            ? '此檔看起來是「ERP 原生匯出檔」。主匯入只吃固定範本格式；請改用上方「② 上傳 ERP 原生檔」，並先選擇排放源。'
+            : '找不到可辨識的分頁（例如 S2_電力、S1_燃料固定、單據明細…）。請確認使用正確的匯入範本；ERP 原生檔請改用「② 上傳 ERP 原生檔」。',
+        },
+        error: null,
+      });
+    }
+    const { fixedDiffs, lineItemDiffs } = await buildPreview(
+      wb, factory_id, year, parsedRows, lineItemGroups, sourceMap, errors,
+    );
+    return NextResponse.json({
+      data: { hasFixedRows, hasLineItems, fixedDiffs, lineItemDiffs, errors },
+      error: null,
+    });
+  }
+
+  // ── phase = commit：依使用者選的模式真正寫入 ──
+  const fixedModeRaw = formData.get('fixed_mode');
+  const lineItemModeRaw = formData.get('line_item_mode');
+  const fixedMode: FixedMode = isFixedMode(fixedModeRaw) ? fixedModeRaw : 'add_only';
+  const lineItemMode: LineItemMode = isLineItemMode(lineItemModeRaw) ? lineItemModeRaw : 'full_month';
+
   let imported = 0;
   let skipped = 0;
-  const errors: string[] = [];
 
   for (const row of parsedRows) {
     const source = sourceMap.get(row.source_code);
-    if (!source) {
-      errors.push(`找不到排放源代碼：${row.source_code}（月份 ${row.month}）`);
-      skipped++;
-      continue;
-    }
+    if (!source) { skipped++; continue; } // 已記錄於 errors
 
     try {
       // 找該 (廠×源×月) 既有紀錄時不限 import_source：這類固定分頁匯入是「每月一筆彙總」
@@ -437,6 +626,11 @@ export async function POST(req: NextRequest) {
         [factory_id, source.id, year, row.month],
       );
       if (existing.rowCount && existing.rowCount > 0) {
+        // 「僅新增」模式：已有資料的月份一律略過，不覆蓋（設計文件 §4.2 預設模式）
+        if (fixedMode === 'add_only') {
+          skipped++;
+          continue;
+        }
         await query(
           `UPDATE activity_records
            SET activity_value = $1, activity_unit = $2,
@@ -498,23 +692,14 @@ export async function POST(req: NextRequest) {
     await recomputeScope2ForFactoryYear(factory_id, year);
   }
 
-  // ── 單據明細（每列一張單）：依 (源×月) 分組，重建明細後回算月加總 + CO₂e ──
+  // ── 單據明細（每列一張單）：依 (源×月) 分組 ──
   let lineItemsImported = 0;
-  const lineItems = collectLineItems(wb, errors);
-  const groups = new Map<string, LineItemRow[]>();
-  for (const li of lineItems) {
-    const key = `${li.source_code}|${li.month}`;
-    (groups.get(key) ?? groups.set(key, []).get(key)!).push(li);
-  }
-  for (const [key, items] of groups) {
+  for (const [key, items] of lineItemGroups) {
     const [source_code, monthStr] = key.split('|');
     const month = parseInt(monthStr, 10);
     const source = sourceMap.get(source_code);
-    if (!source) {
-      errors.push(`單據明細找不到排放源代碼：${source_code}（月份 ${month}）`);
-      skipped += items.length;
-      continue;
-    }
+    if (!source) { skipped += items.length; continue; } // 已記錄於 errors
+
     try {
       // find-or-create 該 (廠×源×月) 的紀錄；不限 import_source，理由同上（避免與手動填報的
       // 同月紀錄脫鉤而重複建立）
@@ -528,8 +713,11 @@ export async function POST(req: NextRequest) {
       let recordId: string;
       if (existing.rowCount && existing.rowCount > 0) {
         recordId = existing.rows[0].id;
-        // 重匯：先清掉該紀錄舊明細（可重跑）
-        await query(`DELETE FROM activity_line_items WHERE activity_record_id = $1`, [recordId]);
+        // 「整月完整檔」模式：這批就是該月完整明細，先清掉舊的再重建（設計文件
+        // §4.2 預設模式）；「補單」模式：保留既有明細，只新增這批，不刪除任何東西。
+        if (lineItemMode === 'full_month') {
+          await query(`DELETE FROM activity_line_items WHERE activity_record_id = $1`, [recordId]);
+        }
       } else {
         // activity_value NOT NULL 且 > 0：以群組加總為初值（明細皆正數，加總必 > 0）
         const groupSum = items.reduce((s, li) => s + (Number(li.quantity) || 0), 0);
@@ -557,7 +745,7 @@ export async function POST(req: NextRequest) {
       if (docUrl) {
         await query(`UPDATE activity_records SET source_doc_url = $1 WHERE id = $2`, [docUrl, recordId]);
       }
-      await recomputeRecordFromLineItems(recordId); // activity_value = SUM + CO₂e
+      await recomputeRecordFromLineItems(recordId); // activity_value = SUM + CO₂e（並清除檢核狀態）
       lineItemsImported += items.length;
     } catch (err) {
       console.error('[import line-items]', err);
@@ -566,23 +754,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 什麼都沒匯到 → 給明確指引（最常見：把 ERP 原生檔丟到這個主匯入）
-  let notice: string | undefined;
-  if (imported === 0 && lineItemsImported === 0) {
-    const erpLike = wb.SheetNames.some((n) => {
-      const s = wb.Sheets[n];
-      if (!s) return false;
-      const hdr = ((XLSX.utils.sheet_to_json(s, { header: 1, defval: '' })[0] as unknown[]) || [])
-        .map((x) => String(x).toLowerCase());
-      return hdr.some((h) => h.includes('year-month') || h.includes('po no'));
-    });
-    notice = erpLike
-      ? '此檔看起來是「ERP 原生匯出檔」。主匯入只吃固定範本格式；請改用上方「② 上傳 ERP 原生檔」，並先選擇排放源。'
-      : '找不到可辨識的分頁（例如 S2_電力、S1_燃料固定、單據明細…）。請確認使用正確的匯入範本；ERP 原生檔請改用「② 上傳 ERP 原生檔」。';
-  }
-
   return NextResponse.json({
-    data: { imported, skipped, errors, lineItemsImported, notice },
+    data: { imported, skipped, errors, lineItemsImported, fixedMode, lineItemMode },
     error: null,
   });
 }
