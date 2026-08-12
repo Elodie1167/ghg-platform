@@ -3,7 +3,7 @@
 /**
  * 3-5-G 廢水處理，兩種填報方式（切換在「基本資訊」分頁）：
  *
- *   外購水量推估 ESTIMATED —— 全自動：廢水量 = 同月 3-1-E 採購水資源 × 廢水產生係數（預設 80%）。
+ *   外購水量推估 ESTIMATED —— 全自動：廢水量 = 同月 3-1-E 採購水資源 × 廢水產生係數（預設 100%，即直接等同外購水量）。
  *                              使用者不填任何數字，改採購水這裡就跟著變。
  *   廠內實測 MEASURED    —— 逐月填 m³，也可用 Excel 範本一次匯入。
  */
@@ -205,7 +205,7 @@ export default function WastewaterGrid({
 
       <div className="px-4 py-2 bg-blue-50 text-blue-900 text-xs border-b border-blue-200 flex items-center gap-2 flex-wrap">
         <span>
-          本廠採用：<strong>{isMeasured ? '廠內實測（有廢水流量計）' : `外購水量推估 × ${(settings.discharge_ratio * 100).toFixed(0)}%`}</strong>
+          本廠採用：<strong>{isMeasured ? '廠內實測（有廢水流量計）' : (settings.discharge_ratio === 1 ? '外購水量推估（直接等同外購水量）' : `外購水量推估 × ${(settings.discharge_ratio * 100).toFixed(0)}%`)}</strong>
           {!isMeasured && <span>　係數依據：{settings.ratio_basis}</span>}
         </span>
         <span className="text-blue-700">

@@ -14,7 +14,7 @@
 import { useState, useRef } from 'react';
 import type { Factory } from './page';
 import { MONTHS, HEADER_BG } from './tabTypes';
-import { WASTE_TYPES_T2, VEHICLE_TYPES_T2, toTonnes } from '@/lib/waste-detail';
+import { WASTE_TYPES_T2, toTonnes } from '@/lib/waste-detail';
 import type { WasteApiRecord } from './WasteApiTypes';
 
 const cell = 'border border-gray-200 px-2 py-1 text-sm';
@@ -24,7 +24,7 @@ type FieldSet = {
   waste_type: string; contractor_name: string;
   destination_name: string; destination_address: string;
   waste_weight: string; waste_weight_unit: string; density: string;
-  distance_km: string; trip_count: string; vehicle_type: string;
+  distance_km: string; trip_count: string;
 };
 const FIELD_KEYS = Object.keys({} as FieldSet) as (keyof FieldSet)[];
 /** 套用到全年時要複製的欄位：不含重量，重量是每月的實際數據 */
@@ -34,7 +34,6 @@ function emptyFields(): FieldSet {
   return {
     waste_type: '', contractor_name: '', destination_name: '', destination_address: '',
     waste_weight: '', waste_weight_unit: 'kg', density: '', distance_km: '', trip_count: '',
-    vehicle_type: '',
   };
 }
 
@@ -68,7 +67,7 @@ export default function WastewaterTransportGrid({
       destination_name: r.destination_name, destination_address: r.destination_address,
       waste_weight: r.waste_weight, waste_weight_unit: r.waste_weight_unit ?? 'kg',
       density: r.density, distance_km: r.distance_km,
-      trip_count: r.trip_count, vehicle_type: r.vehicle_type,
+      trip_count: r.trip_count,
     };
     const v = map[k];
     return v == null ? (k === 'waste_weight_unit' ? 'kg' : '') : String(v);
@@ -107,7 +106,6 @@ export default function WastewaterTransportGrid({
         density,
         distance_km: distance,
         trip_count: trips,
-        vehicle_type: f.vehicle_type || null,
       }),
     });
     const j = await res.json();
@@ -233,25 +231,37 @@ export default function WastewaterTransportGrid({
   const allSelected = recordMonths.length > 0 && recordMonths.every((m) => selected.has(m));
 
   return (
-    <div className="mb-8 border border-gray-200 rounded-lg overflow-hidden">
-      <div className="px-4 py-2.5 text-white flex items-center gap-3 flex-wrap" style={{ backgroundColor: HEADER_BG }}>
-        <span className="font-mono text-xs opacity-80">3-5-T2</span>
-        <span className="font-semibold text-sm">廢水/水肥清運</span>
-        <span className="text-xs opacity-80">tkm ＝ 重量(mt) × 單程距離(km) × 趟次</span>
-        <span className="ml-auto text-xs">
-          年度合計 {total > 0 ? total.toFixed(4) : '—'} tCO₂e
-          {status === 'saving' ? '　儲存中…' : status === 'saved' ? '　已儲存' : ''}
-        </span>
+    <div className="mb-8">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h3 className="font-semibold text-gray-800">
+          廢水/水肥清運
+          <span className="ml-2 text-xs font-mono text-gray-400">3-5-T2</span>
+          <span className="ml-2 text-xs text-gray-400">tkm ＝ 重量(mt) × 單程距離(km) × 趟次</span>
+        </h3>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">
+            年度合計 {total > 0 ? total.toFixed(4) : '—'} tCO₂e
+            {status === 'saving' ? '　儲存中…' : status === 'saved' ? '　已儲存' : ''}
+          </span>
+          <button onClick={bulkReviewAll} disabled={recordMonths.length === 0 || bulkBusy}
+            className="px-3 py-1.5 rounded-lg border border-green-700 text-green-700 text-xs font-medium transition hover:bg-green-50 disabled:opacity-30 disabled:cursor-not-allowed">
+            全選查核
+          </button>
+          <button onClick={bulkDeleteAll} disabled={recordMonths.length === 0 || bulkBusy}
+            className="px-3 py-1.5 rounded-lg border border-red-400 text-red-500 text-xs font-medium transition hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed">
+            全選刪除
+          </button>
+        </div>
       </div>
 
       {scope3Factor == null && (
-        <div className="px-4 py-2 bg-amber-50 text-amber-800 text-xs border-b border-amber-200">
+        <div className="mb-2 px-3 py-2 bg-amber-50 text-amber-800 text-xs border border-amber-200 rounded-lg">
           ⚠️ 本廠尚未指派 3-5-T2 的排放係數（kgCO₂e/tkm），資料可以先填，但 CO₂e 會留空不計入彙整表。
         </div>
       )}
-      {err && <div className="px-4 py-2 bg-red-50 text-red-700 text-xs border-b border-red-200">{err}</div>}
+      {err && <div className="mb-2 px-3 py-2 bg-red-50 text-red-700 text-xs border border-red-200 rounded-lg">{err}</div>}
 
-      <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex flex-wrap items-end gap-2">
+      <div className="px-4 py-2 mb-3 bg-gray-50 border border-gray-200 rounded-lg flex flex-wrap items-end gap-2">
         <span className="text-xs text-gray-500 mb-1 w-full">
           若全年送同一個清運商、處理場所、車型也相同，這裡填一次套用到 12 個月即可，不用每個月都填；重量請逐月填實際清運量：
         </span>
@@ -287,34 +297,16 @@ export default function WastewaterTransportGrid({
             value={bulk.trip_count}
             onChange={(e) => setBulk((b) => ({ ...b, trip_count: e.target.value }))} />
         </div>
-        <div style={{ minWidth: 110 }}>
-          <select className={input} value={bulk.vehicle_type}
-            onChange={(e) => setBulk((b) => ({ ...b, vehicle_type: e.target.value }))}>
-            <option value="">運輸車型</option>
-            {VEHICLE_TYPES_T2.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
         <button onClick={applyToAll} disabled={applying}
           className="px-3 py-1 text-xs rounded text-white disabled:opacity-50" style={{ backgroundColor: HEADER_BG }}>
           {applying ? '套用中…' : '套用到全年'}
         </button>
       </div>
 
-      <div className="px-4 py-2 bg-gray-100 flex items-center gap-2">
-        <button onClick={bulkReviewAll} disabled={recordMonths.length === 0 || bulkBusy}
-          className="px-3 py-1 rounded text-xs font-medium text-white disabled:opacity-40" style={{ backgroundColor: HEADER_BG }}>
-          全選查核
-        </button>
-        <button onClick={bulkDeleteAll} disabled={recordMonths.length === 0 || bulkBusy}
-          className="px-3 py-1 rounded text-xs font-medium border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-40">
-          全選刪除
-        </button>
-      </div>
-
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full border-collapse">
-          <thead className="bg-gray-50 text-xs text-gray-600">
-            <tr>
+          <thead>
+            <tr style={{ backgroundColor: HEADER_BG }} className="text-white text-xs">
               <th className={`${cell} w-8 text-center`}>
                 <input type="checkbox" checked={allSelected}
                   onChange={(e) => setSelected(e.target.checked ? new Set(recordMonths) : new Set())} />
@@ -327,7 +319,6 @@ export default function WastewaterTransportGrid({
               <th className={cell} style={{ minWidth: 60 }}>單位</th>
               <th className={cell} style={{ minWidth: 90 }}>單程距離 km</th>
               <th className={cell} style={{ minWidth: 60 }}>趟次</th>
-              <th className={cell} style={{ minWidth: 100 }}>車型</th>
               <th className={cell}>活動數據 tkm</th>
               <th className={cell}>tCO₂e</th>
               <th className={cell}>查核</th>
@@ -402,14 +393,6 @@ export default function WastewaterTransportGrid({
                       value={readField(m, 'trip_count')}
                       onChange={(e) => onEdit(m, 'trip_count', e.target.value)} />
                   </td>
-                  <td className={cell}>
-                    <select className={input} disabled={locked}
-                      value={readField(m, 'vehicle_type')}
-                      onChange={(e) => onEdit(m, 'vehicle_type', e.target.value)}>
-                      <option value="">請選擇</option>
-                      {VEHICLE_TYPES_T2.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </td>
                   <td className={`${cell} text-right font-mono text-xs`}>
                     {r?.activity_value != null ? r.activity_value.toLocaleString() : '—'}
                   </td>
@@ -435,7 +418,7 @@ export default function WastewaterTransportGrid({
               <td className={cell} colSpan={5}>年度合計</td>
               <td className={`${cell} text-right font-mono`}>{weightKgTotal > 0 ? weightKgTotal.toLocaleString() : '—'}</td>
               <td className={cell}>kg</td>
-              <td className={cell} colSpan={3} />
+              <td className={cell} colSpan={2} />
               <td className={`${cell} text-right font-mono`}>{tkmTotal > 0 ? tkmTotal.toLocaleString() : '—'}</td>
               <td className={`${cell} text-right font-mono`}>{total > 0 ? total.toFixed(4) : '—'}</td>
               <td className={cell} />

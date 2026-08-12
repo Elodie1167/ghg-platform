@@ -109,7 +109,7 @@ export async function PUT(req: NextRequest) {
   const ratio = mode === 'ESTIMATED' ? (p.discharge_ratio ?? DEFAULT_DISCHARGE_RATIO) : DEFAULT_DISCHARGE_RATIO;
   const basis = p.ratio_basis?.trim() || DEFAULT_RATIO_BASIS;
 
-  // 覆寫預設 80% 必須留下理由，否則查證問起來沒有依據可調閱
+  // 覆寫預設 100% 必須留下理由，否則查證問起來沒有依據可調閱
   if (mode === 'ESTIMATED' && ratio !== DEFAULT_DISCHARGE_RATIO && !p.ratio_override_reason?.trim()) {
     return NextResponse.json(
       { data: null, error: `廢水產生係數不等於預設 ${DEFAULT_DISCHARGE_RATIO * 100}% 時，必須填寫覆寫理由` },

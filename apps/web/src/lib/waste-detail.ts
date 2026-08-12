@@ -24,15 +24,15 @@ export function isWasteTransport(sourceCode: string): boolean {
 }
 
 export const WASTE_TYPES_T1 = ['一般廢棄物', '廢布', '回收物', '有害事業廢棄物', '其他'] as const;
-export const WASTE_TYPES_T2 = ['廢水', '水肥', '污泥'] as const;
+/** 2026-08-12 起僅計廢水（不含水肥、污泥——集團廢棄物只算一般廢棄物與廢布） */
+export const WASTE_TYPES_T2 = ['廢水'] as const;
 export const VEHICLE_TYPES_T1 = ['柴油垃圾車', 'HGV（全載重）', '3.5–7.5t 貨車', '其他'] as const;
-export const VEHICLE_TYPES_T2 = ['水肥車', '槽車', '其他'] as const;
 export const WASTEWATER_TYPES = ['生活廢水', '製程廢水', '混合'] as const;
 export const TREATMENT_MODES = ['納管污水下水道', '委外處理廠', '廠內自設污水處理設施'] as const;
 
-/** 集團預設廢水產生係數（外購水量推估法），依據：業界常規 */
-export const DEFAULT_DISCHARGE_RATIO = 0.8;
-export const DEFAULT_RATIO_BASIS = '依據業界常規';
+/** 2026-08-12 起：外購水量推估法直接視外購水量為廢水量，不再打折 */
+export const DEFAULT_DISCHARGE_RATIO = 1.0;
+export const DEFAULT_RATIO_BASIS = '外購水量全數視為廢水排放';
 
 export interface WasteDetail {
   // 清運（3-5-T1 / 3-5-T2）
@@ -125,7 +125,6 @@ export function validateWasteDetail(sourceCode: string, d: WasteDetail): string[
     if (d.waste_weight_unit === 'm3' && (!d.density || d.density <= 0)) errs.push('重量單位為 m³ 時需填密度（t/m³）');
     if (!d.distance_km || d.distance_km <= 0) errs.push('單程運輸距離需大於 0');
     if (d.trip_count != null && d.trip_count <= 0) errs.push('清運趟次需大於 0');
-    if (!d.vehicle_type) errs.push('請選擇運輸車型');
     return errs;
   }
 

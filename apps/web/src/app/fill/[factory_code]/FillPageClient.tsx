@@ -20,7 +20,6 @@ import WasteTransportGrid from './WasteTransportGrid';
 import WastewaterGrid from './WastewaterGrid';
 import WastewaterTransportGrid from './WastewaterTransportGrid';
 import type { WasteApiData } from './WasteApiTypes';
-import SourceNotApplicablePanel from './SourceNotApplicablePanel';
 
 const SOURCE_GROUPS = [
   { tabId: 'elec',        label: '電力來源',                 prefix: '2-'  },
@@ -389,8 +388,10 @@ export default function FillPageClient({
               <span>
                 外購水量推估
                 <span className="text-xs text-gray-500 ml-1">
-                  廢水量 ＝ 每月「3-1-E 採購水資源」× {(ratio * 100).toFixed(0)}%，
-                  <strong>系統自動算，不需另外填</strong>（係數依據：{basis}）
+                  {ratio === 1
+                    ? <>廢水量 ＝ 每月「3-1-E 採購水資源」，<strong>系統自動算，不需另外填</strong>（{basis}）</>
+                    : <>廢水量 ＝ 每月「3-1-E 採購水資源」× {(ratio * 100).toFixed(0)}%，
+                        <strong>系統自動算，不需另外填</strong>（係數依據：{basis}）</>}
                 </span>
               </span>
             </label>
@@ -406,7 +407,7 @@ export default function FillPageClient({
             </label>
           </div>
           {isDefault && (
-            <p className="text-xs text-gray-400 mt-1.5">本廠尚未設定，目前套用集團預設（外購水量推估 × 80%）。</p>
+            <p className="text-xs text-gray-400 mt-1.5">本廠尚未設定，目前套用集團預設（外購水量推估，直接等同外購水量）。</p>
           )}
           {note && <p className="text-xs text-green-700 mt-1.5">{note}</p>}
         </div>
@@ -423,6 +424,7 @@ export default function FillPageClient({
 
     const w1Source = emissionSources.find((s) => s.source_code === '3-5-W1');
     const w2Source = emissionSources.find((s) => s.source_code === '3-5-W2');
+    const t2Source = emissionSources.find((s) => s.source_code === '3-5-T2');
 
     async function handleSaveConfig() {
       setConfigSaving(true);
@@ -552,13 +554,36 @@ export default function FillPageClient({
                 />
 
                 <WastewaterModeRow />
+
+                {t2Source && (
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input type="checkbox" checked={pendingIds.has(t2Source.id)}
+                        onChange={(e) => {
+                          setPendingIds((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(t2Source.id); else next.delete(t2Source.id);
+                            return next;
+                          });
+                        }}
+                        className="w-4 h-4" style={{ accentColor: '#16a34a' }} />
+                      <span className="text-sm font-medium text-gray-700">
+                        本廠有廢水／水肥清運（3-5-T2）
+                      </span>
+                    </label>
+                    <p className="text-xs text-gray-500 mt-1 ml-6">
+                      勾選後才會在「廢棄物 3.5」分頁顯示這張表；沒有這項清運（例如廢水全數納管由污水下水道處理）就不用勾。
+                    </p>
+                  </div>
+                )}
               </div>
             );
           }
 
           const groupSources = emissionSources.filter(
             (s) => s.source_code.startsWith(group.prefix) &&
-                   s.source_code !== '3-5-W1' && s.source_code !== '3-5-W2',
+                   s.source_code !== '3-5-W1' && s.source_code !== '3-5-W2' &&
+                   s.source_code !== '3-6-B', // 飯店住宿已停用（TravelTab 不再收，見 TRAVEL_CODES）
           );
           if (groupSources.length === 0) return null;
 
@@ -1407,9 +1432,7 @@ export default function FillPageClient({
       src ? (factorBySourceId[src.id]?.scope3_factor ?? null) : null;
     // 清運係數與 3-4-A 上下游運輸-陸運共用（V45），畫面提示直接取那一筆
     const roadFactor = factorOf(emissionSources.find((s) => s.source_code === '3-4-A'));
-    const naOf = (src: EmissionSource | undefined) =>
-      src ? applicability.find((a) => a.emission_source_id === src.id) : undefined;
-    const t2NotApplicable = naOf(t2Source)?.not_applicable ?? false;
+    const t2Enabled = !!t2Source && selectedSourceIds.has(t2Source.id);
 
     function formatMethods(cfg: WasteMethodConfig) {
       const parts: string[] = [];
@@ -1706,20 +1729,21 @@ export default function FillPageClient({
         {(t1Source || gSource || t2Source) && !wasteData && (
           <div className="mb-8 py-8 text-center text-gray-400 text-sm">載入清運與廢水資料中…</div>
         )}
-        {t2Source && (
-          <>
-            <SourceNotApplicablePanel
-              factory={factory} year={year} source={t2Source}
-              initial={naOf(t2Source)} onChanged={refreshRecords}
-            />
-            {!t2NotApplicable && wasteData && (
-              <WastewaterTransportGrid
-                factory={factory} year={year}
-                records={wasteData.records} scope3Factor={factorOf(t2Source)}
-                onChanged={() => { refreshWaste(); refreshRecords(); }}
-              />
-            )}
-          </>
+        {t2Source && t2Enabled && wasteData && (
+          <WastewaterTransportGrid
+            factory={factory} year={year}
+            records={wasteData.records} scope3Factor={factorOf(t2Source)}
+            onChanged={() => { refreshWaste(); refreshRecords(); }}
+          />
+        )}
+        {t2Source && !t2Enabled && (
+          <div className="mb-6 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500">
+            尚未啟用廢水／水肥清運（3-5-T2）。請至
+            <button onClick={() => setActiveTab('basic')} className="text-green-600 underline mx-1">
+              基本資訊
+            </button>
+            勾選「本廠有廢水／水肥清運」後再填。
+          </div>
         )}
       </div>
     );

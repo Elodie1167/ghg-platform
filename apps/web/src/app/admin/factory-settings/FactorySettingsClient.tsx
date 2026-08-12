@@ -66,13 +66,13 @@ export default function FactorySettingsClient({
         —— 這就是規格文件「同年度不可混用兩種方式」的實作方式。
       </p>
       <p className="text-xs text-amber-700 mt-2 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-        ⚠️ 預設廢水產生係數 80%，引用依據「依據業界常規」。此依據對第三方查證單位屬<strong>較弱佐證</strong>，
-        永續發展部尚在評估是否補一個可查的出處（如當地下水道法規之污水量推估規定）。需相關部門確認。
+        ⚠️ 集團預設廢水產生係數 100%，即外購水量推估法直接視外購水量為廢水量，不再打折。
+        個別廠若有實際比例依據，可在下方「設定」覆寫並填理由。
       </p>
 
       {unset > 0 && (
         <p className="text-sm text-gray-600 mt-3">
-          尚有 <strong>{unset}</strong> 廠未設定（顯示為集團預設值：外購水量推估 × 80%）。
+          尚有 <strong>{unset}</strong> 廠未設定（顯示為集團預設值：外購水量推估，直接等同外購水量）。
         </p>
       )}
       {msg && <p className="mt-3 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2">{msg}</p>}
@@ -149,7 +149,7 @@ export default function FactorySettingsClient({
             {editing.wastewater_input_mode === 'ESTIMATED' && (
               <div className="mt-4 space-y-3">
                 <div>
-                  <label className="block text-xs text-gray-600 mb-0.5">廢水產生係數（0–1，預設 0.80）</label>
+                  <label className="block text-xs text-gray-600 mb-0.5">廢水產生係數（0–1，預設 1.00 即等同外購水量）</label>
                   <input type="number" step="0.01" min="0.01" max="1"
                     className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
                     value={editing.discharge_ratio}
@@ -163,7 +163,7 @@ export default function FactorySettingsClient({
                 </div>
                 {editing.discharge_ratio !== DEFAULT_DISCHARGE_RATIO && (
                   <div>
-                    <label className="block text-xs text-gray-600 mb-0.5">覆寫理由 *（不等於 80% 時必填）</label>
+                    <label className="block text-xs text-gray-600 mb-0.5">覆寫理由 *（不等於預設 100% 時必填）</label>
                     <input className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
                       value={editing.ratio_override_reason ?? ''}
                       onChange={(e) => setEditing({ ...editing, ratio_override_reason: e.target.value })} />

@@ -47,7 +47,7 @@ export interface FactorySettings {
 
 /**
  * 取某廠某年度的設定。找不到當年度就往前找最近一個生效年度；
- * 都沒有才回集團預設（外購水量推估 × 80%）。
+ * 都沒有才回集團預設（外購水量推估，直接等同外購水量）。
  */
 export async function getFactorySettings(factory_id: string, year: number): Promise<FactorySettings> {
   const res = await query(
