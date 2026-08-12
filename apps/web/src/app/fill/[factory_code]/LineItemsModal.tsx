@@ -186,13 +186,13 @@ export default function LineItemsModal({
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-gray-50 text-gray-600 text-xs">
-                    <th className="px-3 py-2 text-left">單據號碼</th>
-                    <th className="px-3 py-2 text-left">單據日期</th>
-                    <th className="px-3 py-2 text-right">用量</th>
-                    <th className="px-3 py-2 text-left">單位</th>
-                    <th className="px-3 py-2 text-left">{refLabel}</th>
-                    <th className="px-3 py-2 text-left">備註</th>
-                    {!readOnly && <th className="px-3 py-2 w-8" />}
+                    <th className="whitespace-nowrap px-3 py-2 text-left">單據號碼</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left">單據日期</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-right">用量</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left">單位</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left">{refLabel}</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left">備註</th>
+                    {!readOnly && <th className="whitespace-nowrap px-3 py-2 w-8" />}
                   </tr>
                 </thead>
                 <tbody>

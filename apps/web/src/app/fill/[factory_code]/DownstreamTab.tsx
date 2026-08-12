@@ -225,12 +225,12 @@ export default function DownstreamTab({
         <table className="text-sm border-collapse w-full">
           <thead>
             <tr style={{ backgroundColor: HEADER_BG }} className="text-white text-xs">
-              <th className="px-4 py-2.5 text-left w-28">運輸方式</th>
-              <th className="px-4 py-2.5 text-left">年度 TKM（公噸‧公里）</th>
-              <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
-              <th className="px-3 py-2.5 text-center w-16">明細</th>
-              <th className="px-3 py-2.5 text-center w-16">查核</th>
-              <th className="px-3 py-2.5 text-center w-12">狀態</th>
+              <th className="whitespace-nowrap px-4 py-2.5 text-left w-28">運輸方式</th>
+              <th className="whitespace-nowrap px-4 py-2.5 text-left">年度 TKM（公噸‧公里）</th>
+              <th className="whitespace-nowrap px-3 py-2.5 text-right w-24">CO₂e (t)</th>
+              <th className="whitespace-nowrap px-3 py-2.5 text-center w-16">明細</th>
+              <th className="whitespace-nowrap px-3 py-2.5 text-center w-16">查核</th>
+              <th className="whitespace-nowrap px-3 py-2.5 text-center w-12" />
             </tr>
           </thead>
           <tbody>
@@ -270,9 +270,6 @@ export default function DownstreamTab({
                     </button>
                   </td>
                   <td className="px-3 py-2 text-center text-xs text-gray-400 whitespace-nowrap">
-                    {cell.saveStatus === 'saving' && '⏳'}
-                    {cell.saveStatus === 'saved' && '✓'}
-                    {cell.saveStatus === 'error' && '❌'}
                     <button onClick={() => clearCell(src.id)} disabled={!cell.id || cell.is_reviewed}
                       title={cell.is_reviewed ? '已查核不可清空，請先取消查核' : '清空此列數值'}
                       className={`ml-1 text-sm leading-none transition ${!cell.id || cell.is_reviewed ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>

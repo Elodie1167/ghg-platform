@@ -410,11 +410,11 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
                     <table className="w-full text-xs">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr>
-                          <th className="text-left px-2 py-1">排放源</th>
-                          <th className="text-left px-2 py-1">月份</th>
-                          <th className="text-left px-2 py-1">狀態</th>
-                          <th className="text-right px-2 py-1">舊值</th>
-                          <th className="text-right px-2 py-1">新值</th>
+                          <th className="whitespace-nowrap text-left px-2 py-1">排放源</th>
+                          <th className="whitespace-nowrap text-left px-2 py-1">月份</th>
+                          <th className="whitespace-nowrap text-left px-2 py-1">狀態</th>
+                          <th className="whitespace-nowrap text-right px-2 py-1">舊值</th>
+                          <th className="whitespace-nowrap text-right px-2 py-1">新值</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -464,11 +464,11 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
                     <table className="w-full text-xs">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr>
-                          <th className="text-left px-2 py-1">排放源</th>
-                          <th className="text-left px-2 py-1">月份</th>
-                          <th className="text-right px-2 py-1">現有</th>
-                          <th className="text-right px-2 py-1">本次上傳</th>
-                          <th className="text-left px-2 py-1"></th>
+                          <th className="whitespace-nowrap text-left px-2 py-1">排放源</th>
+                          <th className="whitespace-nowrap text-left px-2 py-1">月份</th>
+                          <th className="whitespace-nowrap text-right px-2 py-1">現有</th>
+                          <th className="whitespace-nowrap text-right px-2 py-1">本次上傳</th>
+                          <th className="whitespace-nowrap text-left px-2 py-1"></th>
                         </tr>
                       </thead>
                       <tbody>

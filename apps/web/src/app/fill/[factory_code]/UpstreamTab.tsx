@@ -323,10 +323,10 @@ export default function UpstreamTab({
             <table className="text-sm border-collapse" style={{ minWidth: '360px' }}>
               <thead>
                 <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
-                  <th className="px-4 py-2.5 text-left w-20">運輸方式</th>
-                  <th className="px-2 py-2.5 text-right w-28">TKM 年度合計</th>
-                  <th className="px-2 py-2.5 text-right w-20">CO₂e (t)</th>
-                  <th className="px-2 py-2.5 w-16" />
+                  <th className="whitespace-nowrap px-4 py-2.5 text-left w-20">運輸方式</th>
+                  <th className="whitespace-nowrap px-2 py-2.5 text-right w-28">TKM 年度合計</th>
+                  <th className="whitespace-nowrap px-2 py-2.5 text-right w-20">CO₂e (t)</th>
+                  <th className="whitespace-nowrap px-2 py-2.5 w-16" />
                 </tr>
               </thead>
               <tbody>
@@ -381,9 +381,9 @@ export default function UpstreamTab({
             <table className="text-sm border-collapse" style={{ minWidth: '360px' }}>
               <thead>
                 <tr style={{ backgroundColor: '#1a5c44' }} className="text-white">
-                  <th className="px-4 py-2.5 text-left w-20">品項</th>
-                  <th className="px-2 py-2.5 text-right w-28">重量(ton) 年度合計</th>
-                  <th className="px-2 py-2.5 w-16" />
+                  <th className="whitespace-nowrap px-4 py-2.5 text-left w-20">品項</th>
+                  <th className="whitespace-nowrap px-2 py-2.5 text-right w-28">重量(ton) 年度合計</th>
+                  <th className="whitespace-nowrap px-2 py-2.5 w-16" />
                 </tr>
               </thead>
               <tbody>

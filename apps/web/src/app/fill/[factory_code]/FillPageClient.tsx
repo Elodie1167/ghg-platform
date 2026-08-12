@@ -990,23 +990,22 @@ export default function FillPageClient({
               <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr style={{ backgroundColor: '#0C3D2E' }} className="text-white">
-                    <th className="px-2 py-3 text-center w-8">
+                    <th className="whitespace-nowrap px-2 py-3 text-center w-8">
                       <input type="checkbox"
                         checked={rows.length > 0 && selected.size === rows.length}
                         onChange={toggleSelectAll}
                       />
                     </th>
-                    <th className="px-3 py-3 text-left w-24">月份</th>
-                    <th className="px-3 py-3 text-left">場別 / 說明</th>
-                    <th className="px-3 py-3 text-right w-32">用電量 (kWh)</th>
-                    <th className="px-3 py-3 text-left w-32">帳單起日</th>
-                    <th className="px-3 py-3 text-left w-32">帳單迄日</th>
-                    <th className="px-3 py-3 text-left w-32">電表號碼</th>
-                    <th className="px-3 py-3 text-right w-24">CO₂e (t)</th>
-                    <th className="px-3 py-3 text-center w-28">當月加總明細</th>
-                    <th className="px-3 py-3 text-center w-10">查核</th>
-                    <th className="px-3 py-3 text-center w-12">狀態</th>
-                    <th className="px-3 py-3 w-10" />
+                    <th className="whitespace-nowrap px-3 py-3 text-left w-24">月份</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left">場別 / 說明</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-right w-32">用電量 (kWh)</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left w-32">帳單起日</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left w-32">帳單迄日</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-left w-32">電表號碼</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-right w-24">CO₂e (t)</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-center w-28">當月加總明細</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-center w-10">查核</th>
+                    <th className="whitespace-nowrap px-3 py-3 w-10" />
                   </tr>
                 </thead>
                 <tbody>
@@ -1082,14 +1081,6 @@ export default function FillPageClient({
                           {row.is_reviewed ? '✅' : '⬜'}
                         </button>
                       </td>
-                      <td className="px-2 py-1.5 text-center text-sm">
-                        {row.saveStatus === 'saving' && '⏳'}
-                        {row.saveStatus === 'saved' && '✅'}
-                        {row.saveStatus === 'error' && '❌'}
-                        {row.saveStatus === 'idle' && row.id && (
-                          <span className="text-gray-200">●</span>
-                        )}
-                      </td>
                       <td className="px-2 py-1.5 text-center">
                         <button onClick={() => !row.is_reviewed && deleteRow(row.tempKey)}
                           disabled={row.is_reviewed}
@@ -1111,7 +1102,7 @@ export default function FillPageClient({
                     <td className="px-3 py-2 text-right text-gray-700 font-mono">
                       {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
                     </td>
-                    <td colSpan={4} />
+                    <td colSpan={3} />
                   </tr>
                 </tfoot>
               </table>
@@ -1374,19 +1365,19 @@ export default function FillPageClient({
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ backgroundColor: '#0C3D2E' }} className="text-white">
-                  <th className="px-2 py-2.5 text-center w-8">
+                  <th className="whitespace-nowrap px-2 py-2.5 text-center w-8">
                     <input type="checkbox"
                       checked={selected.size === MONTHS.length}
                       onChange={toggleSelectAll} />
                   </th>
-                  <th className="px-3 py-2.5 text-left w-16">月份</th>
-                  <th className="px-3 py-2.5 text-right w-36">採購量 ({source.default_unit})</th>
-                  <th className="px-3 py-2.5 text-right w-28">含碳量 (%)</th>
-                  <th className="px-3 py-2.5 text-right w-32">估計碳重 (kg)</th>
-                  <th className="px-3 py-2.5 text-left">備註</th>
-                  <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
-                  <th className="px-3 py-2.5 text-center w-8">查核</th>
-                  <th className="px-3 py-2.5 text-center w-8">狀</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-left w-16">月份</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-right w-36">採購量 ({source.default_unit})</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-right w-28">含碳量 (%)</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-right w-32">估計碳重 (kg)</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-left">備註</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-right w-24">CO₂e (t)</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-center w-8">查核</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-center w-8" />
                 </tr>
               </thead>
               <tbody>
@@ -1435,9 +1426,6 @@ export default function FillPageClient({
                         </button>
                       </td>
                       <td className="px-2 py-1.5 text-center text-xs whitespace-nowrap">
-                        {row.saveStatus === 'saving' && '⏳'}
-                        {row.saveStatus === 'saved' && '✓'}
-                        {row.saveStatus === 'error' && '❌'}
                         <button onClick={() => clearMonth(m)} disabled={!row.id || row.is_reviewed}
                           title={row.is_reviewed ? '已查核不可清空，請先取消查核' : '清空此月數值'}
                           className={`ml-1 text-sm leading-none transition ${!row.id || row.is_reviewed ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>
@@ -1664,16 +1652,16 @@ export default function FillPageClient({
           <table className="w-full border-collapse text-sm max-w-lg">
             <thead>
               <tr style={{ backgroundColor: '#0C3D2E' }} className="text-white">
-                <th className="px-2 py-2 text-center w-8">
+                <th className="whitespace-nowrap px-2 py-2 text-center w-8">
                   <input type="checkbox" checked={allSelected}
                     onChange={(e) => setSelected(e.target.checked ? new Set(recordMonths) : new Set())}
                     className="accent-green-600" />
                 </th>
-                <th className="px-4 py-2 text-left w-16">月份</th>
-                <th className="px-4 py-2 text-right">廢棄物重量 (kg)</th>
-                <th className="px-3 py-2 text-center w-16">明細</th>
-                <th className="px-4 py-2 text-right w-32">CO₂e (t)</th>
-                <th className="px-2 py-2 text-center w-10">查核</th>
+                <th className="whitespace-nowrap px-4 py-2 text-left w-16">月份</th>
+                <th className="whitespace-nowrap px-4 py-2 text-right">廢棄物重量 (kg)</th>
+                <th className="whitespace-nowrap px-3 py-2 text-center w-16">明細</th>
+                <th className="whitespace-nowrap px-4 py-2 text-right w-32">CO₂e (t)</th>
+                <th className="whitespace-nowrap px-2 py-2 text-center w-10">查核</th>
               </tr>
             </thead>
             <tbody>
@@ -1881,9 +1869,9 @@ export default function FillPageClient({
           <table className="w-full text-sm">
             <thead>
               <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
-                <th className="px-4 py-2 text-left w-20">月份</th>
-                <th className="px-4 py-2 text-right">已查核電力 (kWh)</th>
-                <th className="px-4 py-2 text-right">T&amp;D 損失 (tCO₂e)</th>
+                <th className="whitespace-nowrap px-4 py-2 text-left w-20">月份</th>
+                <th className="whitespace-nowrap px-4 py-2 text-right">已查核電力 (kWh)</th>
+                <th className="whitespace-nowrap px-4 py-2 text-right">T&amp;D 損失 (tCO₂e)</th>
               </tr>
             </thead>
             <tbody>
@@ -2173,12 +2161,12 @@ export default function FillPageClient({
             <table className="w-full text-xs border-collapse" style={{ minWidth: '640px' }}>
               <thead>
                 <tr className="bg-gray-800 text-white">
-                  <th className="sticky left-0 bg-gray-800 px-3 py-2 text-left w-28">代碼</th>
-                  <th className="px-3 py-2 text-left">排放源名稱</th>
-                  <th className="px-3 py-2 text-right w-28">CO₂ (tCO₂)</th>
-                  <th className="px-3 py-2 text-right w-28">CH₄ (tCH₄)</th>
-                  <th className="px-3 py-2 text-right w-28">N₂O (tN₂O)</th>
-                  <th className="px-3 py-2 text-right w-28 font-bold">CO₂e (tCO₂e)</th>
+                  <th className="whitespace-nowrap sticky left-0 bg-gray-800 px-3 py-2 text-left w-28">代碼</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-left">排放源名稱</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right w-28">CO₂ (tCO₂)</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right w-28">CH₄ (tCH₄)</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right w-28">N₂O (tN₂O)</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right w-28 font-bold">CO₂e (tCO₂e)</th>
                 </tr>
               </thead>
               <tbody>
@@ -2405,19 +2393,19 @@ export default function FillPageClient({
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr className="text-blue-600 border-b border-blue-200 text-right">
-                  <th className="py-1.5 text-left font-semibold w-24">代碼</th>
-                  <th className="py-1.5 text-left font-semibold pr-3">名稱</th>
-                  <th className="py-1.5 font-semibold">CO₂ EF</th>
-                  <th className="py-1.5 font-semibold">CH₄ EF</th>
-                  <th className="py-1.5 font-semibold">N₂O EF</th>
-                  <th className="py-1.5 font-semibold">電網 EF</th>
-                  <th className="py-1.5 font-semibold">市場剩餘 EF</th>
-                  <th className="py-1.5 font-semibold">S3 EF</th>
-                  <th className="py-1.5 font-semibold">焚化係數</th>
-                  <th className="py-1.5 font-semibold">回收係數</th>
-                  <th className="py-1.5 font-semibold">掩埋係數</th>
-                  <th className="py-1.5 font-semibold">NCV</th>
-                  <th className="py-1.5 text-left font-semibold pl-3">來源</th>
+                  <th className="whitespace-nowrap py-1.5 text-left font-semibold w-24">代碼</th>
+                  <th className="whitespace-nowrap py-1.5 text-left font-semibold pr-3">名稱</th>
+                  <th className="whitespace-nowrap py-1.5 font-semibold">CO₂ EF</th>
+                  <th className="whitespace-nowrap py-1.5 font-semibold">CH₄ EF</th>
+                  <th className="whitespace-nowrap py-1.5 font-semibold">N₂O EF</th>
+                  <th className="whitespace-nowrap py-1.5 font-semibold">電網 EF</th>
+                  <th className="whitespace-nowrap py-1.5 font-semibold">市場剩餘 EF</th>
+                  <th className="whitespace-nowrap py-1.5 font-semibold">S3 EF</th>
+                  <th className="whitespace-nowrap py-1.5 font-semibold">焚化係數</th>
+                  <th className="whitespace-nowrap py-1.5 font-semibold">回收係數</th>
+                  <th className="whitespace-nowrap py-1.5 font-semibold">掩埋係數</th>
+                  <th className="whitespace-nowrap py-1.5 font-semibold">NCV</th>
+                  <th className="whitespace-nowrap py-1.5 text-left font-semibold pl-3">來源</th>
                 </tr>
               </thead>
               <tbody>

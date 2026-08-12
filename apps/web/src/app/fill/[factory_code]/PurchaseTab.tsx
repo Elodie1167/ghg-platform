@@ -89,10 +89,10 @@ export default function PurchaseTab({
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
-                  <th className="px-4 py-2.5 text-left">採購品項</th>
-                  <th className="px-4 py-2.5 text-right w-40">年度採購重量 (ton)</th>
-                  <th className="px-4 py-2.5 text-right w-32">CO₂e (t)</th>
-                  <th className="px-4 py-2.5 text-center w-16">查核</th>
+                  <th className="whitespace-nowrap px-4 py-2.5 text-left">採購品項</th>
+                  <th className="whitespace-nowrap px-4 py-2.5 text-right w-40">年度採購重量 (ton)</th>
+                  <th className="whitespace-nowrap px-4 py-2.5 text-right w-32">CO₂e (t)</th>
+                  <th className="whitespace-nowrap px-4 py-2.5 text-center w-16">查核</th>
                 </tr>
               </thead>
               <tbody>
@@ -308,16 +308,16 @@ function WaterMonthly({
         <table className="w-full text-sm">
           <thead>
             <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
-              <th className="px-2 py-2 text-center w-8">
+              <th className="whitespace-nowrap px-2 py-2 text-center w-8">
                 <input type="checkbox"
                   checked={selected.size === MONTHS.length}
                   onChange={toggleSelectAll} />
               </th>
-              <th className="px-4 py-2 text-left w-16">月份</th>
-              <th className="px-4 py-2 text-right w-44">用水量 ({unit})</th>
-              <th className="px-4 py-2 text-right w-28">CO₂e (t)</th>
-              <th className="px-3 py-2 text-center w-16">明細</th>
-              <th className="px-4 py-2 text-center w-16">查核</th>
+              <th className="whitespace-nowrap px-4 py-2 text-left w-16">月份</th>
+              <th className="whitespace-nowrap px-4 py-2 text-right w-44">用水量 ({unit})</th>
+              <th className="whitespace-nowrap px-4 py-2 text-right w-28">CO₂e (t)</th>
+              <th className="whitespace-nowrap px-3 py-2 text-center w-16">明細</th>
+              <th className="whitespace-nowrap px-4 py-2 text-center w-16">查核</th>
             </tr>
           </thead>
           <tbody>
@@ -576,11 +576,11 @@ function FabricRow({
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
-            <th className="px-4 py-2.5 text-left">採購品項</th>
-            <th className="px-4 py-2.5 text-right w-48">年度 CO₂e 總量 (tCO₂e)</th>
-            <th className="px-4 py-2.5 text-left w-44">備註</th>
-            <th className="px-4 py-2.5 text-center w-16">查核</th>
-            <th className="px-4 py-2.5 text-center w-8">狀</th>
+            <th className="whitespace-nowrap px-4 py-2.5 text-left">採購品項</th>
+            <th className="whitespace-nowrap px-4 py-2.5 text-right w-48">年度 CO₂e 總量 (tCO₂e)</th>
+            <th className="whitespace-nowrap px-4 py-2.5 text-left w-44">備註</th>
+            <th className="whitespace-nowrap px-4 py-2.5 text-center w-16">查核</th>
+            <th className="whitespace-nowrap px-4 py-2.5 text-center w-8" />
           </tr>
         </thead>
         <tbody>
@@ -617,9 +617,6 @@ function FabricRow({
               </button>
             </td>
             <td className="px-4 py-2 text-center text-xs whitespace-nowrap">
-              {row.status === 'saving' && '⏳'}
-              {row.status === 'saved' && '✅'}
-              {row.status === 'error' && '❌'}
               <button onClick={clearRow} disabled={!row.id}
                 title="清空數值"
                 className={`ml-1 text-sm leading-none transition ${!row.id ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>

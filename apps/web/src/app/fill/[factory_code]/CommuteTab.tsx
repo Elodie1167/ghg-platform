@@ -187,12 +187,12 @@ function CommuteTable({
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
-            <th className="px-4 py-3 text-left">通勤方式</th>
-            <th className="px-4 py-3 text-right w-48">年度總里程 (person-km)</th>
-            <th className="px-4 py-3 text-left w-40">備註</th>
-            <th className="px-4 py-3 text-right w-28">CO₂e (t)</th>
-            <th className="px-4 py-3 text-center w-16">查核</th>
-            <th className="px-4 py-3 text-center w-8">狀</th>
+            <th className="whitespace-nowrap px-4 py-3 text-left">通勤方式</th>
+            <th className="whitespace-nowrap px-4 py-3 text-right w-48">年度總里程 (person-km)</th>
+            <th className="whitespace-nowrap px-4 py-3 text-left w-40">備註</th>
+            <th className="whitespace-nowrap px-4 py-3 text-right w-28">CO₂e (t)</th>
+            <th className="whitespace-nowrap px-4 py-3 text-center w-16">查核</th>
+            <th className="whitespace-nowrap px-4 py-3 text-center w-8" />
           </tr>
         </thead>
         <tbody>
@@ -238,9 +238,6 @@ function CommuteTable({
                   </button>
                 </td>
                 <td className="px-4 py-2 text-center text-xs whitespace-nowrap">
-                  {row?.status === 'saving' && '⏳'}
-                  {row?.status === 'saved' && '✅'}
-                  {row?.status === 'error' && '❌'}
                   <button onClick={() => clearRow(src.id)} disabled={!row?.value && row?.co2e == null}
                     title="清空數值"
                     className={`ml-1 text-sm leading-none transition ${!row?.value && row?.co2e == null ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-red-500 cursor-pointer'}`}>

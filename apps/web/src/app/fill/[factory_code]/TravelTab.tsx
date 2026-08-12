@@ -261,29 +261,28 @@ function TravelSection({
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
-                <th className="px-2 py-2.5 text-center w-8">
+                <th className="whitespace-nowrap px-2 py-2.5 text-center w-8">
                   <input type="checkbox"
                     checked={rows.length > 0 && selected.size === rows.length}
                     onChange={toggleSelectAll}
                   />
                 </th>
-                <th className="px-3 py-2.5 text-left w-20">月份</th>
-                <th className="px-3 py-2.5 text-left w-28">出發日期</th>
-                <th className="px-3 py-2.5 text-left">路線（起→訖）</th>
-                {!isManualMode && <th className="px-3 py-2.5 text-right w-20">人次</th>}
+                <th className="whitespace-nowrap px-3 py-2.5 text-left w-20">月份</th>
+                <th className="whitespace-nowrap px-3 py-2.5 text-left w-28">出發日期</th>
+                <th className="whitespace-nowrap px-3 py-2.5 text-left">路線（起→訖）</th>
+                {!isManualMode && <th className="whitespace-nowrap px-3 py-2.5 text-right w-20">人次</th>}
                 {!isManualMode && (
-                  <th className="px-3 py-2.5 text-right w-28">單程距離 ({source.default_unit})</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-right w-28">單程距離 ({source.default_unit})</th>
                 )}
-                {isManualMode && <th className="px-3 py-2.5 text-right w-32">機票/車票 CO₂e (kg)</th>}
-                {!isManualMode && <th className="px-3 py-2.5 text-center w-16">往返</th>}
+                {isManualMode && <th className="whitespace-nowrap px-3 py-2.5 text-right w-32">機票/車票 CO₂e (kg)</th>}
+                {!isManualMode && <th className="whitespace-nowrap px-3 py-2.5 text-center w-16">往返</th>}
                 {!isManualMode && (
-                  <th className="px-3 py-2.5 text-right w-28">往返距離 ({source.default_unit})</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-right w-28">往返距離 ({source.default_unit})</th>
                 )}
-                <th className="px-3 py-2.5 text-left w-28">備註</th>
-                <th className="px-3 py-2.5 text-right w-24">CO₂e (t)</th>
-                <th className="px-3 py-2.5 text-center w-8">查核</th>
-                <th className="px-3 py-2.5 text-center w-8">狀</th>
-                <th className="px-3 py-2.5 w-8" />
+                <th className="whitespace-nowrap px-3 py-2.5 text-left w-28">備註</th>
+                <th className="whitespace-nowrap px-3 py-2.5 text-right w-24">CO₂e (t)</th>
+                <th className="whitespace-nowrap px-3 py-2.5 text-center w-8">查核</th>
+                <th className="whitespace-nowrap px-3 py-2.5 w-8" />
               </tr>
             </thead>
             <tbody>
@@ -369,11 +368,6 @@ function TravelSection({
                       {row.is_reviewed ? '✅' : '⬜'}
                     </button>
                   </td>
-                  <td className="px-2 py-1.5 text-center text-xs">
-                    {row.saveStatus === 'saving' && '⏳'}
-                    {row.saveStatus === 'saved' && '✓'}
-                    {row.saveStatus === 'error' && '❌'}
-                  </td>
                   <td className="px-2 py-1.5 text-center">
                     <button onClick={() => !row.is_reviewed && deleteRow(row.tempKey)}
                       disabled={row.is_reviewed}
@@ -396,7 +390,7 @@ function TravelSection({
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}
                 </td>
-                <td colSpan={3} />
+                <td colSpan={2} />
               </tr>
             </tfoot>
           </table>

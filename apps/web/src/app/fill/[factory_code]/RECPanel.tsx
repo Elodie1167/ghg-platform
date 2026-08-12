@@ -185,13 +185,12 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor, ma
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-blue-700 text-white text-xs">
-                <th className="px-3 py-2 text-left w-20">月份</th>
-                <th className="px-3 py-2 text-left w-28">發電類型</th>
-                <th className="px-3 py-2 text-right w-32">購入量 (MWh)</th>
-                <th className="px-3 py-2 text-left">憑證號碼</th>
-                <th className="px-3 py-2 text-left">備註</th>
-                <th className="px-3 py-2 text-center w-12">狀態</th>
-                <th className="px-3 py-2 w-8" />
+                <th className="whitespace-nowrap px-3 py-2 text-left w-20">月份</th>
+                <th className="whitespace-nowrap px-3 py-2 text-left w-28">發電類型</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right w-32">購入量 (MWh)</th>
+                <th className="whitespace-nowrap px-3 py-2 text-left">憑證號碼</th>
+                <th className="whitespace-nowrap px-3 py-2 text-left">備註</th>
+                <th className="whitespace-nowrap px-3 py-2 w-8" />
               </tr>
             </thead>
             <tbody>
@@ -239,12 +238,6 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor, ma
                         className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                       />
                     </td>
-                    <td className="px-2 py-1.5 text-center text-sm">
-                      {row.saveStatus === 'saving' && '⏳'}
-                      {row.saveStatus === 'saved'  && '✅'}
-                      {row.saveStatus === 'error'  && '❌'}
-                      {row.saveStatus === 'idle' && row.id && <span className="text-gray-200">●</span>}
-                    </td>
                     <td className="px-2 py-1.5 text-center">
                       <button
                         onClick={() => deleteRow(row.tempKey)}
@@ -263,7 +256,7 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor, ma
                 <td className="px-3 py-2 text-right font-mono text-blue-800">
                   {totalRecMwh.toLocaleString(undefined, { maximumFractionDigits: 10 })} MWh
                 </td>
-                <td colSpan={4} />
+                <td colSpan={3} />
               </tr>
             </tfoot>
           </table>
