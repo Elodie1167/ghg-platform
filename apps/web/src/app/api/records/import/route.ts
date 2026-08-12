@@ -170,8 +170,8 @@ function parseSepticSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
 }
 
 /**
- * 解析「S1_焊條」：固定 1-3A-1，可變列數，col A=月份 B=採購量(kg) C=含碳量(%)
- * （col D 估計碳重僅供人工核對，不讀取）。含碳量存入 meter_number，比照填報頁 ProcessTab，
+ * 解析「S1_焊條」：固定 1-3A-1，可變列數，col A=月份 B=採購量(kg) C=含碳量(%) D=備註
+ * （備註供填品牌/焊條種類等，不參與計算）。含碳量存入 meter_number，比照填報頁 ProcessTab，
  * 由 co2e-calc.ts 依含碳量% × 採購量 × 44/12 算出 CO₂e。
  * 同月若出現多列，取最後一列（比照化糞池，不加總）。
  */
@@ -185,6 +185,7 @@ function parseWeldingRodSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
     if (month === null) continue;
     const qty = toNum(cellVal(sheet, r, 1));           // col B 採購量(kg)
     const carbonContent = toNum(cellVal(sheet, r, 2));  // col C 含碳量(%)
+    const notes = strOrNull(cellVal(sheet, r, 3));      // col D 備註
     if (qty === null) continue; // activity_value 為 NOT NULL 且需 > 0，缺採購量無法建立紀錄
     rows.push({
       month,
@@ -192,6 +193,7 @@ function parseWeldingRodSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
       activity_value: qty,
       activity_unit: 'kg',
       meter_number: carbonContent !== null ? String(carbonContent) : undefined,
+      notes: notes ?? undefined,
     });
   }
   return rows;

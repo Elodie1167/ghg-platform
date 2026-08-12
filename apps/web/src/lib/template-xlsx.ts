@@ -18,15 +18,15 @@ export function buildTemplateWorkbook(sourceCode: string, year: string, nameZh: 
   const isWeldingRod = sourceCode === WELDING_ROD_SOURCE_CODE;
 
   if (isWeldingRod) {
-    // 焊條專用格式：每月一列，採購量(kg) + 含碳量(%)，估計碳重欄僅供預覽，實際碳重由系統
-    // 依含碳量% × 採購量 × 44/12（碳氧化成 CO2 的分子量比）計算，欄位比照填報頁 ProcessTab。
-    const header = ['月份*', '採購量(kg)*', '含碳量(%)*', '估計碳重(kg，僅供參考)'];
+    // 焊條專用格式：每月一列，採購量(kg) + 含碳量(%)，碳重由系統依含碳量% × 採購量 × 44/12
+    // （碳氧化成 CO2 的分子量比）自動計算，欄位比照填報頁 ProcessTab；備註欄供填品牌/焊條種類等。
+    const header = ['月份*', '採購量(kg)*', '含碳量(%)*', '備註'];
     const example = [
-      [6, 120, 0.08, 0.096],
-      [7, 95, 0.08, 0.076],
+      [6, 120, 0.08, '供應商A，E7018'],
+      [7, 95, 0.08, ''],
     ];
     const ws = XLSX.utils.aoa_to_sheet([header, ...example]);
-    ws['!cols'] = [{ wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 20 }];
+    ws['!cols'] = [{ wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 24 }];
 
     const note = XLSX.utils.aoa_to_sheet([
       ['焊條匯入範本 — 說明'],
@@ -35,9 +35,10 @@ export function buildTemplateWorkbook(sourceCode: string, year: string, nameZh: 
       [''],
       ['1. 焊條為製程排放，每月一列，填「採購量(kg)」與「含碳量(%)」，不分單據。'],
       ['2. 欄名有 * 者為必填：月份、採購量、含碳量。'],
-      ['3. 「估計碳重」欄僅供你自行核對，不會被系統讀取；系統會依含碳量% × 採購量 × 44/12（碳轉CO2的分子量比）自動算出 CO₂e。'],
-      ['4. 同一月份若出現多列，系統只會採用最後一列，不會加總。'],
-      ['5. 範例列可刪除或覆蓋。'],
+      ['3. 系統會依含碳量% × 採購量 × 44/12（碳轉CO2的分子量比）自動算出碳重與 CO₂e，不需自行試算。'],
+      ['4. 「備註」欄可填品牌、焊條種類（如 E7018）等供你自己核對，系統不會用它計算。'],
+      ['5. 同一月份若出現多列，系統只會採用最後一列，不會加總。'],
+      ['6. 範例列可刪除或覆蓋。'],
     ]);
 
     const wb = XLSX.utils.book_new();
