@@ -61,6 +61,12 @@ export default async function Home() {
             >
               減碳績效追蹤 →
             </Link>
+            <Link
+              href="/admin/verification"
+              className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
+            >
+              查證封存 →
+            </Link>
             <span className="text-green-300 text-sm">共 {factories.length} 個廠別</span>
           </div>
         </div>
