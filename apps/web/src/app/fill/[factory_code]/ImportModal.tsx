@@ -78,6 +78,7 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
   const [sources, setSources] = useState<{ source_code: string; name_zh: string }[]>([]);
   const [tplSource, setTplSource] = useState('');
   const [docUrl, setDocUrl] = useState(''); // 公檔連結（選填，供稽核一次開整月發票）
+  const [tplFileCache, setTplFileCache] = useState<File | null>(null); // 進入預覽畫面後原 input 會被卸載，故另存檔案物件供 commit 使用
   useEffect(() => {
     fetch('/api/emission-sources')
       .then((r) => r.json())
@@ -173,6 +174,7 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
         setErrorMsg(json.error ?? `預覽失敗（HTTP ${res.status}）`);
         return;
       }
+      setTplFileCache(tplFile!);
       setPreview(json.data);
       setStatus('previewed');
     } catch (err) {
@@ -184,7 +186,7 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
 
   // ── Step 2：使用者看過差異、選好模式後才真正送出 ──
   async function handleCommit() {
-    const tplFile = tplFileRef.current?.files?.[0];
+    const tplFile = tplFileCache;
     if (!tplFile) {
       setStatus('error');
       setErrorMsg('找不到原始檔案，請重新選擇檔案再試一次。');
@@ -224,6 +226,7 @@ export default function ImportModal({ factory, year, onClose, onImported }: Prop
     setErrorMsg('');
     setFixedMode('add_only');
     setLineItemMode('full_month');
+    setTplFileCache(null);
     if (erpFileRef.current) erpFileRef.current.value = '';
     if (tplFileRef.current) tplFileRef.current.value = '';
   }
