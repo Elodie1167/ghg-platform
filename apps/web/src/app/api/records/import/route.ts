@@ -4,6 +4,7 @@ import { query } from '@/lib/db';
 import { recomputeRecordFromLineItems } from '@/lib/line-items';
 import { calcCo2e, recomputeScope2ForFactoryYear } from '@/lib/co2e-calc';
 import { clearReviewStatus } from '@/lib/review-reset';
+import { snapshotRecordBeforeOverwrite, snapshotLineItemsBeforeDelete } from '@/lib/import-history';
 
 // ─────────────────────────────────────────────────────────────────
 // 型別定義
@@ -631,6 +632,7 @@ export async function POST(req: NextRequest) {
           skipped++;
           continue;
         }
+        await snapshotRecordBeforeOverwrite(existing.rows[0].id, 'import_fixed_overwrite');
         await query(
           `UPDATE activity_records
            SET activity_value = $1, activity_unit = $2,
@@ -716,6 +718,7 @@ export async function POST(req: NextRequest) {
         // 「整月完整檔」模式：這批就是該月完整明細，先清掉舊的再重建（設計文件
         // §4.2 預設模式）；「補單」模式：保留既有明細，只新增這批，不刪除任何東西。
         if (lineItemMode === 'full_month') {
+          await snapshotLineItemsBeforeDelete(recordId, 'import_full_month_replace');
           await query(`DELETE FROM activity_line_items WHERE activity_record_id = $1`, [recordId]);
         }
       } else {
