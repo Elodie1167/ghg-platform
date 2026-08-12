@@ -49,6 +49,10 @@ export default function WasteTransportGrid({
   });
   const [applying, setApplying] = useState<'general' | 'textile' | null>(null);
   const [reviewBusy, setReviewBusy] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState<'general' | 'textile' | null>(null);
+  const [selected, setSelected] = useState<Record<'general' | 'textile', Set<number>>>({
+    general: new Set(), textile: new Set(),
+  });
 
   const recOf = (stream: string, m: number) =>
     records.find((r) => r.source_code === '3-5-T1' && r.month === m
@@ -173,6 +177,52 @@ export default function WasteTransportGrid({
     }
   }
 
+  /** 對某流「已存在記錄」的月份做全選查核（跳過已查核） */
+  async function bulkReview(stream: 'general' | 'textile') {
+    const targets = MONTHS.filter((m) => {
+      if (selected[stream].size > 0 && !selected[stream].has(m)) return false;
+      const r = recOf(stream, m);
+      return r && !r.is_reviewed;
+    });
+    if (targets.length === 0) return;
+    setBulkBusy(stream);
+    try {
+      for (const m of targets) await toggleReview(stream, m);
+      setSelected((s) => ({ ...s, [stream]: new Set() }));
+    } finally {
+      setBulkBusy(null);
+    }
+  }
+
+  /** 對某流「已存在記錄且未查核」的月份做全選刪除（已查核者跳過，須先取消查核） */
+  async function bulkDelete(stream: 'general' | 'textile') {
+    const candidates = MONTHS.filter((m) => selected[stream].size === 0 || selected[stream].has(m));
+    const targets = candidates.filter((m) => {
+      const r = recOf(stream, m);
+      return r && !r.is_reviewed;
+    });
+    if (targets.length === 0) {
+      setErr('所選記錄都已查核或不存在，無法刪除，請先取消查核。'); setStatus('error');
+      return;
+    }
+    if (!confirm(`確定要刪除「${STREAMS.find((s) => s.key === stream)!.label}」共 ${targets.length} 個月的清運記錄？`)) return;
+    setBulkBusy(stream); setErr(null);
+    try {
+      for (const m of targets) {
+        const r = recOf(stream, m);
+        if (!r) continue;
+        const res = await fetch(`/api/records/${r.id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `${m} 月刪除失敗`);
+      }
+      setSelected((s) => ({ ...s, [stream]: new Set() }));
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '刪除失敗'); setStatus('error');
+    } finally {
+      setBulkBusy(null);
+    }
+  }
+
   return (
     <div className="mb-8 border border-gray-200 rounded-lg overflow-hidden">
       <div className="px-4 py-2.5 text-white flex items-center gap-3" style={{ backgroundColor: HEADER_BG }}>
@@ -197,16 +247,28 @@ export default function WasteTransportGrid({
 
       {STREAMS.map((st) => {
         const streamTotal = MONTHS.reduce((s, m) => s + (recOf(st.key, m)?.co2e_total ?? 0), 0);
+        const weightTotal = MONTHS.reduce((s, m) => s + (weightKgOf(st.weightCode, m) ?? 0), 0);
+        const tkmTotal = MONTHS.reduce((s, m) => s + (recOf(st.key, m)?.activity_value ?? 0), 0);
+        const recordMonths = MONTHS.filter((m) => recOf(st.key, m));
+        const allSelected = recordMonths.length > 0 && recordMonths.every((m) => selected[st.key].has(m));
         return (
           <div key={st.key} className="border-b border-gray-200 last:border-b-0">
-            <div className="px-4 py-2 bg-gray-100 text-sm font-semibold text-gray-700 flex items-center">
+            <div className="px-4 py-2 bg-gray-100 text-sm font-semibold text-gray-700 flex items-center flex-wrap gap-2">
               {st.label}
-              <span className="ml-2 text-xs font-normal text-gray-500">
+              <span className="text-xs font-normal text-gray-500">
                 重量來源：{st.weightCode}
               </span>
               <span className="ml-auto text-xs font-normal">
                 年度合計 {streamTotal > 0 ? streamTotal.toFixed(4) : '—'} tCO₂e
               </span>
+              <button onClick={() => bulkReview(st.key)} disabled={recordMonths.length === 0 || bulkBusy === st.key}
+                className="px-3 py-1 rounded text-xs font-medium text-white disabled:opacity-40" style={{ backgroundColor: HEADER_BG }}>
+                全選查核
+              </button>
+              <button onClick={() => bulkDelete(st.key)} disabled={recordMonths.length === 0 || bulkBusy === st.key}
+                className="px-3 py-1 rounded text-xs font-medium border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-40">
+                全選刪除
+              </button>
             </div>
 
             <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex flex-wrap items-end gap-2">
@@ -238,6 +300,12 @@ export default function WasteTransportGrid({
               <table className="w-full border-collapse">
                 <thead className="bg-gray-50 text-xs text-gray-600">
                   <tr>
+                    <th className={`${cell} w-8 text-center`}>
+                      <input type="checkbox" checked={allSelected}
+                        onChange={(e) => setSelected((s) => ({
+                          ...s, [st.key]: e.target.checked ? new Set(recordMonths) : new Set(),
+                        }))} />
+                    </th>
                     <th className={cell}>月</th>
                     <th className={cell}>重量 kg（自動）</th>
                     <th className={cell} style={{ minWidth: 150 }}>處理場所名稱</th>
@@ -255,6 +323,16 @@ export default function WasteTransportGrid({
                     const locked = r?.is_reviewed ?? false;
                     return (
                       <tr key={m} className={locked ? 'bg-gray-50' : ''}>
+                        <td className={`${cell} text-center`}>
+                          {r && (
+                            <input type="checkbox" checked={selected[st.key].has(m)}
+                              onChange={(e) => setSelected((s) => {
+                                const next = new Set(s[st.key]);
+                                if (e.target.checked) next.add(m); else next.delete(m);
+                                return { ...s, [st.key]: next };
+                              })} />
+                          )}
+                        </td>
                         <td className={`${cell} text-center`}>{m}</td>
                         <td className={`${cell} text-right font-mono text-xs`}>
                           {kg != null ? kg.toLocaleString() : <span className="text-gray-300">未填</span>}
@@ -294,6 +372,16 @@ export default function WasteTransportGrid({
                     );
                   })}
                 </tbody>
+                <tfoot>
+                  <tr className="bg-green-50 font-semibold text-sm border-t-2 border-green-400">
+                    <td className={cell} colSpan={2}>年度合計</td>
+                    <td className={`${cell} text-right font-mono`}>{weightTotal > 0 ? weightTotal.toLocaleString() : '—'}</td>
+                    <td className={cell} colSpan={2} />
+                    <td className={`${cell} text-right font-mono`}>{tkmTotal > 0 ? tkmTotal.toLocaleString() : '—'}</td>
+                    <td className={`${cell} text-right font-mono`}>{streamTotal > 0 ? streamTotal.toFixed(4) : '—'}</td>
+                    <td className={cell} />
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>

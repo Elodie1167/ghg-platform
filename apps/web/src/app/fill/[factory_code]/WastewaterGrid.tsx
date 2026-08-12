@@ -39,12 +39,16 @@ export default function WastewaterGrid({
   const [err, setErr] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [reviewBusy, setReviewBusy] = useState<number | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const timers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
   const recOf = (m: number) => records.find((r) => r.source_code === '3-5-G' && r.month === m);
   const waterOf = (m: number) => sourceValues.find((s) => s.source_code === '3-1-E' && s.month === m)?.value ?? null;
   const total = MONTHS.reduce((s, m) => s + (recOf(m)?.co2e_total ?? 0), 0);
+  const activityTotal = MONTHS.reduce((s, m) => s + (recOf(m)?.activity_value ?? 0), 0);
+  const recordMonths = MONTHS.filter((m) => recOf(m));
 
   function readVol(m: number) {
     if (m in draft) return draft[m];
@@ -119,6 +123,52 @@ export default function WastewaterGrid({
     }
   }
 
+  /** 全選查核：對「已存在記錄且未查核」的月份（若有勾選則限於勾選範圍）標記查核 */
+  async function bulkReviewAll() {
+    const targets = MONTHS.filter((m) => {
+      if (selected.size > 0 && !selected.has(m)) return false;
+      const r = recOf(m);
+      return r && !r.is_reviewed;
+    });
+    if (targets.length === 0) return;
+    setBulkBusy(true);
+    try {
+      for (const m of targets) await toggleReview(m);
+      setSelected(new Set());
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  /** 全選刪除：跳過已查核的月份（須先取消查核才能刪） */
+  async function bulkDeleteAll() {
+    const candidates = MONTHS.filter((m) => selected.size === 0 || selected.has(m));
+    const targets = candidates.filter((m) => {
+      const r = recOf(m);
+      return r && !r.is_reviewed;
+    });
+    if (targets.length === 0) {
+      setErr('所選記錄都已查核或不存在，無法刪除，請先取消查核。'); setStatus('error');
+      return;
+    }
+    if (!confirm(`確定要刪除共 ${targets.length} 個月的廢水處理記錄？`)) return;
+    setBulkBusy(true); setErr(null);
+    try {
+      for (const m of targets) {
+        const r = recOf(m);
+        if (!r) continue;
+        const res = await fetch(`/api/records/${r.id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `${m} 月刪除失敗`);
+      }
+      setSelected(new Set());
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '刪除失敗'); setStatus('error');
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   async function onImport(file: File) {
     setImporting(true); setErr(null);
     try {
@@ -166,6 +216,15 @@ export default function WastewaterGrid({
             依採購水重新計算
           </button>
         )}
+        <button onClick={bulkReviewAll} disabled={bulkBusy}
+          className={`${isMeasured ? 'ml-auto' : ''} px-3 py-1 rounded text-xs font-medium text-white disabled:opacity-40`}
+          style={{ backgroundColor: HEADER_BG }}>
+          全選查核
+        </button>
+        <button onClick={bulkDeleteAll} disabled={bulkBusy}
+          className="px-3 py-1 rounded text-xs font-medium border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-40">
+          全選刪除
+        </button>
       </div>
 
       {scope3Factor == null && (
@@ -227,6 +286,10 @@ export default function WastewaterGrid({
         <table className="w-full border-collapse">
           <thead className="bg-gray-50 text-xs text-gray-600">
             <tr>
+              <th className={`${cell} w-8 text-center`}>
+                <input type="checkbox" checked={recordMonths.length > 0 && recordMonths.every((m) => selected.has(m))}
+                  onChange={(e) => setSelected(e.target.checked ? new Set(recordMonths) : new Set())} />
+              </th>
               <th className={cell}>月</th>
               {isMeasured ? (
                 <th className={cell} style={{ minWidth: 140 }}>廢水量 m³（實測）</th>
@@ -247,6 +310,16 @@ export default function WastewaterGrid({
               const locked = r?.is_reviewed ?? false;
               return (
                 <tr key={m} className={locked ? 'bg-gray-50' : ''}>
+                  <td className={`${cell} text-center`}>
+                    {r && (
+                      <input type="checkbox" checked={selected.has(m)}
+                        onChange={(e) => setSelected((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(m); else next.delete(m);
+                          return next;
+                        })} />
+                    )}
+                  </td>
                   <td className={`${cell} text-center`}>{m}</td>
                   {isMeasured ? (
                     <td className={cell}>
@@ -282,6 +355,24 @@ export default function WastewaterGrid({
               );
             })}
           </tbody>
+          <tfoot>
+            <tr className="bg-green-50 font-semibold text-sm border-t-2 border-green-400">
+              <td className={cell} colSpan={2}>年度合計</td>
+              {isMeasured ? (
+                <td className={`${cell} text-right font-mono`}>{activityTotal > 0 ? activityTotal.toLocaleString() : '—'}</td>
+              ) : (
+                <>
+                  <td className={`${cell} text-right font-mono`}>
+                    {MONTHS.reduce((s, m) => s + (waterOf(m) ?? 0), 0).toLocaleString()}
+                  </td>
+                  <td className={cell} />
+                </>
+              )}
+              <td className={`${cell} text-right font-mono`}>{activityTotal > 0 ? activityTotal.toLocaleString() : '—'}</td>
+              <td className={`${cell} text-right font-mono`}>{total > 0 ? total.toFixed(4) : '—'}</td>
+              <td className={cell} />
+            </tr>
+          </tfoot>
         </table>
       </div>
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import {
-  upsertWasteTransport, upsertWastewaterMeasured,
+  upsertWasteTransport, upsertWasteTransportT2, upsertWastewaterMeasured,
   recomputeWasteTransport, recomputeWastewater,
 } from '@/lib/waste-derive';
 import { getFactorySettings } from '@/lib/waste-detail-db';
@@ -24,6 +24,24 @@ const TransportSchema = z.object({
   destination_name: z.string().nullable().optional(),
   destination_address: z.string().nullable().optional(),
   distance_km: z.number().positive().nullable().optional(),
+});
+
+const TransportT2Schema = z.object({
+  kind: z.literal('transport_t2'),
+  factory_id: z.string().uuid(),
+  year: z.number().int().min(2020).max(2100),
+  month: z.number().int().min(1).max(12),
+  waste_type: z.string().nullable().optional(),
+  waste_type_other: z.string().nullable().optional(),
+  contractor_name: z.string().nullable().optional(),
+  destination_name: z.string().nullable().optional(),
+  destination_address: z.string().nullable().optional(),
+  waste_weight: z.number().positive().nullable().optional(),
+  waste_weight_unit: z.enum(['kg', 'mt', 'm3']).nullable().optional(),
+  density: z.number().positive().nullable().optional(),
+  distance_km: z.number().positive().nullable().optional(),
+  trip_count: z.number().int().positive().nullable().optional(),
+  vehicle_type: z.string().nullable().optional(),
 });
 
 const MeasuredSchema = z.object({
@@ -59,7 +77,7 @@ const SettingsSchema = z.object({
 });
 
 const BodySchema = z.discriminatedUnion('kind', [
-  TransportSchema, MeasuredSchema, RecomputeSchema, SettingsSchema,
+  TransportSchema, TransportT2Schema, MeasuredSchema, RecomputeSchema, SettingsSchema,
 ]);
 
 export async function POST(req: NextRequest) {
@@ -84,6 +102,21 @@ export async function POST(req: NextRequest) {
         destination_name: p.destination_name ?? null,
         destination_address: p.destination_address ?? null,
         distance_km: p.distance_km ?? null,
+      });
+      return NextResponse.json({ data: { id }, error: null });
+    }
+
+    if (p.kind === 'transport_t2') {
+      const id = await upsertWasteTransportT2({
+        factory_id: p.factory_id, year: p.year, month: p.month,
+        detail: {
+          waste_type: p.waste_type ?? null, waste_type_other: p.waste_type_other ?? null,
+          contractor_name: p.contractor_name ?? null,
+          destination_name: p.destination_name ?? null, destination_address: p.destination_address ?? null,
+          waste_weight: p.waste_weight ?? null, waste_weight_unit: p.waste_weight_unit ?? null,
+          density: p.density ?? null, distance_km: p.distance_km ?? null,
+          trip_count: p.trip_count ?? null, vehicle_type: p.vehicle_type ?? null,
+        },
       });
       return NextResponse.json({ data: { id }, error: null });
     }
@@ -161,6 +194,9 @@ export async function GET(req: NextRequest) {
                 d.destination_name, d.destination_address,
                 d.distance_km::float AS distance_km,
                 d.waste_weight::float AS waste_weight,
+                d.waste_type, d.waste_type_other, d.contractor_name,
+                d.waste_weight_unit, d.density::float AS density,
+                d.trip_count, d.vehicle_type,
                 d.input_mode, d.measured_volume_m3::float AS measured_volume_m3,
                 d.water_intake_m3::float AS water_intake_m3,
                 d.discharge_ratio::float AS discharge_ratio,
@@ -169,7 +205,7 @@ export async function GET(req: NextRequest) {
          JOIN emission_sources es ON es.id = ar.emission_source_id
          LEFT JOIN activity_waste_detail d ON d.record_id = ar.id
          WHERE ar.factory_id = $1 AND ar.year = $2
-           AND es.source_code IN ('3-5-T1', '3-5-G')
+           AND es.source_code IN ('3-5-T1', '3-5-T2', '3-5-G')
          ORDER BY ar.month`,
         [factory_id, year],
       ),

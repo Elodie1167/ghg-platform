@@ -14,6 +14,13 @@ export interface WasteApiRecord {
   destination_address: string | null;
   distance_km: number | null;
   waste_weight: number | null;
+  waste_type: string | null;
+  waste_type_other: string | null;
+  contractor_name: string | null;
+  waste_weight_unit: 'kg' | 'mt' | 'm3' | null;
+  density: number | null;
+  trip_count: number | null;
+  vehicle_type: string | null;
   input_mode: 'MEASURED' | 'ESTIMATED' | null;
   measured_volume_m3: number | null;
   water_intake_m3: number | null;

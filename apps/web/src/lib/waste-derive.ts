@@ -22,6 +22,7 @@ import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
 import { getFactorySettings } from '@/lib/waste-detail-db';
 import { clearReviewStatus } from '@/lib/review-reset';
+import { deriveActivityValue, type WasteDetail } from '@/lib/waste-detail';
 
 /**
  * 衍生值（T1 清運 tkm / G 廢水推估 m³）的重算會定期整批跑過同廠同年所有月份，
@@ -251,6 +252,82 @@ export async function upsertWasteTransport(input: {
   );
 
   await recomputeWasteTransport(input.factory_id, input.year, input.month);
+  return id;
+}
+
+/**
+ * 建立/更新某月的廢水/水肥清運（3-5-T2）填報。
+ * 與 T1 不同：重量不是自動接 W1/W2，而是使用者直接填的月數字，
+ * 所以不需要 recomputeWasteTransport 那種「來源異動連帶重算」，
+ * 這裡存明細的同時直接用 deriveActivityValue 算好活動數據寫回。
+ */
+export async function upsertWasteTransportT2(input: {
+  factory_id: string; year: number; month: number;
+  detail: WasteDetail;
+}): Promise<string | null> {
+  const t2 = await sourceIdOf('3-5-T2');
+  if (!t2) return null;
+
+  const derived = deriveActivityValue('3-5-T2', input.detail);
+
+  const existing = await query(
+    `SELECT id FROM activity_records
+     WHERE factory_id = $1 AND emission_source_id = $2 AND year = $3 AND month = $4`,
+    [input.factory_id, t2, input.year, input.month],
+  );
+
+  let id: string;
+  if (existing.rows.length) {
+    id = existing.rows[0].id;
+    await updateValueAndMaybeClearReview(id, derived?.value ?? null);
+    await query(
+      `UPDATE activity_records SET activity_value = $1, activity_unit = $2, updated_at = NOW()
+       WHERE id = $3`,
+      [derived?.value ?? null, derived?.unit ?? 'tonne-km', id],
+    );
+  } else {
+    // 全空就不要憑空建一筆空記錄
+    const d = input.detail;
+    if (!d.waste_type && !d.contractor_name && !d.destination_name
+        && !d.destination_address && !d.waste_weight && !d.distance_km) return null;
+    id = (await query(
+      `INSERT INTO activity_records
+         (factory_id, emission_source_id, year, month, activity_value, activity_unit,
+          import_source, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'manual', NOW(), NOW())
+       RETURNING id`,
+      [input.factory_id, t2, input.year, input.month, derived?.value ?? null, derived?.unit ?? 'tonne-km'],
+    )).rows[0].id;
+  }
+
+  await query(
+    `INSERT INTO activity_waste_detail
+       (record_id, waste_type, waste_type_other, contractor_name, destination_name,
+        destination_address, waste_weight, waste_weight_unit, density, distance_km,
+        trip_count, vehicle_type)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     ON CONFLICT (record_id) DO UPDATE SET
+       waste_type          = EXCLUDED.waste_type,
+       waste_type_other    = EXCLUDED.waste_type_other,
+       contractor_name      = EXCLUDED.contractor_name,
+       destination_name    = EXCLUDED.destination_name,
+       destination_address = EXCLUDED.destination_address,
+       waste_weight         = EXCLUDED.waste_weight,
+       waste_weight_unit    = EXCLUDED.waste_weight_unit,
+       density              = EXCLUDED.density,
+       distance_km          = EXCLUDED.distance_km,
+       trip_count           = EXCLUDED.trip_count,
+       vehicle_type         = EXCLUDED.vehicle_type,
+       updated_at           = NOW()`,
+    [id, input.detail.waste_type ?? null, input.detail.waste_type_other ?? null,
+     input.detail.contractor_name ?? null, input.detail.destination_name ?? null,
+     input.detail.destination_address ?? null, input.detail.waste_weight ?? null,
+     input.detail.waste_weight_unit ?? null, input.detail.density ?? null,
+     input.detail.distance_km ?? null, input.detail.trip_count ?? null,
+     input.detail.vehicle_type ?? null],
+  );
+
+  await recalcRecord(id);
   return id;
 }
 

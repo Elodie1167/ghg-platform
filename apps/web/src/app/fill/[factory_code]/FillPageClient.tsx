@@ -16,9 +16,9 @@ import CommuteTab from './CommuteTab';
 import RECPanel from './RECPanel';
 import LineItemsModal from './LineItemsModal';
 import LineItemsCell from './LineItemsCell';
-import WasteDetailSection from './WasteDetailSection';
 import WasteTransportGrid from './WasteTransportGrid';
 import WastewaterGrid from './WastewaterGrid';
+import WastewaterTransportGrid from './WastewaterTransportGrid';
 import type { WasteApiData } from './WasteApiTypes';
 import SourceNotApplicablePanel from './SourceNotApplicablePanel';
 
@@ -1399,13 +1399,10 @@ export default function FillPageClient({
   function WasteTab() {
     const w1Source = emissionSources.find((s) => s.source_code === '3-5-W1');
     const w2Source = emissionSources.find((s) => s.source_code === '3-5-W2');
-    // V42 新增：清運與廢水處理。這三個源一個月可有多筆、每筆都有查證要看的明細，
-    // 用 WasteDetailSection（一列一筆記錄），不是 W1/W2 那種一格一個月的數值格。
+    // V42 新增：清運與廢水處理，皆為固定 12 個月的表格（T1/T2 可「套用到全年」）。
     const t1Source = emissionSources.find((s) => s.source_code === '3-5-T1');
     const gSource  = emissionSources.find((s) => s.source_code === '3-5-G');
     const t2Source = emissionSources.find((s) => s.source_code === '3-5-T2');
-    const recordsOf = (src: EmissionSource | undefined) =>
-      src ? existingRecords.filter((r) => r.emission_source_id === src.id) : [];
     const factorOf = (src: EmissionSource | undefined) =>
       src ? (factorBySourceId[src.id]?.scope3_factor ?? null) : null;
     // 清運係數與 3-4-A 上下游運輸-陸運共用（V45），畫面提示直接取那一筆
@@ -1648,12 +1645,12 @@ export default function FillPageClient({
               })}
             </tbody>
             <tfoot>
-              <tr className="bg-green-50 font-semibold">
+              <tr className="bg-green-50 font-semibold border-t-2 border-green-400">
                 <td />
-                <td className="px-4 py-2 text-gray-700">合計</td>
-                <td className="px-4 py-2 text-right text-gray-700 font-mono">{total.toLocaleString(undefined, { maximumFractionDigits: 10 })} kg</td>
+                <td className="px-4 py-2 text-gray-800">年度合計</td>
+                <td className="px-4 py-2 text-right text-gray-800 font-mono">{total.toLocaleString(undefined, { maximumFractionDigits: 10 })} kg</td>
                 <td />
-                <td className="px-4 py-2 text-right text-gray-700 font-mono">
+                <td className="px-4 py-2 text-right text-gray-800 font-mono">
                   {co2eTotal > 0 ? co2eTotal.toFixed(4) + ' t' : '—'}
                 </td>
                 <td />
@@ -1706,7 +1703,7 @@ export default function FillPageClient({
             onChanged={() => { refreshWaste(); refreshRecords(); }}
           />
         )}
-        {(t1Source || gSource) && !wasteData && (
+        {(t1Source || gSource || t2Source) && !wasteData && (
           <div className="mb-8 py-8 text-center text-gray-400 text-sm">載入清運與廢水資料中…</div>
         )}
         {t2Source && (
@@ -1715,11 +1712,11 @@ export default function FillPageClient({
               factory={factory} year={year} source={t2Source}
               initial={naOf(t2Source)} onChanged={refreshRecords}
             />
-            {!t2NotApplicable && (
-              <WasteDetailSection
-                factory={factory} year={year} source={t2Source}
-                records={recordsOf(t2Source)} factorySettings={factorySettings}
-                scope3Factor={factorOf(t2Source)} onChanged={refreshRecords}
+            {!t2NotApplicable && wasteData && (
+              <WastewaterTransportGrid
+                factory={factory} year={year}
+                records={wasteData.records} scope3Factor={factorOf(t2Source)}
+                onChanged={() => { refreshWaste(); refreshRecords(); }}
               />
             )}
           </>
