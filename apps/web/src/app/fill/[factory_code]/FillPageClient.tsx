@@ -1228,6 +1228,44 @@ export default function FillPageClient({
       const rowsRef = useRef(rows);
       useEffect(() => { rowsRef.current = rows; }, [rows]);
       const timers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+      const [selected, setSelected] = useState<Set<number>>(new Set());
+
+      function toggleSelect(month: number) {
+        setSelected((prev) => {
+          const next = new Set(prev);
+          if (next.has(month)) next.delete(month); else next.add(month);
+          return next;
+        });
+      }
+
+      function toggleSelectAll() {
+        setSelected((prev) => (prev.size === MONTHS.length ? new Set() : new Set(MONTHS)));
+      }
+
+      function targetMonths() {
+        return selected.size > 0 ? MONTHS.filter((m) => selected.has(m)) : MONTHS;
+      }
+
+      async function bulkReview() {
+        const targets = targetMonths().filter((m) => !!rowsRef.current[m]?.id && !rowsRef.current[m]?.is_reviewed);
+        await Promise.all(targets.map((m) => toggleReview(m)));
+        setSelected(new Set());
+      }
+
+      async function bulkClear() {
+        const candidates = targetMonths();
+        const targets = candidates.filter((m) => !!rowsRef.current[m]?.id && !rowsRef.current[m]?.is_reviewed);
+        if (targets.length === 0) {
+          if (candidates.some((m) => rowsRef.current[m]?.is_reviewed)) {
+            alert('所選月份都已查核，無法清空，請先取消查核再清空。');
+          }
+          setSelected(new Set());
+          return;
+        }
+        if (!confirm(`確定要清空 ${targets.length} 個尚未查核月份的數值？`)) return;
+        await Promise.all(targets.map((m) => clearMonth(m)));
+        setSelected(new Set());
+      }
 
       function onChange(month: number, field: 'value' | 'carbonContent' | 'notes', val: string) {
         const next = { ...rowsRef.current[month], [field]: val };
@@ -1316,14 +1354,31 @@ export default function FillPageClient({
 
       return (
         <div className="mb-8">
-          <h3 className="font-semibold text-gray-800 mb-3">
-            {source.name_zh}
-            <span className="ml-2 text-xs font-mono text-gray-400">{source.source_code}</span>
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-gray-800">
+              {source.name_zh}
+              <span className="ml-2 text-xs font-mono text-gray-400">{source.source_code}</span>
+            </h3>
+            <div className="flex items-center gap-2">
+              <button onClick={bulkReview}
+                className="px-3 py-1.5 rounded-lg border border-green-700 text-green-700 text-xs font-medium transition hover:bg-green-50">
+                全選查核
+              </button>
+              <button onClick={bulkClear}
+                className="px-3 py-1.5 rounded-lg border border-red-400 text-red-500 text-xs font-medium transition hover:bg-red-50">
+                全選清空
+              </button>
+            </div>
+          </div>
           <div className="overflow-x-auto rounded-lg border border-gray-200">
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ backgroundColor: '#0C3D2E' }} className="text-white">
+                  <th className="px-2 py-2.5 text-center w-8">
+                    <input type="checkbox"
+                      checked={selected.size === MONTHS.length}
+                      onChange={toggleSelectAll} />
+                  </th>
                   <th className="px-3 py-2.5 text-left w-16">月份</th>
                   <th className="px-3 py-2.5 text-right w-36">採購量 ({source.default_unit})</th>
                   <th className="px-3 py-2.5 text-right w-28">含碳量 (%)</th>
@@ -1344,6 +1399,9 @@ export default function FillPageClient({
                   const estC = kgVal > 0 && ccFilled ? kgVal * ccVal / 100 : null;
                   return (
                     <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                      <td className="px-2 py-1.5 text-center">
+                        <input type="checkbox" checked={selected.has(m)} onChange={() => toggleSelect(m)} />
+                      </td>
                       <td className="px-3 py-1.5 font-medium text-gray-700">{m} 月</td>
                       <td className="px-2 py-1.5">
                         <input type="number" min="0" step="any" placeholder="採購量"
@@ -1392,6 +1450,7 @@ export default function FillPageClient({
               </tbody>
               <tfoot>
                 <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
+                  <td />
                   <td className="px-3 py-2 text-gray-700">合計</td>
                   <td className="px-3 py-2 text-right font-mono text-gray-700">
                     {totalVol.toLocaleString(undefined, { maximumFractionDigits: 10 })} {source.default_unit}
