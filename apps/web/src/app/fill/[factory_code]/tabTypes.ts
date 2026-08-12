@@ -34,9 +34,20 @@ export interface GasResult {
 
 const GAS_VOLUME_UNITS = new Set(['L', 'l', 'KL', 'Nm3', 'Nm³', 'm3', 'm³']);
 function r4(v: number): number { return Math.round(v * 10000) / 10000; }
+// CH₄/N₂O 用量常遠小於 CO₂，4 位小數常四捨五入成 0，故單獨用 6 位精度（與 co2e-calc.ts 對齊）
+function r6(v: number): number { return Math.round(v * 1000000) / 1000000; }
 
-// 合計列氣體加總的統一顯示：>0 顯示 4 位小數，否則「—」
-export function fmtGas(v: number): string { return v > 0 ? v.toFixed(4) : '—'; }
+// 氣體數值顯示：>0 才顯示，否則「—」。預設 4 位小數；若 4 位小數會四捨五入成
+// 0.0000（柴油等 CH₄/N₂O 量極小時常見），改延伸到能顯示出第一個有效數字為止
+// （最多 8 位），避免「有算但顯示 0.0000」被誤會成沒算出來。
+export function fmtGas(v: number | null | undefined): string {
+  if (v == null || v <= 0) return '—';
+  if (v >= 0.00005) return v.toFixed(4);
+  for (let d = 5; d <= 8; d++) {
+    if (Number(v.toFixed(d)) > 0) return v.toFixed(d);
+  }
+  return v.toFixed(8);
+}
 
 export function computeGas(
   value: number,
@@ -65,8 +76,8 @@ export function computeGas(
       const bioCo2Kg = bioTj * (factor.factor_co2 ?? 0);
       return {
         co2_t: r4(co2_kg / 1000),
-        ch4_t: r4(ch4_kg / 1000),
-        n2o_t: r4(n2o_kg / 1000),
+        ch4_t: r6(ch4_kg / 1000),
+        n2o_t: r6(n2o_kg / 1000),
         co2e_t: r4((co2_kg + ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000),
         biomass_co2_t: r4(bioCo2Kg / 1000),
       };
@@ -80,16 +91,16 @@ export function computeGas(
   if (isBiomass) {
     return {
       co2_t: null,
-      ch4_t: r4(ch4_kg / 1000),
-      n2o_t: r4(n2o_kg / 1000),
+      ch4_t: r6(ch4_kg / 1000),
+      n2o_t: r6(n2o_kg / 1000),
       co2e_t: r4((ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000),
       biomass_co2_t: r4(co2_kg / 1000),
     };
   }
   return {
     co2_t: r4(co2_kg / 1000),
-    ch4_t: r4(ch4_kg / 1000),
-    n2o_t: r4(n2o_kg / 1000),
+    ch4_t: r6(ch4_kg / 1000),
+    n2o_t: r6(n2o_kg / 1000),
     co2e_t: r4((co2_kg + ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000),
     biomass_co2_t: null,
   };

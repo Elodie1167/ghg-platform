@@ -32,6 +32,8 @@ const UNIT_CONV: Record<string, number> = {
 const VOLUME_UNITS = new Set(['L', 'l', 'liter', 'litre', 'KL', 'Nm3', 'Nm³', 'm3', 'm³']);
 
 function r4(v: number): number { return Math.round(v * 10000) / 10000; }
+// CH₄/N₂O 用量常遠小於 CO₂，4 位小數常四捨五入成 0 讓人誤會沒算出來，故量體單獨用 6 位精度存
+function r6(v: number): number { return Math.round(v * 1000000) / 1000000; }
 
 export async function calcCo2e(params: {
   factory_id: string;
@@ -213,7 +215,7 @@ export async function calcCo2e(params: {
     return {
       co2e_total: r4(ch4_kg * gwpCh4 / 1000), co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
       emission_factor_id: f.id, warnings: [],
-      co2_t: null, ch4_t: r4(ch4_kg / 1000), n2o_t: null, hfc_t: null,
+      co2_t: null, ch4_t: r6(ch4_kg / 1000), n2o_t: null, hfc_t: null,
     };
   }
 
@@ -240,7 +242,7 @@ export async function calcCo2e(params: {
         co2e_location: null, co2e_market: null,
         co2e_biomass_co2: r4(bioCo2 / 1000),
         emission_factor_id: f.id, warnings: [],
-        co2_t: r4(co2_kg / 1000), ch4_t: r4(ch4_kg / 1000), n2o_t: r4(n2o_kg / 1000), hfc_t: null,
+        co2_t: r4(co2_kg / 1000), ch4_t: r6(ch4_kg / 1000), n2o_t: r6(n2o_kg / 1000), hfc_t: null,
       };
     }
   } else {
@@ -267,13 +269,13 @@ export async function calcCo2e(params: {
       co2e_location: null, co2e_market: null,
       co2e_biomass_co2: r4(co2_kg / 1000),
       emission_factor_id: f.id, warnings: [],
-      co2_t: null, ch4_t: r4(ch4_kg / 1000), n2o_t: r4(n2o_kg / 1000), hfc_t: null,
+      co2_t: null, ch4_t: r6(ch4_kg / 1000), n2o_t: r6(n2o_kg / 1000), hfc_t: null,
     };
   }
   return {
     co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
     emission_factor_id: f.id, warnings: [],
-    co2_t: r4(co2_kg / 1000), ch4_t: r4(ch4_kg / 1000), n2o_t: r4(n2o_kg / 1000), hfc_t,
+    co2_t: r4(co2_kg / 1000), ch4_t: r6(ch4_kg / 1000), n2o_t: r6(n2o_kg / 1000), hfc_t,
   };
 }
 

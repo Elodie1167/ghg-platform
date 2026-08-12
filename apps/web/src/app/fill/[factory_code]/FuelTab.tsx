@@ -333,31 +333,30 @@ function FuelSection({
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
-                <th className="px-2 py-2.5 text-center w-8">
+                <th className="whitespace-nowrap px-2 py-2.5 text-center w-8">
                   <input type="checkbox"
                     checked={rows.length > 0 && selected.size === rows.length}
                     onChange={toggleSelectAll}
                   />
                 </th>
-                <th className="px-3 py-2.5 text-left w-20">月份</th>
-                <th className="px-3 py-2.5 text-left w-28">加油日期</th>
-                <th className="px-3 py-2.5 text-left">{locationLabel}</th>
-                <th className="px-3 py-2.5 text-right w-28">用量 ({source.default_unit})</th>
-                {hasBioFactor && <th className="px-3 py-2.5 text-right w-24">生質占比 %</th>}
-                <th className="px-3 py-2.5 text-left w-32">備註（費用等）</th>
-                <th className="px-3 py-2.5 text-right w-24">CO₂e (t)
+                <th className="whitespace-nowrap px-3 py-2.5 text-left w-20">月份</th>
+                <th className="whitespace-nowrap px-3 py-2.5 text-left w-28">加油日期</th>
+                <th className="whitespace-nowrap px-3 py-2.5 text-left">{locationLabel}</th>
+                <th className="whitespace-nowrap px-3 py-2.5 text-right w-28">用量 ({source.default_unit})</th>
+                {hasBioFactor && <th className="whitespace-nowrap px-3 py-2.5 text-right w-24">生質占比 %</th>}
+                <th className="whitespace-nowrap px-3 py-2.5 text-left w-32">備註（費用等）</th>
+                <th className="whitespace-nowrap px-3 py-2.5 text-right w-24">CO₂e (t)
                   {hasBioFactor && <span className="block text-[10px] font-normal text-green-200">計入 S1</span>}
                 </th>
-                {!hasBioFactor && <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CO₂ (t)</th>}
-                <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CH₄ (t)</th>
-                <th className="px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>N₂O (t)</th>
-                {hasBioFactor && <th className="px-2 py-2.5 text-right w-24 text-amber-900" style={{ backgroundColor: '#fde68a' }}>生質CO₂ (t)
+                {!hasBioFactor && <th className="whitespace-nowrap px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CO₂ (t)</th>}
+                <th className="whitespace-nowrap px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CH₄ (t)</th>
+                <th className="whitespace-nowrap px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>N₂O (t)</th>
+                {hasBioFactor && <th className="whitespace-nowrap px-2 py-2.5 text-right w-24 text-amber-900" style={{ backgroundColor: '#fde68a' }}>生質CO₂ (t)
                   <span className="block text-[10px] font-normal text-amber-700">另計·不入 S1</span>
                 </th>}
-                <th className="px-3 py-2.5 text-center w-16">明細</th>
-                <th className="px-3 py-2.5 text-center w-8">查核</th>
-                <th className="px-3 py-2.5 text-center w-8">狀</th>
-                <th className="px-3 py-2.5 w-8" />
+                <th className="whitespace-nowrap px-3 py-2.5 text-center w-16">明細</th>
+                <th className="whitespace-nowrap px-3 py-2.5 text-center w-8">查核</th>
+                <th className="whitespace-nowrap px-3 py-2.5 w-8" />
               </tr>
             </thead>
             <tbody>
@@ -423,10 +422,10 @@ function FuelSection({
                     </td>
                   )}
                   <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
-                    {(gasResult?.ch4_t ?? row.ch4_t)?.toFixed(4) ?? '—'}
+                    {fmtGas(gasResult?.ch4_t ?? row.ch4_t)}
                   </td>
                   <td className="px-2 py-1.5 text-right text-xs font-mono text-gray-400" style={{ backgroundColor: '#fefce8' }}>
-                    {(gasResult?.n2o_t ?? row.n2o_t)?.toFixed(4) ?? '—'}
+                    {fmtGas(gasResult?.n2o_t ?? row.n2o_t)}
                   </td>
                   {hasBioFactor && (
                     <td className="px-2 py-1.5 text-right text-xs font-mono text-amber-800" style={{ backgroundColor: '#fef3c7' }}>
@@ -446,11 +445,6 @@ function FuelSection({
                     >
                       {row.is_reviewed ? '✅' : '⬜'}
                     </button>
-                  </td>
-                  <td className="px-2 py-1.5 text-center text-xs">
-                    {row.saveStatus === 'saving' && '⏳'}
-                    {row.saveStatus === 'saved' && '✓'}
-                    {row.saveStatus === 'error' && '❌'}
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     <button onClick={() => !row.is_reviewed && deleteRow(row.tempKey)}
@@ -475,7 +469,7 @@ function FuelSection({
                 <td className="px-2 py-2 text-right font-mono text-gray-500 text-xs" style={{ backgroundColor: '#fefce8' }}>{fmtGas(totalCh4)}</td>
                 <td className="px-2 py-2 text-right font-mono text-gray-500 text-xs" style={{ backgroundColor: '#fefce8' }}>{fmtGas(totalN2o)}</td>
                 {hasBioFactor && <td className="px-2 py-2 text-right font-mono text-amber-800 text-xs" style={{ backgroundColor: '#fef3c7' }}>{fmtGas(totalBiomassCo2)}</td>}
-                <td colSpan={4} />
+                <td colSpan={3} />
               </tr>
             </tfoot>
           </table>
