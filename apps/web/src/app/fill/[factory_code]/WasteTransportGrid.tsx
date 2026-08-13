@@ -21,7 +21,7 @@ const STREAMS = [
   { key: 'textile' as const, label: '廢布/紡織廢棄物', weightCode: '3-5-W2' },
 ];
 
-const cell = 'border border-gray-200 px-2 py-1 text-sm';
+const cell = 'border border-gray-200 px-2 py-1 text-sm whitespace-nowrap';
 const input = 'w-full px-1 py-0.5 text-sm border border-gray-200 rounded focus:border-green-600 outline-none';
 
 export default function WasteTransportGrid({

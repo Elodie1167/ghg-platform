@@ -284,7 +284,7 @@ function WaterMonthly({
   const totalCo2e = rowCo2e(total) ?? 0;
 
   return (
-    <div className="max-w-2xl">
+    <div>
       <div className="flex items-center justify-between mb-1.5">
         <div>
           {status !== 'idle' && (
@@ -572,7 +572,7 @@ function FabricRow({
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-2xl">
+    <div className="overflow-x-auto rounded-lg border border-gray-200">
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr style={{ backgroundColor: HEADER_BG }} className="text-white">

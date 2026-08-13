@@ -59,7 +59,7 @@ export default function FactorySettingsClient({
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-6 max-w-[1600px] mx-auto">
       <h1 className="text-xl font-semibold text-gray-800">工廠基本資訊設定　{year} 年度</h1>
       <p className="text-sm text-gray-500 mt-1">
         廢水量統計方式決定 3-5-G 廢水處理怎麼填。填報時由此帶入並鎖定，工廠端不可自行切換

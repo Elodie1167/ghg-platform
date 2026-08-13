@@ -5,13 +5,13 @@ export default function Loading() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header style={{ backgroundColor: HEADER_BG }} className="text-white shadow-lg">
-        <div className="max-w-6xl mx-auto px-6 py-4">
+        <div className="max-w-[1600px] mx-auto px-6 md:px-10 py-4">
           <a href="/" className="text-green-300 text-xs hover:underline">← 返回首頁</a>
           <h1 className="text-xl font-bold mt-0.5">減碳績效追蹤</h1>
           <p className="text-green-300 text-sm">載入中…</p>
         </div>
       </header>
-      <main className="max-w-6xl mx-auto px-6 py-6 space-y-6">
+      <main className="max-w-[1600px] mx-auto px-6 md:px-10 py-6 space-y-6">
         <div className="flex items-center gap-3 text-gray-500 text-sm">
           <span className="inline-block w-5 h-5 border-2 border-gray-300 border-t-[#0C3D2E] rounded-full animate-spin" />
           正在計算各廠碳排與減碳績效…

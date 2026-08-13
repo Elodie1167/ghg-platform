@@ -267,7 +267,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div style={{ backgroundColor: HEADER_BG }} className="text-white px-6 py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
+        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <a href="/admin/factors" className="text-green-300 hover:text-white text-sm">← 返回係數列表</a>
             <span className="text-green-600">|</span>
@@ -283,7 +283,7 @@ export default function FactorDetailClient({ factor, factories }: Props) {
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-[1600px] mx-auto px-4 md:px-8 py-6 space-y-6">
 
         {/* Section 1: 熱值與密度換算（僅 S1 燃燒類；S2/S3、冷媒、化糞池、焊條不需要） */}
         {factor.scope === 1 && !isRefrigerant && !isSeptic && !isWelding && <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">

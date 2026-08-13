@@ -498,7 +498,7 @@ export default function FillPageClient({
     }
 
     return (
-      <div className="max-w-5xl">
+      <div>
         <div className="flex items-start justify-between mb-6 pb-4 border-b border-gray-200">
           <div>
             <h2 className="text-lg font-semibold text-gray-800">設定排放源</h2>
@@ -1649,7 +1649,7 @@ export default function FillPageClient({
               </button>
             </div>
           </div>
-          <table className="w-full border-collapse text-sm max-w-lg">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr style={{ backgroundColor: '#0C3D2E' }} className="text-white">
                 <th className="whitespace-nowrap px-2 py-2 text-center w-8">
@@ -1865,7 +1865,7 @@ export default function FillPageClient({
           </div>
         )}
 
-        <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-2xl">
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full text-sm">
             <thead>
               <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
@@ -2464,7 +2464,7 @@ export default function FillPageClient({
   return (
     <div className="min-h-screen bg-gray-50" style={{ fontFamily: 'system-ui, sans-serif' }}>
       <header style={{ backgroundColor: '#0C3D2E' }} className="text-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 py-3">
+        <div className="max-w-[1600px] mx-auto px-4 md:px-8 py-3">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
               <a href="/" className="text-green-300 hover:text-white text-sm transition flex-shrink-0">
@@ -2553,7 +2553,7 @@ export default function FillPageClient({
         {activeTab === 'upstream' && <FactorPanel />}
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 py-6" style={{ display: activeTab === 'upstream' ? 'none' : undefined }}>
+      <main className="max-w-[1600px] mx-auto px-4 md:px-8 py-6" style={{ display: activeTab === 'upstream' ? 'none' : undefined }}>
         <TabContent />
         {activeTab !== 'basic' && activeTab !== 'summary' && <FactorPanel />}
       </main>

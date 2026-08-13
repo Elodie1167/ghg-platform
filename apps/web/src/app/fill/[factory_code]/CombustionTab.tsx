@@ -396,7 +396,7 @@ function MonthlySection({
           </div>
         </div>
         {assignedFactor && <FactorPanel factor={assignedFactor} />}
-        <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-2xl">
+        <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full text-sm">
             <thead>
               <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
@@ -555,7 +555,7 @@ function MonthlySection({
         </div>
       </div>
       {assignedFactor && <FactorPanel factor={assignedFactor} />}
-      <div className="overflow-x-auto rounded-lg border border-gray-200 max-w-lg">
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full text-sm">
           <thead>
             <tr style={{ backgroundColor: HEADER_BG }} className="text-white">

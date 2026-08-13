@@ -23,7 +23,7 @@ export default async function Home() {
   return (
     <div style={{ minHeight: '100vh', background: '#f9fafb', fontFamily: 'system-ui, sans-serif' }}>
       <header style={{ backgroundColor: '#0C3D2E' }} className="text-white shadow-lg">
-        <div className="max-w-6xl mx-auto px-6 py-5 flex items-end justify-between">
+        <div className="max-w-[1920px] mx-auto px-6 md:px-10 py-5 flex items-end justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">GHG 碳盤查平台</h1>
             <p className="text-green-300 text-sm mt-1">
@@ -66,7 +66,7 @@ export default async function Home() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8">
+      <main className="max-w-[1920px] mx-auto px-6 md:px-10 py-8">
         <p className="text-gray-500 text-sm mb-6">
           選擇廠別進入填報頁面。各廠連結可直接分享給負責同仁。
         </p>
@@ -88,7 +88,7 @@ export default async function Home() {
                 <span className="text-xs text-gray-400">{facs.length} 廠</span>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-7 gap-3">
                 {facs.map((f) => (
                   <Link
                     key={f.id}

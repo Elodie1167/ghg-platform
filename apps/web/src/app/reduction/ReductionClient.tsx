@@ -108,7 +108,7 @@ export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, a
   return (
     <div className="min-h-screen bg-gray-50">
       <header style={{ backgroundColor: HEADER_BG }} className="text-white shadow-lg">
-        <div className="max-w-6xl mx-auto px-6 py-4">
+        <div className="max-w-[1600px] mx-auto px-6 md:px-10 py-4">
           <div className="flex items-start justify-between flex-wrap gap-3">
             <div>
               <a href="/" className="text-green-300 text-xs hover:underline">← 返回首頁</a>
@@ -169,7 +169,7 @@ export default function ReductionClient({ data, anomalyOpenCount, anomalyYear, a
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-6 space-y-8">
+      <main className="max-w-[1600px] mx-auto px-6 md:px-10 py-6 space-y-8">
         {data.warnings.length > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 space-y-1">
             {data.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}

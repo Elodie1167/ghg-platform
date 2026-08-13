@@ -14,7 +14,7 @@ import { MONTHS, HEADER_BG, BTN_BG } from './tabTypes';
 import { WASTEWATER_TYPES, TREATMENT_MODES } from '@/lib/waste-detail';
 import type { WasteApiRecord, SourceValue, WasteApiSettings } from './WasteApiTypes';
 
-const cell = 'border border-gray-200 px-2 py-1 text-sm';
+const cell = 'border border-gray-200 px-2 py-1 text-sm whitespace-nowrap';
 const input = 'w-full px-1 py-0.5 text-sm border border-gray-200 rounded focus:border-green-600 outline-none';
 
 export default function WastewaterGrid({
