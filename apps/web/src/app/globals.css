@@ -20,3 +20,21 @@ input[type='number']::-webkit-outer-spin-button {
 input[type='number'] {
   -moz-appearance: textfield;
 }
+
+/* 鍵盤操作可見的 focus ring（沒有另外設 focus:ring 的元件用這個保底） */
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #16a34a;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* 表格/欄位數字用等寬數字，避免小數點因字寬不同而參差不齊 */
+.font-mono,
+input[type='number'],
+table td {
+  font-variant-numeric: tabular-nums;
+}

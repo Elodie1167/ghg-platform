@@ -134,14 +134,14 @@ export default async function Home({
                     href={`/fill/${f.factory_code}?year=${currentYear}`}
                     className="block bg-white rounded-xl border border-gray-200 hover:border-green-400 hover:shadow-md transition-all p-4 group"
                   >
-                    <div className="text-xs font-mono mb-1 text-gray-400">
+                    <div className="text-xs font-mono mb-1 text-gray-500">
                       {f.factory_code}
                     </div>
                     <div className="font-semibold text-gray-900 text-sm leading-snug">
                       {f.name_zh}
                     </div>
                     {f.name_en && f.name_en !== f.name_zh && (
-                      <div className="text-xs text-gray-400 mt-0.5 truncate">{f.name_en}</div>
+                      <div className="text-xs text-gray-500 mt-0.5 truncate">{f.name_en}</div>
                     )}
                     <div className="mt-3 text-xs text-gray-300 group-hover:text-green-500 transition flex items-center gap-1">
                       <span>開始填報</span>
