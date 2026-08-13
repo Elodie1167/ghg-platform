@@ -1,9 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { query } from '@/lib/db';
 import { CAT_PREFIX } from '@/lib/summary-data';
 
 export const dynamic = 'force-dynamic';
+
+// 樣式（比照現有頁面主色 #0C3D2E）
+const HEADER_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0C3D2E' } };
+const HEADER_FONT: Partial<ExcelJS.Font> = { bold: true, color: { argb: 'FFFFFFFF' } };
+const CAT_SUBTOTAL_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+const SCOPE_TOTAL_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE699' } };
+const GRAND_TOTAL_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0C3D2E' } };
+const GRAND_TOTAL_FONT: Partial<ExcelJS.Font> = { bold: true, color: { argb: 'FFFFFFFF' } };
+const REC_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } };
+const CO2E_FMT = '#,##0.0000';
+
+function styleRow(row: ExcelJS.Row, fill: ExcelJS.Fill, font?: Partial<ExcelJS.Font>) {
+  row.eachCell({ includeEmpty: true }, (c) => {
+    c.fill = fill;
+    if (font) c.font = font;
+    else c.font = { bold: true };
+  });
+}
 
 /**
  * GET /api/reports/factory-inventory?factory_id=xxx&year=2025
@@ -14,6 +32,10 @@ export const dynamic = 'force-dynamic';
  * 不做登入驗證，比照現有 /api/reports/factors、/api/reports/inventory 等既有報表 API
  * 的現況（平台登入機制尚未在任一報表路由上生效，見 lib/session.ts 註解）。
  * 直接匯出資料庫現況，不區分查證前/後版本——差別只在資料本身是否已更新。
+ *
+ * 用 exceljs（不是專案其他報表慣用的 xlsx/SheetJS）：SheetJS 免費版寫入時會把所有
+ * 儲存格樣式（粗體、底色）丟掉，無法做出這支報表要求的視覺分層，故只在這支路由改用
+ * 支援樣式的套件，其他既有報表維持原樣不動。
  */
 export async function GET(req: NextRequest) {
   try {
@@ -121,45 +143,94 @@ export async function GET(req: NextRequest) {
     const generatedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
     const title = `${factory.name_zh}（${factory.factory_code}）${year} 年溫室氣體盤查清冊`;
 
+    const wb = new ExcelJS.Workbook();
+
     // ── 分頁1：排放源彙總表 ──
-    const h1 = [
-      '範疇', '類別', '排放源代碼', '排放源名稱', '記錄筆數',
-      '活動數據合計', '活動數據單位',
-      'CO₂e (Location-based, 公噸)', 'CO₂e (Market-based, 公噸)', 'CO₂e 合計 (公噸)', '生質CO₂ (公噸, 另計不入範疇一)',
+    // 欄位順序：CO2e合計／生質CO2（原JK欄）移到排放源名稱之後，優先呈現關鍵數字，
+    // 其餘欄位（記錄筆數、活動數據、Location/Market）往後遞補。
+    const ws1 = wb.addWorksheet('排放源彙總表');
+    ws1.columns = [
+      { header: '範疇', width: 7 },
+      { header: '類別', width: 14 },
+      { header: '排放源代碼', width: 12 },
+      { header: '排放源名稱', width: 30 },
+      { header: 'CO₂e 合計 (公噸)', width: 16 },
+      { header: '生質CO₂ (公噸, 另計不入範疇一)', width: 20 },
+      { header: '記錄筆數', width: 8 },
+      { header: '活動數據合計', width: 14 },
+      { header: '活動數據單位', width: 10 },
+      { header: 'CO₂e (Location-based, 公噸)', width: 20 },
+      { header: 'CO₂e (Market-based, 公噸)', width: 20 },
     ];
-    const detailRow = (r: (typeof summaryRows)[number]) => [
-      `範疇${r.scope}`, r.category ?? '', r.source_code, r.source_name, r.record_count,
-      cell(r.activity_value_total), r.activity_unit ?? '',
-      cell(r.co2e_location_total), cell(r.co2e_market_total), cell(r.co2e_total_total), cell(r.co2e_biomass_co2_total),
-    ];
+    ws1.spliceRows(1, 0, [title], ['排放源彙總表'], [`產出時間：${generatedAt}`],
+      ['※ 屬草稿性質，最終數字需永續發展部及外部查證單位確認。小計/加總列的活動數據欄位留空——同類別/範疇下常混用不同活動單位，直接加總無意義。'], []);
+    ws1.mergeCells('A1:K1');
+    ws1.mergeCells('A2:K2');
+    ws1.mergeCells('A3:K3');
+    ws1.mergeCells('A4:K4');
+    ws1.getCell('A1').font = { bold: true, size: 13 };
+    ws1.getCell('A4').font = { italic: true, size: 9, color: { argb: 'FF808080' } };
+
+    const headerRowIdx1 = 6;
+    const headerRow1 = ws1.getRow(headerRowIdx1);
+    headerRow1.values = ws1.columns.map((c) => c.header as string);
+    styleRow(headerRow1, HEADER_FILL, HEADER_FONT);
+    ws1.views = [{ state: 'frozen', ySplit: headerRowIdx1 }];
+
+    // 詳細列：CO2e合計/生質CO2 移到第5、6欄
+    const pushDetailRow = (r: (typeof summaryRows)[number]) => {
+      const row = ws1.addRow([
+        `範疇${r.scope}`, r.category ?? '', r.source_code, r.source_name,
+        cell(r.co2e_total_total), cell(r.co2e_biomass_co2_total),
+        r.record_count, cell(r.activity_value_total), r.activity_unit ?? '',
+        cell(r.co2e_location_total), cell(r.co2e_market_total),
+      ]);
+      row.getCell(5).numFmt = CO2E_FMT;
+      row.getCell(6).numFmt = CO2E_FMT;
+      row.getCell(8).numFmt = '#,##0.0000';
+      row.getCell(10).numFmt = CO2E_FMT;
+      row.getCell(11).numFmt = CO2E_FMT;
+      return row;
+    };
     // 小計／加總列：只填 CO2e 相關欄位，活動數據欄位留空（同類別/範疇常混用不同活動單位，加總無意義）
-    const aggRow = (
+    const pushAggRow = (
       label: string,
       agg: { co2e_location_total?: number; co2e_market_total?: number; co2e_total_total?: number; co2e_biomass_co2_total?: number } | undefined,
-    ) => [
-      '', '', '', label, '', '', '',
-      cell(agg?.co2e_location_total), cell(agg?.co2e_market_total), cell(agg?.co2e_total_total), cell(agg?.co2e_biomass_co2_total),
-    ];
+      fill: ExcelJS.Fill,
+      font?: Partial<ExcelJS.Font>,
+    ) => {
+      const row = ws1.addRow([
+        '', '', '', label,
+        cell(agg?.co2e_total_total), cell(agg?.co2e_biomass_co2_total),
+        '', '', '',
+        cell(agg?.co2e_location_total), cell(agg?.co2e_market_total),
+      ]);
+      row.getCell(5).numFmt = CO2E_FMT;
+      row.getCell(6).numFmt = CO2E_FMT;
+      row.getCell(10).numFmt = CO2E_FMT;
+      row.getCell(11).numFmt = CO2E_FMT;
+      styleRow(row, fill, font);
+      return row;
+    };
 
-    const r1: (string | number)[][] = [];
     for (const scope of [1, 2, 3]) {
       const catPrefixesInScope = Array.from(
         new Set(summaryRows.filter((r) => r.scope === scope).map((r) => r.cat_prefix as string)),
       ).sort();
       for (const catPrefix of catPrefixesInScope) {
         const rowsInCat = summaryRows.filter((r) => r.scope === scope && r.cat_prefix === catPrefix);
-        r1.push(...rowsInCat.map(detailRow));
+        rowsInCat.forEach(pushDetailRow);
         const catAgg = catAggRows.find((r) => r.scope === scope && r.cat_prefix === catPrefix);
         const catLabel = CAT_PREFIX[catPrefix] ? `${catPrefix} ${CAT_PREFIX[catPrefix]} 小計` : `${catPrefix} 小計`;
-        r1.push(aggRow(catLabel, catAgg));
+        pushAggRow(catLabel, catAgg, CAT_SUBTOTAL_FILL);
       }
       const sAgg = scopeAgg(scope);
       if (scope === 2) {
         // 範疇二地域基準與市場基準分開加總（見 CLAUDE.md：中國產區用市場剩餘係數，其他產區 REC 扣抵）
-        r1.push(aggRow('範疇二 加總（Location-based）', sAgg ? { co2e_total_total: sAgg.co2e_location_total } : undefined));
-        r1.push(aggRow('範疇二 加總（Market-based）', sAgg ? { co2e_total_total: sAgg.co2e_market_total } : undefined));
+        pushAggRow('範疇二 加總（Location-based）', sAgg ? { co2e_total_total: sAgg.co2e_location_total } : undefined, SCOPE_TOTAL_FILL);
+        pushAggRow('範疇二 加總（Market-based）', sAgg ? { co2e_total_total: sAgg.co2e_market_total } : undefined, SCOPE_TOTAL_FILL);
       } else {
-        r1.push(aggRow(`範疇${scope} 加總`, sAgg ? { co2e_total_total: sAgg.co2e_total_total } : undefined));
+        pushAggRow(`範疇${scope} 加總`, sAgg ? { co2e_total_total: sAgg.co2e_total_total } : undefined, SCOPE_TOTAL_FILL);
       }
     }
     const s1 = scopeAgg(1);
@@ -167,59 +238,56 @@ export async function GET(req: NextRequest) {
     const s3 = scopeAgg(3);
     const totalLocation = (s1?.co2e_total_total ?? 0) + (s2?.co2e_location_total ?? 0) + (s3?.co2e_total_total ?? 0);
     const totalMarket = (s1?.co2e_total_total ?? 0) + (s2?.co2e_market_total ?? 0) + (s3?.co2e_total_total ?? 0);
-    r1.push(aggRow('範疇一～範疇三 加總（地域別，Location-based）', { co2e_total_total: totalLocation }));
-    r1.push(aggRow('範疇一～範疇三 加總（市場別，Market-based）', { co2e_total_total: totalMarket }));
-    r1.push(['', '', '', 'Quantity of Renewable Energy Certificates (RECs) from iREC (MWh)', '', '', '', '', '', cell(recMwh), '']);
-    r1.push(['', '', '', 'iREC Scope 2 Actual Deducted Volume (MWh)', '', '', '', '', '', cell(recDeductedMwh), '']);
-
-    const ws1 = XLSX.utils.aoa_to_sheet([
-      [title],
-      ['排放源彙總表'],
-      [`產出時間：${generatedAt}`],
-      ['※ 屬草稿性質，最終數字需永續發展部及外部查證單位確認。小計/加總列的活動數據欄位留空——同類別/範疇下常混用不同活動單位，直接加總無意義。'],
-      [],
-      h1, ...r1,
-    ]);
-    ws1['!cols'] = [
-      { wch: 7 }, { wch: 14 }, { wch: 12 }, { wch: 30 }, { wch: 8 },
-      { wch: 14 }, { wch: 10 },
-      { wch: 20 }, { wch: 20 }, { wch: 14 }, { wch: 20 },
-    ];
+    pushAggRow('範疇一～範疇三 加總（地域別，Location-based）', { co2e_total_total: totalLocation }, GRAND_TOTAL_FILL, GRAND_TOTAL_FONT);
+    pushAggRow('範疇一～範疇三 加總（市場別，Market-based）', { co2e_total_total: totalMarket }, GRAND_TOTAL_FILL, GRAND_TOTAL_FONT);
+    pushAggRow('Quantity of Renewable Energy Certificates (RECs) from iREC (MWh)', { co2e_total_total: recMwh }, REC_FILL);
+    pushAggRow('iREC Scope 2 Actual Deducted Volume (MWh)', { co2e_total_total: recDeductedMwh }, REC_FILL);
 
     // ── 分頁2：數據明細表 ──
-    const h2 = [
-      '範疇', '排放源代碼', '排放源名稱', '月份',
-      '活動數據', '活動數據單位',
-      'CO₂e (Location-based, 公噸)', 'CO₂e (Market-based, 公噸)', 'CO₂e 合計 (公噸)', '生質CO₂ (公噸)',
-      '起始日期', '結束日期', '子地點/設備', '錶號', '已鎖定', '備註',
+    const ws2 = wb.addWorksheet('數據明細表');
+    ws2.columns = [
+      { header: '範疇', width: 7 },
+      { header: '排放源代碼', width: 12 },
+      { header: '排放源名稱', width: 26 },
+      { header: '月份', width: 6 },
+      { header: '活動數據', width: 12 },
+      { header: '活動數據單位', width: 10 },
+      { header: 'CO₂e (Location-based, 公噸)', width: 20 },
+      { header: 'CO₂e (Market-based, 公噸)', width: 20 },
+      { header: 'CO₂e 合計 (公噸)', width: 14 },
+      { header: '生質CO₂ (公噸)', width: 14 },
+      { header: '起始日期', width: 12 },
+      { header: '結束日期', width: 12 },
+      { header: '子地點/設備', width: 16 },
+      { header: '錶號', width: 12 },
+      { header: '已鎖定', width: 6 },
+      { header: '備註', width: 30 },
     ];
-    const r2 = detailRows.map((r) => [
-      `範疇${r.scope}`, r.source_code, r.source_name, r.month,
-      cell(r.activity_value), r.activity_unit ?? '',
-      cell(r.co2e_location), cell(r.co2e_market), cell(r.co2e_total), cell(r.co2e_biomass_co2),
-      r.date_from ?? '', r.date_to ?? '', r.sub_location ?? '', r.meter_number ?? '',
-      r.is_reviewed ? 'V' : '', r.notes ?? '',
-    ]);
-    const ws2 = XLSX.utils.aoa_to_sheet([
-      [title],
-      ['數據明細表（構成上頁彙總數字的逐筆填報記錄）'],
-      [`產出時間：${generatedAt}`],
-      [],
-      h2, ...r2,
-    ]);
-    ws2['!cols'] = [
-      { wch: 7 }, { wch: 12 }, { wch: 26 }, { wch: 6 },
-      { wch: 12 }, { wch: 10 },
-      { wch: 20 }, { wch: 20 }, { wch: 14 }, { wch: 14 },
-      { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 6 }, { wch: 30 },
-    ];
+    ws2.spliceRows(1, 0, [title], ['數據明細表（構成上頁彙總數字的逐筆填報記錄）'], [`產出時間：${generatedAt}`], []);
+    ws2.mergeCells('A1:P1');
+    ws2.mergeCells('A2:P2');
+    ws2.mergeCells('A3:P3');
+    ws2.getCell('A1').font = { bold: true, size: 13 };
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws1, '排放源彙總表');
-    XLSX.utils.book_append_sheet(wb, ws2, '數據明細表');
+    const headerRowIdx2 = 5;
+    const headerRow2 = ws2.getRow(headerRowIdx2);
+    headerRow2.values = ws2.columns.map((c) => c.header as string);
+    styleRow(headerRow2, HEADER_FILL, HEADER_FONT);
+    ws2.views = [{ state: 'frozen', ySplit: headerRowIdx2 }];
 
-    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    for (const r of detailRows) {
+      const row = ws2.addRow([
+        `範疇${r.scope}`, r.source_code, r.source_name, r.month,
+        cell(r.activity_value), r.activity_unit ?? '',
+        cell(r.co2e_location), cell(r.co2e_market), cell(r.co2e_total), cell(r.co2e_biomass_co2),
+        r.date_from ?? '', r.date_to ?? '', r.sub_location ?? '', r.meter_number ?? '',
+        r.is_reviewed ? 'V' : '', r.notes ?? '',
+      ]);
+      [7, 8, 9, 10].forEach((i) => { row.getCell(i).numFmt = CO2E_FMT; });
+    }
+
     const filename = `${factory.factory_code}_盤查清冊_${year}.xlsx`;
+    const buf = await wb.xlsx.writeBuffer();
     return new NextResponse(new Uint8Array(buf), {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
