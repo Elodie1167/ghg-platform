@@ -2486,15 +2486,16 @@ export default function FillPageClient({
                   ))}
                 </select>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-white font-semibold text-sm flex-shrink-0">盤查年度：</span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-amber-200 font-semibold text-sm">盤查年度：</span>
                 <select
                   value={year}
                   onChange={(e) => router.push(`/fill/${factory.factory_code}?year=${e.target.value}`)}
-                  className="bg-green-800 text-white text-sm rounded px-2 py-1 border border-green-600 focus:outline-none focus:ring-2 focus:ring-green-400"
+                  className="text-amber-900 font-bold text-sm rounded px-3 py-1 border-2 border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  style={{ backgroundColor: '#fde68a' }}
                 >
                   {REPORT_YEARS.map((y) => (
-                    <option key={y} value={y}>{y} 年</option>
+                    <option key={y} value={y}>{y} 年{y === new Date().getFullYear() ? '（本年）' : ''}</option>
                   ))}
                 </select>
               </div>
@@ -2509,6 +2510,11 @@ export default function FillPageClient({
                 className="border border-green-500 text-green-200 hover:bg-green-800 hover:text-white font-medium text-sm px-3 py-1.5 rounded-lg transition">
                 係數管理
               </a>
+              <a href={`/api/reports/factory-inventory?factory_id=${factory.id}&year=${year}`}
+                title="下載本廠清冊（排放源彙總＋數據明細），供查證單位使用"
+                className="border border-green-500 text-green-200 hover:bg-green-800 hover:text-white font-medium text-sm px-3 py-1.5 rounded-lg transition">
+                ⬇ 下載本廠清冊
+              </a>
               <button onClick={() => setImportModalOpen(true)}
                 className="bg-white text-green-900 hover:bg-green-50 font-medium text-sm px-4 py-1.5 rounded-lg shadow transition">
                 批次匯入 Excel
@@ -2517,6 +2523,12 @@ export default function FillPageClient({
           </div>
         </div>
       </header>
+
+      {year !== new Date().getFullYear() && (
+        <div className="text-center text-sm font-semibold py-1.5" style={{ backgroundColor: '#fde68a', color: '#78350f' }}>
+          ⚠ 目前正在填報 {year} 年度（非本年），請確認這是你要編輯的年度
+        </div>
+      )}
 
       <nav className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4">

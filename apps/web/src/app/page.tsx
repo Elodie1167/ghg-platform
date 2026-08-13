@@ -4,7 +4,13 @@ import type { RegistryFactory } from '@/lib/registry-types';
 
 export const dynamic = 'force-dynamic';
 
-export default async function Home() {
+const REPORT_YEARS = [2023, 2024, 2025, 2026, 2027, 2028];
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ year?: string }>;
+}) {
   // 名冊已排好序（產區順序 → 廠順序），停用的廠不出現在填報入口
   const [factories, countryList] = await Promise.all([getFactories(), getCountries()]);
   const countryLabels: Record<string, string> = {};
@@ -18,7 +24,12 @@ export default async function Home() {
 
   const countries = orderCountryCodes(grouped.keys(), countryList);
 
-  const currentYear = new Date().getFullYear();
+  const sp = await searchParams;
+  const parsedYear = sp.year ? parseInt(sp.year, 10) : NaN;
+  const nowYear = new Date().getFullYear();
+  const currentYear = !isNaN(parsedYear) && parsedYear >= 2020 && parsedYear <= 2100
+    ? parsedYear
+    : nowYear;
 
   return (
     <div style={{ minHeight: '100vh', background: '#f9fafb', fontFamily: 'system-ui, sans-serif' }}>
@@ -61,15 +72,43 @@ export default async function Home() {
             >
               查證封存 →
             </Link>
+            <a
+              href={`/api/reports/report?year=${currentYear - 1}`}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-green-500 text-white hover:bg-green-400 transition"
+            >
+              產出報告書（{currentYear - 1}）↓
+            </a>
             <span className="text-green-300 text-sm">共 {factories.length} 個廠別</span>
           </div>
         </div>
       </header>
 
       <main className="max-w-[1920px] mx-auto px-6 md:px-10 py-8">
-        <p className="text-gray-500 text-sm mb-6">
-          選擇廠別進入填報頁面。各廠連結可直接分享給負責同仁。
-        </p>
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-6 p-4 rounded-xl border-2"
+          style={{ borderColor: '#0C3D2E', backgroundColor: '#f0fdf4' }}>
+          <div>
+            <div className="text-sm font-semibold" style={{ color: '#0C3D2E' }}>請先確認要填報的年度，再點廠別進入</div>
+            <p className="text-gray-500 text-xs mt-0.5">
+              選好年度後，下方廠別連結都會帶入該年度；各廠連結可直接分享給負責同仁。
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {REPORT_YEARS.map((y) => (
+              <Link
+                key={y}
+                href={`/?year=${y}`}
+                className={`px-4 py-2 rounded-lg text-sm font-bold border-2 transition ${
+                  y === currentYear
+                    ? 'text-white shadow-md'
+                    : 'bg-white text-gray-500 border-gray-200 hover:border-green-400 hover:text-green-700'
+                }`}
+                style={y === currentYear ? { backgroundColor: '#0C3D2E', borderColor: '#0C3D2E' } : undefined}
+              >
+                {y} 年{y === nowYear && <span className="ml-1 text-[10px] font-normal opacity-80">（本年）</span>}
+              </Link>
+            ))}
+          </div>
+        </div>
 
         {countries.map((cc) => {
           const facs = grouped.get(cc) ?? [];
@@ -92,7 +131,7 @@ export default async function Home() {
                 {facs.map((f) => (
                   <Link
                     key={f.id}
-                    href={`/fill/${f.factory_code}`}
+                    href={`/fill/${f.factory_code}?year=${currentYear}`}
                     className="block bg-white rounded-xl border border-gray-200 hover:border-green-400 hover:shadow-md transition-all p-4 group"
                   >
                     <div className="text-xs font-mono mb-1 text-gray-400">
