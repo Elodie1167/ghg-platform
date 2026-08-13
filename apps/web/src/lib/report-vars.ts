@@ -235,9 +235,9 @@ export function formatReportVars(v: ReportVars): Record<string, string> {
 //   sea_rec_reduction
 //     越南/印尼 iREC 減量成效 = 對應廠別 (location − market)，待確認報告書
 //     採用的口徑是否含未購證廠別，避免與 /reduction 頁算法分歧。
-//   uncertainty_scope1 / scope2 / scope3（表4-9~4-12）
-//     ⚠️ 平台無此計算模組（誤差傳播法／Pedigree 矩陣），需新增資料表記錄
-//     每筆數據的不確定性評分。屬階段二，見清單第 5 點。
+//
+// 表4-9~4-12 不確定性分析已實作，見 lib/uncertainty.ts（固定參數表
+// uncertainty_params_scope12 / uncertainty_params_scope3 + 當年度排放量加權）。
 //
 // C 類 — 人工填寫，不自動計算（清單第 2 點已確認）：
 //   report_year / report_edition / issue_date / policy_signatory /
