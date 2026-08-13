@@ -40,7 +40,7 @@ export default async function Home({
           <div>
             <h1 className="text-2xl font-bold tracking-tight">GHG 碳盤查平台</h1>
             <p className="text-green-300 text-sm mt-1">
-              聚陽實業 — 永續發展部 ｜ 盤查年度：{currentYear} 年
+              聚陽實業 — 永續發展部
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -81,10 +81,10 @@ export default async function Home({
               查證封存 →
             </Link>
             <a
-              href={`/api/reports/report?year=${currentYear - 1}`}
+              href={`/api/reports/report?year=${currentYear}`}
               className="px-4 py-2 rounded-lg text-sm font-medium bg-green-500 text-white hover:bg-green-400 transition"
             >
-              產出報告書（{currentYear - 1}）↓
+              產出報告書（{currentYear}）↓
             </a>
             <span className="text-green-300 text-sm">共 {factories.length} 個廠別</span>
           </div>
