@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { query } from '@/lib/db';
-import { requireUser, canAccessFactory, AuthError } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,26 +10,21 @@ export const dynamic = 'force-dynamic';
  *   1. 排放源彙總表：該廠當年各排放源的活動數據與排放當量合計
  *   2. 數據明細表：構成上述合計的逐筆填報記錄
  *
- * reporter 只能匯出自己廠；admin 可用 factory_id 指定任意廠。
+ * 不做登入驗證，比照現有 /api/reports/factors、/api/reports/inventory 等既有報表 API
+ * 的現況（平台登入機制尚未在任一報表路由上生效，見 lib/session.ts 註解）。
  * 直接匯出資料庫現況，不區分查證前/後版本——差別只在資料本身是否已更新。
  */
 export async function GET(req: NextRequest) {
   try {
-    const user = await requireUser();
-
     const yearParam = req.nextUrl.searchParams.get('year');
     const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
     if (isNaN(year)) {
       return NextResponse.json({ data: null, error: 'year 必須為數字' }, { status: 400 });
     }
 
-    const requestedFactoryId = req.nextUrl.searchParams.get('factory_id');
-    const factoryId = user.role === 'admin' ? (requestedFactoryId ?? user.factoryId) : user.factoryId;
+    const factoryId = req.nextUrl.searchParams.get('factory_id');
     if (!factoryId) {
       return NextResponse.json({ data: null, error: '請指定廠別' }, { status: 400 });
-    }
-    if (!canAccessFactory(user, factoryId)) {
-      throw new AuthError('無權存取此廠別的資料', 403);
     }
 
     const factoryResult = await query(
@@ -142,9 +136,6 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ data: null, error: err.message }, { status: err.status });
-    }
     console.error('[GET /api/reports/factory-inventory]', err);
     return NextResponse.json({ data: null, error: '產出廠別盤查清冊失敗' }, { status: 500 });
   }
