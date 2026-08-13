@@ -1,10 +1,10 @@
 ﻿import Link from 'next/link';
 import { getCountries, getFactories, orderCountryCodes } from '@/lib/factory-registry';
+import { getActiveReportYears } from '@/lib/report-years';
 import type { RegistryFactory } from '@/lib/registry-types';
+import YearPicker from './YearPicker';
 
 export const dynamic = 'force-dynamic';
-
-const REPORT_YEARS = [2023, 2024, 2025, 2026, 2027, 2028];
 
 export default async function Home({
   searchParams,
@@ -12,7 +12,9 @@ export default async function Home({
   searchParams: Promise<{ year?: string }>;
 }) {
   // 名冊已排好序（產區順序 → 廠順序），停用的廠不出現在填報入口
-  const [factories, countryList] = await Promise.all([getFactories(), getCountries()]);
+  const [factories, countryList, reportYears] = await Promise.all([
+    getFactories(), getCountries(), getActiveReportYears(),
+  ]);
   const countryLabels: Record<string, string> = {};
   for (const c of countryList) countryLabels[c.country_code] = c.name_zh;
 
@@ -55,6 +57,12 @@ export default async function Home({
               係數設定 →
             </Link>
             <Link
+              href="/admin/report-years"
+              className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
+            >
+              年度設定 →
+            </Link>
+            <Link
               href="/summary"
               className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
             >
@@ -93,20 +101,7 @@ export default async function Home({
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {REPORT_YEARS.map((y) => (
-              <Link
-                key={y}
-                href={`/?year=${y}`}
-                className={`px-4 py-2 rounded-lg text-sm font-bold border-2 transition ${
-                  y === currentYear
-                    ? 'text-white shadow-md'
-                    : 'bg-white text-gray-500 border-gray-200 hover:border-green-400 hover:text-green-700'
-                }`}
-                style={y === currentYear ? { backgroundColor: '#0C3D2E', borderColor: '#0C3D2E' } : undefined}
-              >
-                {y} 年{y === nowYear && <span className="ml-1 text-[10px] font-normal opacity-80">（本年）</span>}
-              </Link>
-            ))}
+            <YearPicker years={reportYears} currentYear={currentYear} nowYear={nowYear} />
           </div>
         </div>
 

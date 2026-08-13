@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { query } from '@/lib/db';
 import FillPageClient from './FillPageClient';
 import { getFactorySettings, type FactorySettings } from '@/lib/waste-detail-db';
+import { getActiveReportYears } from '@/lib/report-years';
 import type { WasteDetail } from '@/lib/waste-detail';
 
 export type { FactorySettings };
@@ -233,6 +234,8 @@ export default async function FillPage({
   );
   const applicability: SourceApplicability[] = applicabilityResult.rows;
 
+  const reportYears = await getActiveReportYears();
+
   return (
     <FillPageClient
       factory={factory}
@@ -247,6 +250,7 @@ export default async function FillPage({
       recMwh={recMwh}
       factorySettings={factorySettings}
       applicability={applicability}
+      reportYears={reportYears}
     />
   );
 }

@@ -118,6 +118,7 @@ interface Props {
   recMwh: number;
   factorySettings: FactorySettings;
   applicability: SourceApplicability[];
+  reportYears: number[];
 }
 
 function buildRecordMap(records: ActivityRecord[]): Map<string, ActivityRecord> {
@@ -127,9 +128,6 @@ function buildRecordMap(records: ActivityRecord[]): Map<string, ActivityRecord> 
   }
   return map;
 }
-
-// Available reporting years (expand as needed)
-const REPORT_YEARS = [2023, 2024, 2025, 2026, 2027, 2028];
 
 export default function FillPageClient({
   factory,
@@ -144,6 +142,7 @@ export default function FillPageClient({
   recMwh,
   factorySettings,
   applicability,
+  reportYears,
 }: Props) {
   // Build a lookup: emission_source_id → assigned factor for quick access in tabs.
   // 共用係數的來源（如太陽能 2-1-B 的 factor_source_id 指到 2-1-A）本身沒有自己的
@@ -2494,7 +2493,7 @@ export default function FillPageClient({
                   className="text-amber-900 font-bold text-sm rounded px-3 py-1 border-2 border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-400"
                   style={{ backgroundColor: '#fde68a' }}
                 >
-                  {REPORT_YEARS.map((y) => (
+                  {reportYears.map((y) => (
                     <option key={y} value={y}>{y} 年{y === new Date().getFullYear() ? '（本年）' : ''}</option>
                   ))}
                 </select>

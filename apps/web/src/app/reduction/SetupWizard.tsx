@@ -15,7 +15,6 @@ import { countryLabelsOf, orderCountryCodes, type CountryMeta } from '@/lib/regi
 // =============================================================
 
 const HEADER_BG = '#0C3D2E';
-const YEARS = [2023, 2024, 2025, 2026, 2027, 2028];
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 // 產區順序與標籤由 server 以 countries prop 傳入（DB 名冊），不再在此硬編碼
 
@@ -26,10 +25,12 @@ type Detected = {
   monthCount: number; hasAnnualLump: boolean; hasData: boolean;
 };
 
-export default function SetupWizard({ defaultYear, defaultFactorYear, countries }: {
+export default function SetupWizard({ defaultYear, defaultFactorYear, countries, reportYears }: {
   defaultYear: number; defaultFactorYear: number;
   /** 產區順序與標籤，來自 DB 名冊 */
   countries: CountryMeta[];
+  /** 可選盤查年度，來自 DB report_years 表 */
+  reportYears: number[];
 }) {
   const router = useRouter();
   const countryLabels = countryLabelsOf(countries);
@@ -209,7 +210,7 @@ export default function SetupWizard({ defaultYear, defaultFactorYear, countries 
                 <Field label="② 資料年度">
                   <select value={year} onChange={(e) => setYear(Number(e.target.value))}
                     className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-                    {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+                    {reportYears.map((y) => <option key={y} value={y}>{y}</option>)}
                   </select>
                 </Field>
 

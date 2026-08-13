@@ -8,6 +8,7 @@ import {
 } from '@/lib/reduction-data';
 import { query } from '@/lib/db';
 import { getCountries, getFactories } from '@/lib/factory-registry';
+import { getActiveReportYears } from '@/lib/report-years';
 import type { ScopeKey, Basis } from '@/lib/reduction-types';
 import ReductionClient from './ReductionClient';
 import SetupWizard from './SetupWizard';
@@ -42,6 +43,7 @@ export default async function ReductionPage({
         defaultYear={thisYear}
         defaultFactorYear={thisYear - 1}
         countries={await getCountries()}
+        reportYears={await getActiveReportYears()}
       />
     );
   }
