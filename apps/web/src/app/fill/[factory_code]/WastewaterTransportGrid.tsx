@@ -306,7 +306,7 @@ export default function WastewaterTransportGrid({
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full border-collapse">
           <thead>
-            <tr style={{ backgroundColor: HEADER_BG }} className="text-white text-xs">
+            <tr style={{ backgroundColor: HEADER_BG }} className="text-white text-xs sticky top-12 z-10">
               <th className={`${cell} w-8 text-center`}>
                 <input type="checkbox" checked={allSelected}
                   onChange={(e) => setSelected(e.target.checked ? new Set(recordMonths) : new Set())} />

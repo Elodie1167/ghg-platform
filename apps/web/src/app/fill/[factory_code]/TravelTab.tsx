@@ -260,7 +260,7 @@ function TravelSection({
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
+              <tr style={{ backgroundColor: HEADER_BG }} className="text-white sticky top-12 z-10">
                 <th className="whitespace-nowrap px-2 py-2.5 text-center w-8">
                   <input type="checkbox"
                     checked={rows.length > 0 && selected.size === rows.length}

@@ -224,7 +224,7 @@ export default function DownstreamTab({
       <div className="overflow-x-auto rounded-lg border border-gray-200 mb-6">
         <table className="text-sm border-collapse w-full">
           <thead>
-            <tr style={{ backgroundColor: HEADER_BG }} className="text-white text-xs">
+            <tr style={{ backgroundColor: HEADER_BG }} className="text-white text-xs sticky top-12 z-10">
               <th className="whitespace-nowrap px-4 py-2.5 text-left w-28">運輸方式</th>
               <th className="whitespace-nowrap px-4 py-2.5 text-left">年度 TKM（公噸‧公里）</th>
               <th className="whitespace-nowrap px-3 py-2.5 text-right w-24">CO₂e (t)</th>

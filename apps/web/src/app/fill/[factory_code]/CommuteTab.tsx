@@ -186,7 +186,7 @@ function CommuteTable({
     <div className="overflow-x-auto rounded-lg border border-gray-200">
       <table className="w-full text-sm border-collapse">
         <thead>
-          <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
+          <tr style={{ backgroundColor: HEADER_BG }} className="text-white sticky top-12 z-10">
             <th className="whitespace-nowrap px-4 py-3 text-left">通勤方式</th>
             <th className="whitespace-nowrap px-4 py-3 text-right w-48">年度總里程 (person-km)</th>
             <th className="whitespace-nowrap px-4 py-3 text-left w-40">備註</th>

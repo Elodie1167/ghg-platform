@@ -322,7 +322,7 @@ export default function UpstreamTab({
           <div className="overflow-x-auto rounded-lg border border-gray-200 mb-3">
             <table className="text-sm border-collapse" style={{ minWidth: '360px' }}>
               <thead>
-                <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
+                <tr style={{ backgroundColor: HEADER_BG }} className="text-white sticky top-12 z-10">
                   <th className="whitespace-nowrap px-4 py-2.5 text-left w-20">運輸方式</th>
                   <th className="whitespace-nowrap px-2 py-2.5 text-right w-28">TKM 年度合計</th>
                   <th className="whitespace-nowrap px-2 py-2.5 text-right w-20">CO₂e (t)</th>

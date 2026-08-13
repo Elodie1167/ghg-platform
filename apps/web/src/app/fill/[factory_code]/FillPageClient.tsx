@@ -1868,7 +1868,7 @@ export default function FillPageClient({
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full text-sm">
             <thead>
-              <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
+              <tr style={{ backgroundColor: HEADER_BG }} className="text-white sticky top-12 z-10">
                 <th className="whitespace-nowrap px-4 py-2 text-left w-20">月份</th>
                 <th className="whitespace-nowrap px-4 py-2 text-right">已查核電力 (kWh)</th>
                 <th className="whitespace-nowrap px-4 py-2 text-right">T&amp;D 損失 (tCO₂e)</th>

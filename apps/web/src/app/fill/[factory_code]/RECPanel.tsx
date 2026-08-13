@@ -184,7 +184,7 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor, ma
         <div className="overflow-x-auto bg-white">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-blue-700 text-white text-xs">
+              <tr className="bg-blue-700 text-white text-xs sticky top-12 z-10">
                 <th className="whitespace-nowrap px-3 py-2 text-left w-20">月份</th>
                 <th className="whitespace-nowrap px-3 py-2 text-left w-28">發電類型</th>
                 <th className="whitespace-nowrap px-3 py-2 text-right w-32">購入量 (MWh)</th>
