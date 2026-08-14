@@ -4,6 +4,7 @@ import { getActiveReportYears } from '@/lib/report-years';
 import type { RegistryFactory } from '@/lib/registry-types';
 import YearPicker from './YearPicker';
 import UserMenu from './UserMenu';
+import HeaderMenus from './HeaderMenus';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,24 +47,6 @@ export default async function Home({
           </div>
           <div className="flex items-center gap-4">
             <Link
-              href="/admin/factories"
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
-            >
-              工廠設定 →
-            </Link>
-            <Link
-              href="/admin/factors"
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
-            >
-              係數設定 →
-            </Link>
-            <Link
-              href="/admin/report-years"
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
-            >
-              年度設定 →
-            </Link>
-            <Link
               href="/summary"
               className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
             >
@@ -75,18 +58,7 @@ export default async function Home({
             >
               減碳績效追蹤 →
             </Link>
-            <Link
-              href="/admin/verification"
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white border border-white/30 hover:bg-white/10 transition"
-            >
-              查證封存 →
-            </Link>
-            <a
-              href={`/api/reports/report?year=${currentYear}`}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-green-500 text-white hover:bg-green-400 transition"
-            >
-              產出報告書（{currentYear}）↓
-            </a>
+            <HeaderMenus currentYear={currentYear} />
             <span className="text-green-300 text-sm">共 {factories.length} 個廠別</span>
             <UserMenu />
           </div>
