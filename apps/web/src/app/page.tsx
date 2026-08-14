@@ -1,10 +1,12 @@
 ﻿import Link from 'next/link';
 import { getCountries, getFactories, orderCountryCodes } from '@/lib/factory-registry';
 import { getActiveReportYears } from '@/lib/report-years';
+import { getFillProgress } from '@/lib/fill-progress';
 import type { RegistryFactory } from '@/lib/registry-types';
 import YearPicker from './YearPicker';
 import UserMenu from './UserMenu';
 import HeaderMenus from './HeaderMenus';
+import FillProgressBar from './FillProgressBar';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +36,8 @@ export default async function Home({
   const currentYear = !isNaN(parsedYear) && parsedYear >= 2020 && parsedYear <= 2100
     ? parsedYear
     : nowYear;
+
+  const fillProgress = await getFillProgress(currentYear);
 
   return (
     <div style={{ minHeight: '100vh', background: '#f9fafb', fontFamily: 'system-ui, sans-serif' }}>
@@ -111,6 +115,9 @@ export default async function Home({
                     </div>
                     {f.name_en && f.name_en !== f.name_zh && (
                       <div className="text-xs text-gray-500 mt-0.5 truncate">{f.name_en}</div>
+                    )}
+                    {fillProgress.has(f.factory_code) && (
+                      <FillProgressBar progress={fillProgress.get(f.factory_code)!} />
                     )}
                     <div className="mt-3 text-xs text-gray-300 group-hover:text-green-500 transition flex items-center gap-1">
                       <span>開始填報</span>
