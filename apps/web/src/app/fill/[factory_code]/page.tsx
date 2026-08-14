@@ -238,6 +238,7 @@ export default async function FillPage({
 
   return (
     <FillPageClient
+      key={currentYear}
       factory={factory}
       allFactories={allFactories}
       emissionSources={emissionSources}
