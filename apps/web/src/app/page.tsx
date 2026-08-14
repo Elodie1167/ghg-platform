@@ -3,6 +3,7 @@ import { getCountries, getFactories, orderCountryCodes } from '@/lib/factory-reg
 import { getActiveReportYears } from '@/lib/report-years';
 import type { RegistryFactory } from '@/lib/registry-types';
 import YearPicker from './YearPicker';
+import UserMenu from './UserMenu';
 
 export const dynamic = 'force-dynamic';
 
@@ -87,6 +88,7 @@ export default async function Home({
               產出報告書（{currentYear}）↓
             </a>
             <span className="text-green-300 text-sm">共 {factories.length} 個廠別</span>
+            <UserMenu />
           </div>
         </div>
       </header>
