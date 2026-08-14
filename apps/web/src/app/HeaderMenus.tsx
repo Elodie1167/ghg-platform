@@ -42,6 +42,7 @@ export default function HeaderMenus({ currentYear }: Props) {
           <div className="absolute right-0 mt-2 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
             <Link href="/admin/factories" className={itemClass} onClick={() => setSettingsOpen(false)}>工廠設定</Link>
             <Link href="/admin/factors" className={itemClass} onClick={() => setSettingsOpen(false)}>係數設定</Link>
+            <Link href="/admin/emission-sources" className={itemClass} onClick={() => setSettingsOpen(false)}>排放源設定</Link>
             <Link href="/admin/report-years" className={itemClass} onClick={() => setSettingsOpen(false)}>年度設定</Link>
             <Link href="/admin/verification" className={itemClass} onClick={() => setSettingsOpen(false)}>查證封存</Link>
           </div>

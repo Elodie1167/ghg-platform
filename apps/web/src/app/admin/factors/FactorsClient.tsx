@@ -130,6 +130,15 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
     }
   }
 
+  async function copySingleFactor(f: FactorRow) {
+    const toYear = f.year + 1;
+    if (!confirm(`確定將「${f.source_code} ${f.source_name_zh}（${f.country_code}）」的 ${f.year} 年係數複製到 ${toYear} 年？`)) return;
+    const res = await fetch(`/api/admin/factors/${f.id}/copy-to-next-year`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) { alert(`❌ ${data.error}`); return; }
+    setFactors((prev) => [data.data as FactorRow, ...prev]);
+  }
+
   function factoryCount(ids: string[]) {
     const countryCodes = new Set(factories.filter((f) => ids.includes(f.id)).map((f) => f.country_code));
     return { count: ids.length, label: ids.length > 0 ? `${ids.length} 廠 (${Array.from(countryCodes).join('/')})` : '未指定' };
@@ -271,7 +280,7 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
                 <th className="px-3 py-3 text-left">排放源名稱</th>
                 <th className="px-3 py-3 text-center w-16">年度</th>
                 <th className="px-3 py-3 text-center w-36">適用廠區</th>
-                <th className="px-3 py-3 text-center w-40">操作</th>
+                <th className="px-3 py-3 text-center w-56">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -305,6 +314,12 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
                           style={{ backgroundColor: HEADER_BG }}>
                           細部設定
                         </a>
+                        <button onClick={() => copySingleFactor(f)}
+                          className="px-3 py-1 rounded border text-xs hover:bg-gray-50 transition"
+                          style={{ borderColor: HEADER_BG, color: HEADER_BG }}
+                          title={`複製這筆到 ${f.year + 1} 年`}>
+                          複製到隔年
+                        </button>
                         <button onClick={() => deleteFactor(f.id)}
                           className="px-3 py-1 rounded border border-red-200 text-red-500 text-xs hover:bg-red-50 transition">
                           刪除
