@@ -229,7 +229,11 @@ export async function calcCo2e(params: {
     } else {
       energy_mj = value * ncv;
     }
-    const bioFrac = Math.min((params.bio_fraction ?? 0) / 100, 1);
+    // bio_fraction 只在來源真的是生質混摻燃料（is_biomass=true，如 B40）時才代表生質占比%。
+    // meter_number 在其他排放源另有用途（例如 LPG 存「一桶公斤數」，呼叫端會原樣轉成
+    // bio_fraction 傳入），若不判斷 is_biomass 就直接套用，會把這些數值誤當生質占比，
+    // 把化石排放打折（例如 LPG 一桶 12kg 會被當成生質占比 12% 而少算 12%）。
+    const bioFrac = params.is_biomass ? Math.min((params.bio_fraction ?? 0) / 100, 1) : 0;
     const fossilTj = (energy_mj / 1_000_000) * (1 - bioFrac);
     const bioTj   = (energy_mj / 1_000_000) * bioFrac;
     co2_kg = fossilTj * (f.factor_co2 ?? 0);

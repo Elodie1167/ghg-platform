@@ -348,7 +348,6 @@ function MonthlySection({
     if (onReviewToggle) onReviewToggle(id, newVal);
   }
 
-  const co2eTotal = records.filter((r) => r.co2e_total != null).reduce((s, r) => s + (r.co2e_total ?? 0), 0);
   // 月 → 單據明細筆數（>0 表示該月為多張單據加總，顯示「查看明細」）
   const liCountByMonth: Record<number, number> = {};
   for (const r of records) liCountByMonth[r.month] = r.line_items_count ?? 0;
@@ -366,8 +365,11 @@ function MonthlySection({
       acc.co2 += g?.co2_t ?? 0;
       acc.ch4 += g?.ch4_t ?? 0;
       acc.n2o += g?.n2o_t ?? 0;
+      // 合計欄比照 CO2/CH4/N2O 三欄即時算，不要退回資料庫的 co2e_total（匯入後尚未
+      // recalculate 時是 NULL，會讓合計顯示「—」，跟其他即時算的欄位不一致）
+      acc.co2e += g?.co2e_t ?? 0;
       return acc;
-    }, { kg: 0, co2: 0, ch4: 0, n2o: 0 });
+    }, { kg: 0, co2: 0, ch4: 0, n2o: 0, co2e: 0 });
     const totalKg = lpgTotals.kg;
 
     return (
@@ -502,7 +504,7 @@ function MonthlySection({
                 <td className="px-2 py-2 text-right font-mono text-gray-500 text-xs" style={{ backgroundColor: '#fefce8' }}>{fmtGas(lpgTotals.ch4)}</td>
                 <td className="px-2 py-2 text-right font-mono text-gray-500 text-xs" style={{ backgroundColor: '#fefce8' }}>{fmtGas(lpgTotals.n2o)}</td>
                 <td className="px-4 py-2 text-right font-mono text-gray-700">
-                  {co2eTotal > 0 ? co2eTotal.toFixed(4) + ' t' : '—'}
+                  {lpgTotals.co2e > 0 ? lpgTotals.co2e.toFixed(4) + ' t' : '—'}
                 </td>
                 <td />
                 <td />
@@ -526,8 +528,10 @@ function MonthlySection({
     acc.co2 += g?.co2_t ?? 0;
     acc.ch4 += g?.ch4_t ?? 0;
     acc.n2o += g?.n2o_t ?? 0;
+    // 合計欄比照 CO2/CH4/N2O 三欄即時算，不要退回資料庫的 co2e_total（同一筆道理見 lpgTotals）
+    acc.co2e += g?.co2e_t ?? 0;
     return acc;
-  }, { co2: 0, ch4: 0, n2o: 0 });
+  }, { co2: 0, ch4: 0, n2o: 0, co2e: 0 });
 
   return (
     <div className="mb-6">
@@ -638,7 +642,7 @@ function MonthlySection({
               <td className="px-2 py-2 text-right font-mono text-gray-500 text-xs" style={{ backgroundColor: '#fefce8' }}>{fmtGas(nonLpgTotals.ch4)}</td>
               <td className="px-2 py-2 text-right font-mono text-gray-500 text-xs" style={{ backgroundColor: '#fefce8' }}>{fmtGas(nonLpgTotals.n2o)}</td>
               <td className="px-4 py-2 text-right font-mono text-gray-700">
-                {co2eTotal > 0 ? co2eTotal.toFixed(4) + ' t' : '—'}
+                {nonLpgTotals.co2e > 0 ? nonLpgTotals.co2e.toFixed(4) + ' t' : '—'}
               </td>
               <td />
               <td />
