@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Factory, FactoryListItem, EmissionSource, ActivityRecord, WasteConfig, WasteMethodConfig, AssignedFactor, TravelModeConfig, TravelSourceMode, FactorySettings, SourceApplicability } from './page';
-import { MONTHS, HEADER_BG } from './tabTypes';
+import { MONTHS, HEADER_BG, STICKY_THEAD_TOP } from './tabTypes';
 import ImportModal from './ImportModal';
 import FuelTab from './FuelTab';
 import CombustionTab from './CombustionTab';
@@ -78,8 +78,8 @@ type TabId = typeof TABS[number]['id'];
 const ELEC_SOURCE_CODE = '2-1-A';
 const SOLAR_SOURCE_CODE = '2-1-B';
 
-// 商務旅行可切換「機票/車票碳排法」的排放源：3-6-A 飛機、3-6-C 高鐵（住宿 3-6-B 不適用）
-const TRAVEL_MANUAL_CODES: Record<string, string> = { '3-6-A': '飛機', '3-6-C': '高鐵' };
+// 商務旅行可切換「機票/車票碳排法」的排放源：3-6-A 飛機、3-6-C 高鐵、3-6-D 火車（住宿 3-6-B 不適用）
+const TRAVEL_MANUAL_CODES: Record<string, string> = { '3-6-A': '飛機', '3-6-C': '高鐵', '3-6-D': '火車' };
 
 const CUSTOM_SOURCE_ORDER: Record<string, number> = {
   // 固定燃燒：鍋爐類 → 廚房 → 發電機 → 其他
@@ -634,7 +634,7 @@ export default function FillPageClient({
                 </div>
                 <div className="border border-gray-200 rounded-lg p-4">
                   <p className="text-xs text-gray-500 mb-3">
-                    飛機／高鐵可選擇填報方式：「距離法」填人次與距離、套排放係數自動算；
+                    飛機／高鐵／火車可選擇填報方式：「距離法」填人次與距離、套排放係數自動算；
                     「機票/車票碳排法」直接填票證上標示的 CO₂e（kg），不套係數。
                   </p>
                   <div className="grid grid-cols-2 gap-4 max-w-md">
@@ -1195,6 +1195,7 @@ export default function FillPageClient({
         co2e: number | null;
         is_reviewed: boolean;
         saveStatus: SaveStatus;
+        line_items_count: number;
       }
 
       const [rows, setRows] = useState<Record<number, ProcRow>>(() => {
@@ -1211,6 +1212,7 @@ export default function FillPageClient({
             co2e: r?.co2e_total ?? null,
             is_reviewed: r?.is_reviewed ?? false,
             saveStatus: 'idle',
+            line_items_count: r?.line_items_count ?? 0,
           };
         }
         return init;
@@ -1375,6 +1377,7 @@ export default function FillPageClient({
                   <th className="whitespace-nowrap px-3 py-2.5 text-right w-32">估計碳重 (kg)</th>
                   <th className="whitespace-nowrap px-3 py-2.5 text-left">備註</th>
                   <th className="whitespace-nowrap px-3 py-2.5 text-right w-24">CO₂e (t)</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-center w-16">明細</th>
                   <th className="whitespace-nowrap px-3 py-2.5 text-center w-8">查核</th>
                   <th className="whitespace-nowrap px-3 py-2.5 text-center w-8" />
                 </tr>
@@ -1387,6 +1390,9 @@ export default function FillPageClient({
                   const ccVal = ccFilled ? parseFloat(row.carbonContent) : 0;
                   // 含碳量填 0（真的 0%）是有效輸入，不能跟「沒填」一樣顯示「—」，否則會誤以為沒算
                   const estC = kgVal > 0 && ccFilled ? kgVal * ccVal / 100 : null;
+                  // 該月有多筆匯入明細時，採購量/含碳量各不相同、無法用單一輸入格代表，
+                  // 停用直接輸入，改請使用者去「明細」看逐筆內容（比照燃料分頁的唯讀合計格）
+                  const hasLineItems = row.line_items_count > 0;
                   return (
                     <tr key={m} className={m % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                       <td className="px-2 py-1.5 text-center">
@@ -1394,28 +1400,44 @@ export default function FillPageClient({
                       </td>
                       <td className="px-3 py-1.5 font-medium text-gray-700">{m} 月</td>
                       <td className="px-2 py-1.5">
-                        <input type="number" min="0" step="any" placeholder="採購量"
-                          value={row.value}
-                          onChange={(e) => onChange(m, 'value', e.target.value)}
-                          className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
+                        {hasLineItems ? (
+                          <div className="text-right text-xs font-mono text-gray-500" title="多筆匯入明細加總，請至「明細」查看逐筆內容">
+                            {kgVal.toLocaleString(undefined, { maximumFractionDigits: 10 })}
+                          </div>
+                        ) : (
+                          <input type="number" min="0" step="any" placeholder="採購量"
+                            value={row.value}
+                            onChange={(e) => onChange(m, 'value', e.target.value)}
+                            className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
+                        )}
                       </td>
                       <td className="px-2 py-1.5">
-                        <input type="number" min="0" max="100" step="0.001" placeholder="例：0.08"
-                          value={row.carbonContent}
-                          onChange={(e) => onChange(m, 'carbonContent', e.target.value)}
-                          className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
+                        {hasLineItems ? (
+                          <div className="text-right text-xs text-gray-400" title="多筆匯入明細各自含碳量不同，請至「明細」查看">各筆不同</div>
+                        ) : (
+                          <input type="number" min="0" max="100" step="0.001" placeholder="例：0.08"
+                            value={row.carbonContent}
+                            onChange={(e) => onChange(m, 'carbonContent', e.target.value)}
+                            className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500" />
+                        )}
                       </td>
                       <td className="px-3 py-1.5 text-right font-mono text-xs text-gray-700">
-                        {estC != null ? estC.toFixed(3) : '—'}
+                        {!hasLineItems && estC != null ? estC.toFixed(3) : '—'}
                       </td>
                       <td className="px-2 py-1.5">
                         <input type="text" placeholder="供應商、規格等"
                           value={row.notes}
                           onChange={(e) => onChange(m, 'notes', e.target.value)}
-                          className="w-full border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500" />
+                          disabled={hasLineItems}
+                          className="w-full border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-100 disabled:text-gray-400" />
                       </td>
                       <td className="px-3 py-1.5 text-right font-mono text-xs text-gray-400">
                         {row.co2e != null ? row.co2e.toFixed(4) : '—'}
+                      </td>
+                      <td className="px-3 py-1.5 text-center">
+                        <LineItemsCell recordId={row.id} count={row.line_items_count}
+                          title={`${source.name_zh} ${m} 月`} unit={source.default_unit}
+                          sourceCode={source.source_code} showCarbonPct />
                       </td>
                       <td className="px-2 py-1.5 text-center">
                         <button onClick={() => toggleReview(m)} disabled={!row.id}
@@ -1867,7 +1889,7 @@ export default function FillPageClient({
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full text-sm">
             <thead>
-              <tr style={{ backgroundColor: HEADER_BG }} className="text-white sticky top-12 z-10">
+              <tr style={{ backgroundColor: HEADER_BG }} className={`text-white sticky ${STICKY_THEAD_TOP} z-10`}>
                 <th className="whitespace-nowrap px-4 py-2 text-left w-20">月份</th>
                 <th className="whitespace-nowrap px-4 py-2 text-right">已查核電力 (kWh)</th>
                 <th className="whitespace-nowrap px-4 py-2 text-right">T&amp;D 損失 (tCO₂e)</th>

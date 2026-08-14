@@ -2,11 +2,11 @@
 
 import { useState, useRef, useEffect } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
-import { MONTHS, HEADER_BG, BTN_BG } from './tabTypes';
+import { MONTHS, HEADER_BG, BTN_BG, STICKY_THEAD_TOP } from './tabTypes';
 import type { EmissionSource, ActivityRecord } from './page';
 
-// 3-6-A 飛機, 3-6-C 高鐵（3-6-B 飯店住宿已停用，不再計算）
-const TRAVEL_CODES = ['3-6-A', '3-6-C'];
+// 3-6-A 飛機, 3-6-C 高鐵, 3-6-D 火車（3-6-B 飯店住宿已停用，不再計算）
+const TRAVEL_CODES = ['3-6-A', '3-6-C', '3-6-D'];
 
 interface EventRow {
   tempKey: string;
@@ -39,7 +39,7 @@ export default function TravelTab({
         <p className="text-sm">
           請至
           <button onClick={() => setActiveTab('basic')} className="text-green-600 underline mx-1">基本資訊</button>
-          勾選飛機或高鐵。
+          勾選飛機、高鐵或火車。
         </p>
       </div>
     );
@@ -49,7 +49,7 @@ export default function TravelTab({
     <div>
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-gray-800">差旅 S3</h2>
-        <p className="text-sm text-gray-500 mt-0.5">商務出差飛機、高鐵記錄，每次出差一筆</p>
+        <p className="text-sm text-gray-500 mt-0.5">商務出差飛機、高鐵、火車記錄，每次出差一筆</p>
       </div>
       {sources.map((src) => (
         <TravelSection
@@ -260,7 +260,7 @@ function TravelSection({
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr style={{ backgroundColor: HEADER_BG }} className="text-white sticky top-12 z-10">
+              <tr style={{ backgroundColor: HEADER_BG }} className={`text-white sticky ${STICKY_THEAD_TOP} z-10`}>
                 <th className="whitespace-nowrap px-2 py-2.5 text-center w-8">
                   <input type="checkbox"
                     checked={rows.length > 0 && selected.size === rows.length}

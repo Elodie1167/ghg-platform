@@ -13,7 +13,7 @@
 
 import { useState, useRef } from 'react';
 import type { Factory } from './page';
-import { MONTHS, HEADER_BG } from './tabTypes';
+import { MONTHS, HEADER_BG, STICKY_THEAD_TOP } from './tabTypes';
 import { WASTE_TYPES_T2, toTonnes } from '@/lib/waste-detail';
 import type { WasteApiRecord } from './WasteApiTypes';
 
@@ -306,7 +306,7 @@ export default function WastewaterTransportGrid({
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full border-collapse">
           <thead>
-            <tr style={{ backgroundColor: HEADER_BG }} className="text-white text-xs sticky top-12 z-10">
+            <tr style={{ backgroundColor: HEADER_BG }} className={`text-white text-xs sticky ${STICKY_THEAD_TOP} z-10`}>
               <th className={`${cell} w-8 text-center`}>
                 <input type="checkbox" checked={allSelected}
                   onChange={(e) => setSelected(e.target.checked ? new Set(recordMonths) : new Set())} />
