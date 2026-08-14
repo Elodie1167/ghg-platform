@@ -2,26 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { query } from '@/lib/db';
 import { CAT_PREFIX } from '@/lib/summary-data';
+import {
+  HEADER_FILL, HEADER_FONT, CAT_SUBTOTAL_FILL, SCOPE_TOTAL_FILL,
+  GRAND_TOTAL_FILL, GRAND_TOTAL_FONT, REC_FILL, CO2E_FMT, styleRow, styleHeaderRow,
+} from '@/lib/xlsx-style';
 
 export const dynamic = 'force-dynamic';
-
-// 樣式（比照現有頁面主色 #0C3D2E）
-const HEADER_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0C3D2E' } };
-const HEADER_FONT: Partial<ExcelJS.Font> = { bold: true, color: { argb: 'FFFFFFFF' } };
-const CAT_SUBTOTAL_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
-const SCOPE_TOTAL_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE699' } };
-const GRAND_TOTAL_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0C3D2E' } };
-const GRAND_TOTAL_FONT: Partial<ExcelJS.Font> = { bold: true, color: { argb: 'FFFFFFFF' } };
-const REC_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } };
-const CO2E_FMT = '#,##0.0000';
-
-function styleRow(row: ExcelJS.Row, fill: ExcelJS.Fill, font?: Partial<ExcelJS.Font>) {
-  row.eachCell({ includeEmpty: true }, (c) => {
-    c.fill = fill;
-    if (font) c.font = font;
-    else c.font = { bold: true };
-  });
-}
 
 /**
  * GET /api/reports/factory-inventory?factory_id=xxx&year=2025
@@ -292,6 +278,7 @@ export async function GET(req: NextRequest) {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        'Cache-Control': 'no-store, must-revalidate',
       },
     });
   } catch (err) {

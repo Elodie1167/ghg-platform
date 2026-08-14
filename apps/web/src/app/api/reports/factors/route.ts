@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { query } from '@/lib/db';
+import { styleHeaderRow } from '@/lib/xlsx-style';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,61 +46,70 @@ export async function GET(req: NextRequest) {
     const generatedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
     const scopeLabel = year != null ? `${year} 年` : '全部年度';
 
+    const wb = new ExcelJS.Workbook();
+
     // ── 表4-2：範疇一及範疇二 ──
-    const h12 = [
-      '範疇', '排放源代碼', '排放源名稱', '類別', '國別', '年度',
-      'CO₂ 係數', 'CH₄ 係數', 'N₂O 係數', '物質係數 (HFCs/SF₆)',
-      'NCV 熱值', 'NCV 單位', '密度', '密度單位',
-      '電力係數 (地域)', '市場剩餘電力係數',
-      '係數來源',
+    const ws12 = wb.addWorksheet('表4-2_範疇1及2');
+    ws12.columns = [
+      { header: '範疇', width: 7 }, { header: '排放源代碼', width: 12 }, { header: '排放源名稱', width: 24 },
+      { header: '類別', width: 12 }, { header: '國別', width: 7 }, { header: '年度', width: 6 },
+      { header: 'CO₂ 係數', width: 14 }, { header: 'CH₄ 係數', width: 14 }, { header: 'N₂O 係數', width: 14 },
+      { header: '物質係數 (HFCs/SF₆)', width: 16 },
+      { header: 'NCV 熱值', width: 12 }, { header: 'NCV 單位', width: 10 }, { header: '密度', width: 10 }, { header: '密度單位', width: 10 },
+      { header: '電力係數 (地域)', width: 16 }, { header: '市場剩餘電力係數', width: 16 },
+      { header: '係數來源', width: 40 },
     ];
-    const r12 = s12.map((r) => [
-      `範疇${r.scope}`, r.source_code, r.source_name, r.category ?? '', r.country_code, r.year,
-      cell(r.factor_co2), cell(r.factor_ch4), cell(r.factor_n2o), cell(r.factor_substance),
-      cell(r.ncv), r.ncv_unit ?? '', cell(r.density), r.density_unit ?? '',
-      cell(r.grid_emission_factor), cell(r.market_residual_factor),
-      r.source_reference ?? '',
-    ]);
-    const ws12 = XLSX.utils.aoa_to_sheet([
+    ws12.spliceRows(1, 0,
       [`表4-2 排放係數管理表（範疇一及範疇二）　${scopeLabel}`],
       [`產出時間：${generatedAt}`],
       ['※ 屬草稿性質，係數版本與來源最終需永續發展部及外部查證單位確認。'],
-      [],
-      h12, ...r12,
-    ]);
-    ws12['!cols'] = [
-      { wch: 7 }, { wch: 12 }, { wch: 24 }, { wch: 12 }, { wch: 7 }, { wch: 6 },
-      { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 },
-      { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-      { wch: 16 }, { wch: 16 },
-      { wch: 40 },
-    ];
+      []);
+    ws12.getCell('A1').font = { bold: true, size: 13 };
+    const h12Idx = 5;
+    ws12.getRow(h12Idx).values = ws12.columns.map((c) => c.header as string);
+    styleHeaderRow(ws12.getRow(h12Idx));
+    ws12.views = [{ state: 'frozen', ySplit: h12Idx }];
+    for (const r of s12) {
+      ws12.addRow([
+        `範疇${r.scope}`, r.source_code, r.source_name, r.category ?? '', r.country_code, r.year,
+        cell(r.factor_co2), cell(r.factor_ch4), cell(r.factor_n2o), cell(r.factor_substance),
+        cell(r.ncv), r.ncv_unit ?? '', cell(r.density), r.density_unit ?? '',
+        cell(r.grid_emission_factor), cell(r.market_residual_factor),
+        r.source_reference ?? '',
+      ]);
+    }
 
     // ── 表4-3：範疇三 ──
-    const h3 = ['範疇', '排放源代碼', '排放源名稱', '類別', '國別', '年度', '範疇三綜合係數 (scope3_factor)', '係數來源'];
-    const r3 = s3.map((r) => [
-      '範疇3', r.source_code, r.source_name, r.category ?? '', r.country_code, r.year,
-      cell(r.scope3_factor), r.source_reference ?? '',
-    ]);
-    const ws3 = XLSX.utils.aoa_to_sheet([
+    const ws3 = wb.addWorksheet('表4-3_範疇3');
+    ws3.columns = [
+      { header: '範疇', width: 7 }, { header: '排放源代碼', width: 12 }, { header: '排放源名稱', width: 24 },
+      { header: '類別', width: 16 }, { header: '國別', width: 7 }, { header: '年度', width: 6 },
+      { header: '範疇三綜合係數 (scope3_factor)', width: 26 }, { header: '係數來源', width: 48 },
+    ];
+    ws3.spliceRows(1, 0,
       [`表4-3 排放係數管理表（範疇三）　${scopeLabel}`],
       [`產出時間：${generatedAt}`],
       ['※ 範疇三為參考值；係數多引用國際資料庫（如 UK DEFRA、Higg MSI），來源需逐項確認。'],
-      [],
-      h3, ...r3,
-    ]);
-    ws3['!cols'] = [{ wch: 7 }, { wch: 12 }, { wch: 24 }, { wch: 16 }, { wch: 7 }, { wch: 6 }, { wch: 26 }, { wch: 48 }];
+      []);
+    ws3.getCell('A1').font = { bold: true, size: 13 };
+    const h3Idx = 5;
+    ws3.getRow(h3Idx).values = ws3.columns.map((c) => c.header as string);
+    styleHeaderRow(ws3.getRow(h3Idx));
+    ws3.views = [{ state: 'frozen', ySplit: h3Idx }];
+    for (const r of s3) {
+      ws3.addRow([
+        '範疇3', r.source_code, r.source_name, r.category ?? '', r.country_code, r.year,
+        cell(r.scope3_factor), r.source_reference ?? '',
+      ]);
+    }
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws12, '表4-2_範疇1及2');
-    XLSX.utils.book_append_sheet(wb, ws3, '表4-3_範疇3');
-
-    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    const buf = await wb.xlsx.writeBuffer();
     const filename = `排放係數管理表_${year ?? '全年度'}.xlsx`;
     return new NextResponse(new Uint8Array(buf), {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        'Cache-Control': 'no-store, must-revalidate',
       },
     });
   } catch (err) {

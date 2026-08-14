@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { getReductionFromPlatform, getReductionFromCsr } from '@/lib/reduction-data';
 import { IREC_KWH_PER_CERT, type FactoryReduction } from '@/lib/reduction-types';
 import { getCountryLabels } from '@/lib/factory-registry';
+import { GRAND_TOTAL_FILL, GRAND_TOTAL_FONT, styleHeaderRow, styleRow } from '@/lib/xlsx-style';
 
 // GET /api/reduction/export — 匯出各廠區碳排（產區加總 + 各廠明細）為 Excel
 export async function GET(req: NextRequest) {
@@ -60,11 +61,28 @@ export async function GET(req: NextRequest) {
       ['備註', 'AI 試算，需永續發展部確認'],
     ];
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(meta), '摘要');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(regionRows), '產區加總');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(facRows), '各廠明細');
-    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    const wb = new ExcelJS.Workbook();
+
+    const wsMeta = wb.addWorksheet('摘要');
+    wsMeta.columns = [{ width: 26 }, { width: 20 }];
+    meta.forEach((r) => wsMeta.addRow(r));
+    wsMeta.getRow(1).font = { bold: true, size: 13 };
+    wsMeta.getCell('A1').alignment = { vertical: 'middle' };
+
+    const wsRegion = wb.addWorksheet('產區加總');
+    wsRegion.columns = [{ width: 14 }, ...header.map(() => ({ width: 16 }))];
+    regionRows.forEach((r) => wsRegion.addRow(r));
+    styleHeaderRow(wsRegion.getRow(1));
+    styleRow(wsRegion.getRow(2), GRAND_TOTAL_FILL, GRAND_TOTAL_FONT); // 集團合計
+    wsRegion.views = [{ state: 'frozen', ySplit: 1 }];
+
+    const wsFac = wb.addWorksheet('各廠明細');
+    wsFac.columns = [{ width: 12 }, { width: 20 }, { width: 10 }, ...header.map(() => ({ width: 16 }))];
+    facRows.forEach((r) => wsFac.addRow(r));
+    styleHeaderRow(wsFac.getRow(1));
+    wsFac.views = [{ state: 'frozen', ySplit: 1 }];
+
+    const buf = await wb.xlsx.writeBuffer();
 
     const fname = `reduction_${source}_${year}_${monthFrom}-${monthTo}.xlsx`;
     return new NextResponse(new Uint8Array(buf), {
@@ -72,6 +90,7 @@ export async function GET(req: NextRequest) {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename="${fname}"`,
+        'Cache-Control': 'no-store, must-revalidate',
       },
     });
   } catch (err) {
