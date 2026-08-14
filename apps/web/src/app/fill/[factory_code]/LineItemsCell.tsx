@@ -10,13 +10,14 @@ import { refLabel } from '@/lib/ref-label';
  * 逐筆事件型排放源（無明細）則顯示 —，符合「只有加總型才需要查看明細」。
  */
 export default function LineItemsCell({
-  recordId, count, title, unit, sourceCode,
+  recordId, count, title, unit, sourceCode, showCarbonPct,
 }: {
   recordId: string | null;
   count: number;
   title: string;
   unit: string;
   sourceCode?: string | null;
+  showCarbonPct?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   if (!recordId || !count || count <= 0) {
@@ -38,6 +39,7 @@ export default function LineItemsCell({
           title={title}
           unit={unit}
           refLabel={refLabel(sourceCode)}
+          showCarbonPct={showCarbonPct}
           readOnly
           onClose={() => setOpen(false)}
         />

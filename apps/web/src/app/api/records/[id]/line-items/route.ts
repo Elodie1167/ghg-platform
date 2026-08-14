@@ -15,7 +15,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   try {
     const r = await query(
-      `SELECT id, invoice_no, invoice_date, quantity::float AS quantity, unit, erp_ref, note
+      `SELECT id, invoice_no, invoice_date, quantity::float AS quantity, unit, erp_ref, note,
+              carbon_content_pct::float AS carbon_content_pct
        FROM activity_line_items
        WHERE activity_record_id = $1
        ORDER BY invoice_date NULLS LAST, created_at`,

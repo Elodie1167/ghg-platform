@@ -179,14 +179,14 @@ function parseSepticSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
 
 /**
  * 解析「S1_焊條」：固定 1-3A-1，可變列數，col A=月份 B=採購量(kg) C=含碳量(%) D=備註
- * （備註供填品牌/焊條種類等，不參與計算）。含碳量存入 meter_number，比照填報頁 ProcessTab，
- * 由 co2e-calc.ts 依含碳量% × 採購量 × 44/12 算出 CO₂e。
- * 同月若出現多列，取最後一列（比照化糞池，不加總）。
+ * （備註供填品牌/焊條種類等，不參與計算）。一個廠一個月常買 3-5 種焊條、各自含碳量不同，
+ * 故走「單據明細」路徑而非固定分頁：同月可有多列，各列各自存含碳量(carbon_content_pct)，
+ * 由 co2e-calc.ts／lib/line-items.ts 逐筆算 CO₂e 再加總，不是加總量後套一個係數。
  */
 const WELDING_ROD_SOURCE_CODE = '1-3A-1';
 
-function parseWeldingRodSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
-  const rows: ParsedRow[] = [];
+function parseWeldingRodLineItems(sheet: XLSX.WorkSheet): LineItemRow[] {
+  const rows: LineItemRow[] = [];
   const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1');
   for (let r = 1; r <= range.e.r; r++) {
     const month = parseMonth(cellVal(sheet, r, 0)); // col A
@@ -198,10 +198,14 @@ function parseWeldingRodSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
     rows.push({
       month,
       source_code: WELDING_ROD_SOURCE_CODE,
-      activity_value: qty,
-      activity_unit: 'kg',
-      meter_number: carbonContent !== null ? String(carbonContent) : undefined,
-      notes: notes ?? undefined,
+      invoice_no: null,
+      invoice_date: null,
+      quantity: qty,
+      unit: 'kg',
+      erp_ref: null,
+      note: notes,
+      source_doc_url: null,
+      carbon_content_pct: carbonContent,
     });
   }
   return rows;
@@ -221,6 +225,7 @@ interface LineItemRow {
   erp_ref: string | null;
   note: string | null;
   source_doc_url: string | null;
+  carbon_content_pct?: number | null; // 焊條(1-3A-1)專用，其他排放源不填
 }
 
 function strOrNull(v: unknown): string | null {
@@ -275,22 +280,30 @@ function parseLineItemSheet(sheet: XLSX.WorkSheet): LineItemRow[] {
 }
 
 function collectLineItems(wb: XLSX.WorkBook, errors: string[]): LineItemRow[] {
+  let rows: LineItemRow[] = [];
   for (const name of LINE_ITEM_SHEETS) {
     if (wb.Sheets[name]) {
       try {
-        const rows = parseLineItemSheet(wb.Sheets[name]);
-        const septicRows = rows.filter((r) => r.source_code === SEPTIC_TANK_SOURCE_CODE);
+        const parsed = parseLineItemSheet(wb.Sheets[name]);
+        const septicRows = parsed.filter((r) => r.source_code === SEPTIC_TANK_SOURCE_CODE);
         if (septicRows.length > 0) {
           errors.push(
             `化糞池排放（${SEPTIC_TANK_SOURCE_CODE}）不支援自動匯入，已略過 ${septicRows.length} 列；請於填報頁「逸散排放」分頁手動輸入上班天數/人數/總時數。`,
           );
         }
-        return rows.filter((r) => r.source_code !== SEPTIC_TANK_SOURCE_CODE);
+        rows = parsed.filter((r) => r.source_code !== SEPTIC_TANK_SOURCE_CODE);
       }
       catch (e) { console.warn(`[import] 解析單據明細 sheet "${name}" 失敗：`, e); }
+      break;
     }
   }
-  return [];
+  // 焊條有自己專用的「S1_焊條」分頁（含碳量欄，非通用單據明細格式），另外併入
+  if (wb.Sheets['S1_焊條']) {
+    try {
+      rows = [...rows, ...parseWeldingRodLineItems(wb.Sheets['S1_焊條'])];
+    } catch (e) { console.warn(`[import] 解析 sheet "S1_焊條" 失敗：`, e); }
+  }
+  return rows;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -364,7 +377,8 @@ function parseWorkbook(wb: XLSX.WorkBook): ParsedRow[] {
 
     'S1_化糞池': () => parseSepticSheet(wb.Sheets['S1_化糞池']),
 
-    'S1_焊條': () => parseWeldingRodSheet(wb.Sheets['S1_焊條']),
+    // S1_焊條 不在此表：它走「單據明細」路徑（collectLineItems 另外併入），
+    // 因為同月可有多筆、各筆含碳量不同，不是固定分頁的「每月一列」模式。
   };
 
   for (const sheetName of wb.SheetNames) {
@@ -728,30 +742,6 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 焊條（1-3A-1）：比照填報頁 ProcessTab，含碳量存於 meter_number，
-      // 寫入後立即用含碳量算 CO₂e（公式見 co2e-calc.ts）
-      if (row.source_code === WELDING_ROD_SOURCE_CODE && row.activity_value != null) {
-        try {
-          // 未填與「填 0」意義不同（焊條含碳量 0% 是有效輸入），未填傳 undefined，見 api/records/route.ts 同段註解
-          const bio_fraction_raw = row.meter_number ? parseFloat(row.meter_number) : NaN;
-          const calc = await calcCo2e({
-            factory_id, emission_source_id: source.id, country_code: factoryCountryCode,
-            year, activity_value: row.activity_value, activity_unit: row.activity_unit,
-            scope: source.scope, is_biomass: false, source_code: row.source_code,
-            bio_fraction: isNaN(bio_fraction_raw) ? undefined : bio_fraction_raw,
-          });
-          if (calc) {
-            await query(
-              `UPDATE activity_records
-               SET co2e_total = $1, co2_t = $2, emission_factor_id = $3, updated_at = NOW()
-               WHERE factory_id = $4 AND emission_source_id = $5 AND year = $6 AND month = $7`,
-              [calc.co2e_total, calc.co2_t, calc.emission_factor_id, factory_id, source.id, year, row.month],
-            );
-          }
-        } catch (err) {
-          console.error('[import 焊條 co2e]', err);
-        }
-      }
     } catch (err) {
       console.error('[import upsert]', err);
       errors.push(`${row.source_code} 月份 ${row.month}：寫入失敗`);
@@ -809,10 +799,10 @@ export async function POST(req: NextRequest) {
       for (const li of items) {
         await query(
           `INSERT INTO activity_line_items
-             (activity_record_id, invoice_no, invoice_date, quantity, unit, erp_ref, note)
-           VALUES ($1, $2, $3::date, $4, $5, $6, $7)`,
+             (activity_record_id, invoice_no, invoice_date, quantity, unit, erp_ref, note, carbon_content_pct)
+           VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8)`,
           [recordId, li.invoice_no, li.invoice_date, li.quantity,
-           li.unit ?? source.default_unit, li.erp_ref, li.note],
+           li.unit ?? source.default_unit, li.erp_ref, li.note, li.carbon_content_pct ?? null],
         );
       }
       // 公檔連結：取該組第一個非空值；逐列皆空時退回表單層填入的公檔連結（同月同源共用一個資料夾連結）

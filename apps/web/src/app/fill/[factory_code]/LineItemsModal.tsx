@@ -10,6 +10,7 @@ interface LineItem {
   unit: string | null;
   erp_ref: string | null;
   note: string | null;
+  carbon_content_pct?: number | null;
 }
 
 interface Draft {
@@ -30,13 +31,14 @@ const emptyDraft = (unit: string): Draft => ({
  * 可新增/修改/刪除，變動後由後端回算月加總 + CO₂e。稽核下鑽用。
  */
 export default function LineItemsModal({
-  recordId, title, unit, readOnly, refLabel = '發票號', onClose, onChanged,
+  recordId, title, unit, readOnly, refLabel = '發票號', showCarbonPct, onClose, onChanged,
 }: {
   recordId: string;
   title: string;
   unit: string;
   readOnly?: boolean;
   refLabel?: string;
+  showCarbonPct?: boolean;
   onClose: () => void;
   onChanged?: (activityValue: number) => void;
 }) {
@@ -190,6 +192,7 @@ export default function LineItemsModal({
                     <th className="whitespace-nowrap px-3 py-2 text-left">單據日期</th>
                     <th className="whitespace-nowrap px-3 py-2 text-right">用量</th>
                     <th className="whitespace-nowrap px-3 py-2 text-left">單位</th>
+                    {showCarbonPct && <th className="whitespace-nowrap px-3 py-2 text-right">含碳量(%)</th>}
                     <th className="whitespace-nowrap px-3 py-2 text-left">{refLabel}</th>
                     <th className="whitespace-nowrap px-3 py-2 text-left">備註</th>
                     {!readOnly && <th className="whitespace-nowrap px-3 py-2 w-8" />}
@@ -202,6 +205,9 @@ export default function LineItemsModal({
                       <td className="px-3 py-1.5">{it.invoice_date ? String(it.invoice_date).slice(0, 10) : '—'}</td>
                       <td className="px-3 py-1.5 text-right font-mono">{it.quantity != null ? Number(it.quantity).toLocaleString(undefined, { maximumFractionDigits: 10 }) : '—'}</td>
                       <td className="px-3 py-1.5">{it.unit ?? '—'}</td>
+                      {showCarbonPct && (
+                        <td className="px-3 py-1.5 text-right font-mono">{it.carbon_content_pct != null ? Number(it.carbon_content_pct) : '—'}</td>
+                      )}
                       <td className="px-3 py-1.5 text-gray-500">{it.erp_ref ?? '—'}</td>
                       <td className="px-3 py-1.5 text-gray-500">{it.note ?? '—'}</td>
                       {!readOnly && (
@@ -213,7 +219,7 @@ export default function LineItemsModal({
                     </tr>
                   ))}
                   {items.length === 0 && (
-                    <tr><td colSpan={readOnly ? 6 : 7} className="px-3 py-6 text-center text-gray-400">尚無單據明細</td></tr>
+                    <tr><td colSpan={6 + (showCarbonPct ? 1 : 0) + (readOnly ? 0 : 1)} className="px-3 py-6 text-center text-gray-400">尚無單據明細</td></tr>
                   )}
                 </tbody>
                 <tfoot>
@@ -221,7 +227,8 @@ export default function LineItemsModal({
                     <td className="px-3 py-2" colSpan={2}>合計（= 月加總）</td>
                     <td className="px-3 py-2 text-right font-mono text-green-800">{total.toLocaleString(undefined, { minimumFractionDigits: 10, maximumFractionDigits: 10 })}</td>
                     <td className="px-3 py-2">{unit}</td>
-                    <td colSpan={readOnly ? 2 : 3} />
+                    {showCarbonPct && <td className="px-3 py-2 text-right text-gray-400 text-xs">各筆不同</td>}
+                    <td colSpan={(readOnly ? 2 : 3)} />
                   </tr>
                 </tfoot>
               </table>

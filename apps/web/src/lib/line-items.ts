@@ -1,7 +1,43 @@
 import { query } from '@/lib/db';
-import { calcCo2e } from '@/lib/co2e-calc';
+import { calcCo2e, type CalcResult } from '@/lib/co2e-calc';
 import { clearReviewStatus } from '@/lib/review-reset';
 import { FrozenError, isFrozen } from '@/lib/freeze-guard';
+
+const WELDING_ROD_SOURCE_CODE = '1-3A-1';
+
+/**
+ * 焊條專用：逐筆明細各自算 CO2e（qty × 該筆含碳量%）再加總，不能先加總量再套一個係數。
+ * 沿用 calcCo2e 對 1-3A-1 的既有公式（單一來源，避免兩處算法各改各的）。
+ */
+async function calcWeldingRodLineItemsCo2e(
+  recordId: string, factoryId: string, countryCode: string, year: number,
+): Promise<CalcResult | null> {
+  const items = await query(
+    `SELECT quantity::float AS quantity, carbon_content_pct::float AS carbon_content_pct
+     FROM activity_line_items WHERE activity_record_id = $1`,
+    [recordId],
+  );
+  let co2Total = 0;
+  let hasAny = false;
+  for (const row of items.rows as { quantity: number; carbon_content_pct: number | null }[]) {
+    if (row.carbon_content_pct == null) continue; // 未填含碳量，該筆不計入 CO2e
+    const r = await calcCo2e({
+      // emission_source_id 對 1-3A-1 這條計算路徑不會用到（calcCo2e 對此代碼直接用公式算，
+      // 不查 emission_factors），故留空字串即可，避免多一趟查 DB 換 id。
+      factory_id: factoryId, emission_source_id: '', country_code: countryCode, year,
+      activity_value: row.quantity, activity_unit: 'kg', scope: 1, is_biomass: false,
+      source_code: WELDING_ROD_SOURCE_CODE, bio_fraction: row.carbon_content_pct,
+    });
+    if (r?.co2e_total != null) { co2Total += r.co2e_total; hasAny = true; }
+  }
+  if (!hasAny) return null;
+  const co2e = Math.round(co2Total * 10000) / 10000;
+  return {
+    co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
+    emission_factor_id: null, warnings: [],
+    co2_t: co2e, ch4_t: null, n2o_t: null, hfc_t: null,
+  };
+}
 
 /**
  * 重算某 activity_record 的月加總與 CO₂e：
@@ -54,18 +90,24 @@ export async function recomputeRecordFromLineItems(recordId: string): Promise<nu
   if (!meta.rows.length) return total;
   const m = meta.rows[0];
 
-  const calc = await calcCo2e({
-    factory_id: m.factory_id,
-    emission_source_id: m.emission_source_id,
-    country_code: m.country_code,
-    year: m.year,
-    activity_value: total,
-    activity_unit: m.activity_unit,
-    scope: m.scope,
-    is_biomass: m.is_biomass,
-    source_code: m.source_code,
-    substance: m.substance ?? null,
-  });
+  // 焊條（1-3A-1）：每筆採購含碳量可能不同，不能「加總量 × 一個係數」，
+  // 逐筆呼叫 calcCo2e（qty=該筆採購量、bio_fraction=該筆含碳量）算出 CO2e 再加總。
+  // 缺含碳量的那一筆不計入 CO2e（但採購量仍計入上面的 activity_value 合計），
+  // 比照單筆填報「未填含碳量無法計算」的規則。
+  const calc = m.source_code === '1-3A-1'
+    ? await calcWeldingRodLineItemsCo2e(recordId, m.factory_id, m.country_code, m.year)
+    : await calcCo2e({
+        factory_id: m.factory_id,
+        emission_source_id: m.emission_source_id,
+        country_code: m.country_code,
+        year: m.year,
+        activity_value: total,
+        activity_unit: m.activity_unit,
+        scope: m.scope,
+        is_biomass: m.is_biomass,
+        source_code: m.source_code,
+        substance: m.substance ?? null,
+      });
   if (calc) {
     await query(
       `UPDATE activity_records
