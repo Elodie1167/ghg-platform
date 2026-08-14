@@ -13,9 +13,43 @@ const SEPTIC_TANK_SOURCE_CODE = '1-4B-1';
 // 與其他排放源的「用量/單位/發票號」單據明細模式不同，範本欄名對應顯示。
 const WELDING_ROD_SOURCE_CODE = '1-3A-1';
 
+// 廚房 LPG（1-1A-3）填報頁實際欄位為「採購桶數／一桶公斤數」，合計 kg 由系統自動相乘，
+// 與其他排放源的「用量/單位/發票號」單據明細模式不同，範本欄名對應顯示。
+const LPG_SOURCE_CODE = '1-1A-3';
+
 export function buildTemplateWorkbook(sourceCode: string, year: string, nameZh: string, unit: string): Buffer {
   const isSepticTank = sourceCode === SEPTIC_TANK_SOURCE_CODE;
   const isWeldingRod = sourceCode === WELDING_ROD_SOURCE_CODE;
+  const isLpg = sourceCode === LPG_SOURCE_CODE;
+
+  if (isLpg) {
+    // LPG 專用格式：每月一列，採購桶數 + 一桶公斤數，合計 kg = 兩者相乘，
+    // 欄位比照填報頁 CombustionTab（isLPG）；備註欄供填供應商等，不參與計算。
+    const header = ['月份*', '採購桶數*', '一桶公斤數*', '備註'];
+    const example = [
+      [6, 8, 20, ''],
+      [7, 6, 20, ''],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([header, ...example]);
+    ws['!cols'] = [{ wch: 6 }, { wch: 10 }, { wch: 12 }, { wch: 24 }];
+
+    const note = XLSX.utils.aoa_to_sheet([
+      ['LPG 匯入範本 — 說明'],
+      [''],
+      [`排放源：${nameZh || '(未指定)'}（代碼 ${sourceCode}）`],
+      [''],
+      ['1. 每月一列，填「採購桶數」與「一桶公斤數」，系統會自動相乘算出合計 kg，不需自行計算。'],
+      ['2. 欄名有 * 者為必填：月份、採購桶數、一桶公斤數。'],
+      ['3. 「備註」欄供填供應商等，系統不會用它計算。'],
+      ['4. 同一月份若出現多列，系統只會採用最後一列，不會加總。'],
+      ['5. 範例列可刪除或覆蓋。'],
+    ]);
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'S1_LPG');
+    XLSX.utils.book_append_sheet(wb, note, '說明');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
 
   if (isWeldingRod) {
     // 焊條專用格式：採購量(kg) + 含碳量(%)，碳重由系統依含碳量% × 採購量 × 44/12

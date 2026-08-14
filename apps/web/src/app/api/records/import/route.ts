@@ -178,6 +178,36 @@ function parseSepticSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
 }
 
 /**
+ * 解析「S1_LPG」：固定 1-1A-3，可變列數，col A=月份 B=採購桶數 C=一桶公斤數 D=備註。
+ * 比照填報頁 CombustionTab（isLPG）：採購桶數存 sub_location、一桶公斤數存 meter_number，
+ * activity_value = 桶數 × 每桶公斤數（系統自動相乘）。同月若出現多列，取最後一列（不加總）。
+ */
+const LPG_SOURCE_CODE = '1-1A-3';
+
+function parseLpgSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
+  const rows: ParsedRow[] = [];
+  const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1');
+  for (let r = 1; r <= range.e.r; r++) {
+    const month = parseMonth(cellVal(sheet, r, 0)); // col A
+    if (month === null) continue;
+    const barrels = toNum(cellVal(sheet, r, 1));      // col B 採購桶數
+    const kgPerBarrel = toNum(cellVal(sheet, r, 2));  // col C 一桶公斤數
+    const notes = strOrNull(cellVal(sheet, r, 3));    // col D 備註
+    if (barrels === null || kgPerBarrel === null) continue; // 兩者都要有才能算出合計 kg
+    rows.push({
+      month,
+      source_code: LPG_SOURCE_CODE,
+      activity_value: barrels * kgPerBarrel,
+      activity_unit: 'kg',
+      sub_location: String(barrels),
+      meter_number: String(kgPerBarrel),
+      notes: notes ?? undefined,
+    });
+  }
+  return rows;
+}
+
+/**
  * 解析「S1_焊條」：固定 1-3A-1，可變列數，col A=月份 B=採購量(kg) C=含碳量(%) D=備註
  * （備註供填品牌/焊條種類等，不參與計算）。一個廠一個月常買 3-5 種焊條、各自含碳量不同，
  * 故走「單據明細」路徑而非固定分頁：同月可有多列，各列各自存含碳量(carbon_content_pct)，
@@ -376,6 +406,8 @@ function parseWorkbook(wb: XLSX.WorkBook): ParsedRow[] {
       ]),
 
     'S1_化糞池': () => parseSepticSheet(wb.Sheets['S1_化糞池']),
+
+    'S1_LPG': () => parseLpgSheet(wb.Sheets['S1_LPG']),
 
     // S1_焊條 不在此表：它走「單據明細」路徑（collectLineItems 另外併入），
     // 因為同月可有多筆、各筆含碳量不同，不是固定分頁的「每月一列」模式。
