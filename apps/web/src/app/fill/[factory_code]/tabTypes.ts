@@ -19,12 +19,12 @@ export const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 export const HEADER_BG = '#0C3D2E';
 export const BTN_BG = '#0C3D2E';
 
-// 表格內 sticky <thead> 貼齊分頁導覽列（FillPageClient.tsx 的 <nav className="... sticky top-0 ...">）
-// 下方要用的 top 值。導覽列實際渲染高度是 60px（py-1 外層 + 按鈕 py-2 + text-sm 行高），
-// 不是看起來「應該」的 48px（top-12）——兩者曾經不一致，造成表頭卡在導覽列下緣、
-// 緊接著的第一列被壓扁重疊（多個填報頁籤同時出現）。11 個頁籤共用這個常數，
-// 若日後調整 FillPageClient.tsx 的 nav 內距/字級，這裡要跟著改。
-export const STICKY_THEAD_TOP = 'top-[60px]';
+// 2026-08-14：曾經在這裡放過 sticky <thead> 用的 top 常數（STICKY_THEAD_TOP），已移除。
+// 表格外層 wrapper 是 overflow-x-auto，CSS 規範會讓 overflow-y 一併變成 auto，
+// 使這個小 div 變成 sticky 的定位容器——結果表頭無論怎麼設 top 值，永遠被往下推、
+// 蓋住第一列（跟頁面實際捲動位置無關）。要正確做到「表格夠長時表頭黏住不消失」，
+// 需要重新設計 wrapper 結構（拆開水平捲動與 sticky 定位容器），不是換個數字。
+// 目前 11 個頁籤已全部改回不使用 sticky 的靜態表頭。
 
 // ─── 前端即時預覽：活動數據 → 各氣體排放量（共用）──────────────────────
 // 與伺服器 lib/co2e-calc.ts（Scope 1 一般燃料）嚴格對齊，供 CombustionTab / FuelTab

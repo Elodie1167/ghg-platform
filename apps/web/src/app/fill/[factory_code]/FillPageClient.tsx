@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Factory, FactoryListItem, EmissionSource, ActivityRecord, WasteConfig, WasteMethodConfig, AssignedFactor, TravelModeConfig, TravelSourceMode, FactorySettings, SourceApplicability } from './page';
-import { MONTHS, HEADER_BG, STICKY_THEAD_TOP } from './tabTypes';
+import { MONTHS, HEADER_BG } from './tabTypes';
 import ImportModal from './ImportModal';
 import FuelTab from './FuelTab';
 import CombustionTab from './CombustionTab';
@@ -1889,7 +1889,7 @@ export default function FillPageClient({
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full text-sm">
             <thead>
-              <tr style={{ backgroundColor: HEADER_BG }} className={`text-white sticky ${STICKY_THEAD_TOP} z-10`}>
+              <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
                 <th className="whitespace-nowrap px-4 py-2 text-left w-20">月份</th>
                 <th className="whitespace-nowrap px-4 py-2 text-right">已查核電力 (kWh)</th>
                 <th className="whitespace-nowrap px-4 py-2 text-right">T&amp;D 損失 (tCO₂e)</th>

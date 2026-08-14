@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, Component, type ReactNode, type ErrorInfo } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
-import { MONTHS, HEADER_BG, BTN_BG, STICKY_THEAD_TOP, fmtGas } from './tabTypes';
+import { MONTHS, HEADER_BG, BTN_BG, fmtGas } from './tabTypes';
 import type { EmissionSource, ActivityRecord } from './page';
 import LineItemsCell from './LineItemsCell';
 
@@ -294,7 +294,7 @@ function SepticSection({
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full text-sm">
           <thead>
-            <tr style={{ backgroundColor: HEADER_BG }} className={`text-white sticky ${STICKY_THEAD_TOP} z-10`}>
+            <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
               <th className="whitespace-nowrap px-3 py-2 text-left w-16">月份</th>
               <th className="whitespace-nowrap px-3 py-2 text-right w-28">上班天數</th>
               <th className="whitespace-nowrap px-3 py-2 text-right w-28">上班人數</th>
@@ -548,7 +548,7 @@ function ExtinguisherSection({
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr style={{ backgroundColor: HEADER_BG }} className={`text-white sticky ${STICKY_THEAD_TOP} z-10`}>
+              <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
                 <th className="whitespace-nowrap px-2 py-2.5 text-center w-8">
                   <input type="checkbox"
                     checked={rows.length > 0 && selected.size === rows.length}
@@ -828,7 +828,7 @@ function EventFugitiveSection({
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr style={{ backgroundColor: HEADER_BG }} className={`text-white sticky ${STICKY_THEAD_TOP} z-10`}>
+              <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
                 <th className="whitespace-nowrap px-2 py-2.5 text-center w-8">
                   <input type="checkbox"
                     checked={rows.length > 0 && selected.size === rows.length}

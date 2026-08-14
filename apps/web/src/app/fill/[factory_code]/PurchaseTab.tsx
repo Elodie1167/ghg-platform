@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
-import { HEADER_BG, MONTHS, STICKY_THEAD_TOP } from './tabTypes';
+import { HEADER_BG, MONTHS } from './tabTypes';
 import type { ActivityRecord, EmissionSource, AssignedFactor } from './page';
 import LineItemsCell from './LineItemsCell';
 
@@ -88,7 +88,7 @@ export default function PurchaseTab({
           <div className="overflow-x-auto rounded-lg border border-gray-200">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr style={{ backgroundColor: HEADER_BG }} className={`text-white sticky ${STICKY_THEAD_TOP} z-10`}>
+                <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
                   <th className="whitespace-nowrap px-4 py-2.5 text-left">採購品項</th>
                   <th className="whitespace-nowrap px-4 py-2.5 text-right w-40">年度採購重量 (ton)</th>
                   <th className="whitespace-nowrap px-4 py-2.5 text-right w-32">CO₂e (t)</th>
@@ -307,7 +307,7 @@ function WaterMonthly({
       <div className="overflow-x-auto rounded-lg border border-gray-200">
         <table className="w-full text-sm">
           <thead>
-            <tr style={{ backgroundColor: HEADER_BG }} className={`text-white sticky ${STICKY_THEAD_TOP} z-10`}>
+            <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
               <th className="whitespace-nowrap px-2 py-2 text-center w-8">
                 <input type="checkbox"
                   checked={selected.size === MONTHS.length}
@@ -575,7 +575,7 @@ function FabricRow({
     <div className="overflow-x-auto rounded-lg border border-gray-200">
       <table className="w-full text-sm border-collapse">
         <thead>
-          <tr style={{ backgroundColor: HEADER_BG }} className={`text-white sticky ${STICKY_THEAD_TOP} z-10`}>
+          <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
             <th className="whitespace-nowrap px-4 py-2.5 text-left">採購品項</th>
             <th className="whitespace-nowrap px-4 py-2.5 text-right w-48">年度 CO₂e 總量 (tCO₂e)</th>
             <th className="whitespace-nowrap px-4 py-2.5 text-left w-44">備註</th>

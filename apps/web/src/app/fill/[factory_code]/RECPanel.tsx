@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { STICKY_THEAD_TOP } from './tabTypes';
 
 const GEN_TYPES = ['太陽能', '風能', '水力', '生質能', '地熱', '海洋能', '其他'];
 
@@ -185,7 +184,7 @@ export default function RECPanel({ factoryId, year, totalElecKwh, gridFactor, ma
         <div className="overflow-x-auto bg-white">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className={`bg-blue-700 text-white text-xs sticky ${STICKY_THEAD_TOP} z-10`}>
+              <tr className="bg-blue-700 text-white text-xs">
                 <th className="whitespace-nowrap px-3 py-2 text-left w-20">月份</th>
                 <th className="whitespace-nowrap px-3 py-2 text-left w-28">發電類型</th>
                 <th className="whitespace-nowrap px-3 py-2 text-right w-32">購入量 (MWh)</th>

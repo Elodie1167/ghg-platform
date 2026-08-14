@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
-import { HEADER_BG, STICKY_THEAD_TOP } from './tabTypes';
+import { HEADER_BG } from './tabTypes';
 import LineItemsCell from './LineItemsCell';
 
 // 3-9-A: 陸運, 3-9-B: 空運, 3-9-C: 海運
@@ -224,7 +224,7 @@ export default function DownstreamTab({
       <div className="overflow-x-auto rounded-lg border border-gray-200 mb-6">
         <table className="text-sm border-collapse w-full">
           <thead>
-            <tr style={{ backgroundColor: HEADER_BG }} className={`text-white text-xs sticky ${STICKY_THEAD_TOP} z-10`}>
+            <tr style={{ backgroundColor: HEADER_BG }} className="text-white text-xs">
               <th className="whitespace-nowrap px-4 py-2.5 text-left w-28">運輸方式</th>
               <th className="whitespace-nowrap px-4 py-2.5 text-left">年度 TKM（公噸‧公里）</th>
               <th className="whitespace-nowrap px-3 py-2.5 text-right w-24">CO₂e (t)</th>

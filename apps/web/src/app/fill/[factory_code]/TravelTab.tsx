@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import type { TabProps, SaveStatus } from './tabTypes';
-import { MONTHS, HEADER_BG, BTN_BG, STICKY_THEAD_TOP } from './tabTypes';
+import { MONTHS, HEADER_BG, BTN_BG } from './tabTypes';
 import type { EmissionSource, ActivityRecord } from './page';
 
 // 3-6-A 飛機, 3-6-C 高鐵, 3-6-D 火車（3-6-B 飯店住宿已停用，不再計算）
@@ -260,7 +260,7 @@ function TravelSection({
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr style={{ backgroundColor: HEADER_BG }} className={`text-white sticky ${STICKY_THEAD_TOP} z-10`}>
+              <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
                 <th className="whitespace-nowrap px-2 py-2.5 text-center w-8">
                   <input type="checkbox"
                     checked={rows.length > 0 && selected.size === rows.length}
