@@ -17,10 +17,16 @@ const WELDING_ROD_SOURCE_CODE = '1-3A-1';
 // 與其他排放源的「用量/單位/發票號」單據明細模式不同，範本欄名對應顯示。
 const LPG_SOURCE_CODE = '1-1A-3';
 
+// 滅火器（1-4C-1 CO2、1-4C-2 FM200）填報頁實際欄位為「新購(瓶)／填充(瓶)／一瓶(kg)」，
+// 合計 kg = (新購+填充) × 一瓶公斤數，由系統自動相乘，與其他排放源的
+// 「用量/單位/發票號」單據明細模式不同，範本欄名對應顯示。
+const EXTINGUISHER_SOURCE_PREFIX = '1-4C';
+
 export function buildTemplateWorkbook(sourceCode: string, year: string, nameZh: string, unit: string): Buffer {
   const isSepticTank = sourceCode === SEPTIC_TANK_SOURCE_CODE;
   const isWeldingRod = sourceCode === WELDING_ROD_SOURCE_CODE;
   const isLpg = sourceCode === LPG_SOURCE_CODE;
+  const isExtinguisher = sourceCode.startsWith(EXTINGUISHER_SOURCE_PREFIX);
 
   if (isLpg) {
     // LPG 專用格式：每月一列，採購桶數 + 一桶公斤數，合計 kg = 兩者相乘，
@@ -80,6 +86,38 @@ export function buildTemplateWorkbook(sourceCode: string, year: string, nameZh: 
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'S1_焊條');
+    XLSX.utils.book_append_sheet(wb, note, '說明');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+
+  if (isExtinguisher) {
+    // 滅火器專用格式：新購(瓶) + 填充(瓶) + 一瓶(kg)，合計 kg 由系統自動算出；
+    // 比照填報頁 FugitiveTab（ExtinguisherSection），同一月份若有多筆不同規格，
+    // 請於填報頁「逸散排放」分頁用「+新增記錄」逐筆填寫（此範本每月僅取一列）。
+    const header = ['月份*', '新購(瓶)', '填充(瓶)', '一瓶(kg)*'];
+    const example = [
+      [6, 2, 0, 4.5],
+      [7, 0, 3, 4.5],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([header, ...example]);
+    ws['!cols'] = [{ wch: 6 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
+
+    const note = XLSX.utils.aoa_to_sheet([
+      ['滅火器匯入範本 — 說明'],
+      [''],
+      [`排放源：${nameZh || '(未指定)'}（代碼 ${sourceCode}）`],
+      [''],
+      ['1. 每月一列，填「新購(瓶)」「填充(瓶)」「一瓶(kg)」，系統會自動算出 (新購+填充) × 一瓶公斤數 = 合計 kg，不需自行計算。'],
+      ['2. 欄名有 * 者為必填：月份、一瓶(kg)；新購、填充至少填一項才有數量可算。'],
+      ['3. 同一月份若出現多列，系統只會採用最後一列，不會加總；同月有多筆不同規格滅火器，'],
+      ['   請至填報頁「逸散排放」分頁用「+新增記錄」逐筆填寫。'],
+      ['4. 範例列可刪除或覆蓋。'],
+    ]);
+
+    // 排放源代碼併入 sheet 名稱（1-4C-1 CO2 / 1-4C-2 FM200 兩種），
+    // 因為滅火器範本沒有像通用「單據明細」那樣逐列填代碼欄，解析時得從 sheet 名稱認出代碼。
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `S1_滅火器_${sourceCode}`);
     XLSX.utils.book_append_sheet(wb, note, '說明');
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }

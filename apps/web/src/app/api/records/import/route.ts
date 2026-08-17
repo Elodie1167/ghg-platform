@@ -241,6 +241,37 @@ function parseWeldingRodLineItems(sheet: XLSX.WorkSheet): LineItemRow[] {
   return rows;
 }
 
+/**
+ * 解析「S1_滅火器」：固定 1-4C-1/1-4C-2，可變列數，col A=月份 B=新購(瓶) C=填充(瓶) D=一瓶(kg)。
+ * 比照填報頁 FugitiveTab（ExtinguisherSection）：新購(瓶)存 sub_location、填充(瓶)存 notes、
+ * 一瓶(kg)存 meter_number，activity_value = (新購+填充) × 一瓶公斤數（系統自動相乘）。
+ * 同月若出現多列，取最後一列（不加總，比照 S1_LPG）。
+ */
+function parseExtinguisherSheet(sheet: XLSX.WorkSheet, sourceCode: string): ParsedRow[] {
+  const rows: ParsedRow[] = [];
+  const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1');
+  for (let r = 1; r <= range.e.r; r++) {
+    const month = parseMonth(cellVal(sheet, r, 0)); // col A
+    if (month === null) continue;
+    const newCount = toNum(cellVal(sheet, r, 1));     // col B 新購(瓶)
+    const refillCount = toNum(cellVal(sheet, r, 2));  // col C 填充(瓶)
+    const kgPerBottle = toNum(cellVal(sheet, r, 3));  // col D 一瓶(kg)
+    if (kgPerBottle === null || (newCount === null && refillCount === null)) continue;
+    const totalKg = ((newCount ?? 0) + (refillCount ?? 0)) * kgPerBottle;
+    if (totalKg <= 0) continue;
+    rows.push({
+      month,
+      source_code: sourceCode,
+      activity_value: totalKg,
+      activity_unit: 'kg',
+      sub_location: newCount !== null ? String(newCount) : undefined,
+      notes: refillCount !== null ? String(refillCount) : undefined,
+      meter_number: String(kgPerBottle),
+    });
+  }
+  return rows;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // 單據明細 Sheet（每一列 = 一張單據）
 // 欄位：A=月份 B=排放源代碼 C=單據號碼 D=單據日期 E=用量 F=單位 G=ERP參照 H=備註
@@ -418,6 +449,17 @@ function parseWorkbook(wb: XLSX.WorkBook): ParsedRow[] {
     if (parser && wb.Sheets[sheetName]) {
       try {
         all.push(...parser());
+      } catch (e) {
+        console.warn(`[import] 解析 sheet "${sheetName}" 失敗：`, e);
+      }
+      continue;
+    }
+    // 滅火器 sheet 名稱帶排放源代碼（S1_滅火器_1-4C-1 / S1_滅火器_1-4C-2），
+    // 不是固定名稱，故不走上面的 sheetMap 對照表。
+    if (sheetName.startsWith('S1_滅火器_')) {
+      const extSourceCode = sheetName.slice('S1_滅火器_'.length);
+      try {
+        all.push(...parseExtinguisherSheet(wb.Sheets[sheetName], extSourceCode));
       } catch (e) {
         console.warn(`[import] 解析 sheet "${sheetName}" 失敗：`, e);
       }

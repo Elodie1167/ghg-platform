@@ -353,8 +353,12 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               </div>
             ) : isRefrigerant ? (
               <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
-                <p className="text-xs text-blue-700 mb-3">冷媒逸散：填入 GWP 係數（tCO₂-eq/kg），計算引擎以 <code>活動量 × 係數</code> 計算。</p>
-                <NumField label="GWP 係數" value={n(edit.factor_substance)} onChange={(v) => setEdit((e) => ({ ...e, factor_substance: p(v) }))} unit="tCO₂-eq/kg" />
+                <p className="text-xs text-blue-700 mb-3">
+                  冷媒逸散：這裡的係數是「洩漏質量比例」，正常固定填 <code>1</code>（代表填報頁的用量欄位本身就是實際洩漏公斤數）。
+                  <strong>請勿填 GWP 值</strong>——GWP 已由程式依冷媒種類內建套用一次，這裡若也填 GWP 會被乘兩次，CO₂e 算出來會放大成 GWP 倍數。
+                  計算引擎：<code>活動量(kg) ÷ 1000 × 係數 × GWP = tCO₂e</code>。
+                </p>
+                <NumField label="洩漏質量比例" value={n(edit.factor_substance)} onChange={(v) => setEdit((e) => ({ ...e, factor_substance: p(v) }))} unit="無量綱" hint="正常填 1" />
               </div>
             ) : isWelding ? (
               <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">

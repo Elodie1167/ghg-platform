@@ -20,10 +20,11 @@ interface Draft {
   unit: string;
   erp_ref: string;
   note: string;
+  carbon_content_pct: string;
 }
 
 const emptyDraft = (unit: string): Draft => ({
-  invoice_no: '', invoice_date: '', quantity: '', unit, erp_ref: '', note: '',
+  invoice_no: '', invoice_date: '', quantity: '', unit, erp_ref: '', note: '', carbon_content_pct: '',
 });
 
 /**
@@ -82,6 +83,8 @@ export default function LineItemsModal({
   async function addItem() {
     const q = draft.quantity === '' ? null : Number(draft.quantity);
     if (q === null || isNaN(q)) return;
+    const pct = draft.carbon_content_pct === '' ? null : Number(draft.carbon_content_pct);
+    if (pct !== null && isNaN(pct)) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/records/${recordId}/line-items`, {
@@ -93,11 +96,39 @@ export default function LineItemsModal({
           unit: draft.unit || unit,
           erp_ref: draft.erp_ref || null,
           note: draft.note || null,
+          carbon_content_pct: pct,
         }),
       });
       const body = await res.json();
       if (res.ok) {
         setDraft(emptyDraft(unit));
+        load();
+        if (onChanged && body.activity_value != null) onChanged(Number(body.activity_value));
+      }
+    } finally { setBusy(false); }
+  }
+
+  async function updatePct(item: LineItem, value: string) {
+    const pct = value === '' ? null : Number(value);
+    if (pct !== null && isNaN(pct)) return;
+    if (pct === (item.carbon_content_pct ?? null)) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/records/${recordId}/line-items`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item_id: item.id,
+          invoice_no: item.invoice_no,
+          invoice_date: item.invoice_date,
+          quantity: item.quantity,
+          unit: item.unit,
+          erp_ref: item.erp_ref,
+          note: item.note,
+          carbon_content_pct: pct,
+        }),
+      });
+      const body = await res.json();
+      if (res.ok) {
         load();
         if (onChanged && body.activity_value != null) onChanged(Number(body.activity_value));
       }
@@ -206,7 +237,20 @@ export default function LineItemsModal({
                       <td className="px-3 py-1.5 text-right font-mono">{it.quantity != null ? Number(it.quantity).toLocaleString(undefined, { maximumFractionDigits: 10 }) : '—'}</td>
                       <td className="px-3 py-1.5">{it.unit ?? '—'}</td>
                       {showCarbonPct && (
-                        <td className="px-3 py-1.5 text-right font-mono">{it.carbon_content_pct != null ? Number(it.carbon_content_pct) : '—'}</td>
+                        <td className="px-3 py-1.5 text-right">
+                          {readOnly ? (
+                            <span className="font-mono">{it.carbon_content_pct != null ? Number(it.carbon_content_pct) : '—'}</span>
+                          ) : (
+                            <input
+                              type="number" min="0" max="100" step="0.001" placeholder="例：0.08"
+                              key={`${it.id}-${it.carbon_content_pct ?? ''}`}
+                              defaultValue={it.carbon_content_pct ?? ''}
+                              onBlur={(e) => updatePct(it, e.target.value)}
+                              disabled={busy}
+                              className="w-24 border border-gray-300 rounded px-2 py-1 text-right font-mono text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                          )}
+                        </td>
                       )}
                       <td className="px-3 py-1.5 text-gray-500">{it.erp_ref ?? '—'}</td>
                       <td className="px-3 py-1.5 text-gray-500">{it.note ?? '—'}</td>
@@ -243,6 +287,9 @@ export default function LineItemsModal({
                 <input type="date" value={draft.invoice_date} onChange={(e) => setDraft((d) => ({ ...d, invoice_date: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
                 <input type="number" placeholder="用量" value={draft.quantity} onChange={(e) => setDraft((d) => ({ ...d, quantity: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm text-right" />
                 <input placeholder="單位" value={draft.unit} onChange={(e) => setDraft((d) => ({ ...d, unit: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
+                {showCarbonPct && (
+                  <input type="number" min="0" max="100" step="0.001" placeholder="含碳量(%)" value={draft.carbon_content_pct} onChange={(e) => setDraft((d) => ({ ...d, carbon_content_pct: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm text-right" />
+                )}
                 <input placeholder={refLabel} value={draft.erp_ref} onChange={(e) => setDraft((d) => ({ ...d, erp_ref: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
                 <input placeholder="備註" value={draft.note} onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))} className="border border-gray-300 rounded px-2 py-1.5 text-sm" />
               </div>

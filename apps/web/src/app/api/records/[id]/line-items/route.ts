@@ -37,6 +37,7 @@ const ItemSchema = z.object({
   unit: z.string().nullable().optional(),
   erp_ref: z.string().nullable().optional(),
   note: z.string().nullable().optional(),
+  carbon_content_pct: z.number().nullable().optional(),
 });
 
 // POST /api/records/[id]/line-items — 新增一張單據，回算月加總 + CO₂e
@@ -50,9 +51,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     await assertRecordNotFrozen(id);
     const ins = await query(
-      `INSERT INTO activity_line_items (activity_record_id, invoice_no, invoice_date, quantity, unit, erp_ref, note)
-       VALUES ($1, $2, $3::date, $4, $5, $6, $7) RETURNING id`,
-      [id, d.invoice_no ?? null, d.invoice_date ?? null, d.quantity ?? null, d.unit ?? null, d.erp_ref ?? null, d.note ?? null],
+      `INSERT INTO activity_line_items (activity_record_id, invoice_no, invoice_date, quantity, unit, erp_ref, note, carbon_content_pct)
+       VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8) RETURNING id`,
+      [id, d.invoice_no ?? null, d.invoice_date ?? null, d.quantity ?? null, d.unit ?? null, d.erp_ref ?? null, d.note ?? null, d.carbon_content_pct ?? null],
     );
     const total = await recomputeRecordFromLineItems(id);
     return NextResponse.json({ data: { id: ins.rows[0].id }, activity_value: total, error: null }, { status: 201 });
@@ -79,9 +80,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     await assertRecordNotFrozen(id);
     await query(
       `UPDATE activity_line_items
-       SET invoice_no = $1, invoice_date = $2::date, quantity = $3, unit = $4, erp_ref = $5, note = $6
-       WHERE id = $7 AND activity_record_id = $8`,
-      [d.invoice_no ?? null, d.invoice_date ?? null, d.quantity ?? null, d.unit ?? null, d.erp_ref ?? null, d.note ?? null, item_id, id],
+       SET invoice_no = $1, invoice_date = $2::date, quantity = $3, unit = $4, erp_ref = $5, note = $6, carbon_content_pct = $7
+       WHERE id = $8 AND activity_record_id = $9`,
+      [d.invoice_no ?? null, d.invoice_date ?? null, d.quantity ?? null, d.unit ?? null, d.erp_ref ?? null, d.note ?? null, d.carbon_content_pct ?? null, item_id, id],
     );
     const total = await recomputeRecordFromLineItems(id);
     return NextResponse.json({ data: { id: item_id }, activity_value: total, error: null });
