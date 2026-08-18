@@ -164,9 +164,16 @@ export default function TransportReviewClient({ initialItems, ports, factories }
                       </div>
 
                       <div>
-                        <label className="block text-[10px] text-gray-500 mb-1">起點標準名稱</label>
-                        <input list="port-options" value={originStd} onChange={(e) => setOriginStd(e.target.value)}
-                          className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm" placeholder="例如 Ho Chi Minh City" />
+                        <label className="block text-[10px] text-gray-500 mb-1">
+                          {shipModeChoice === 'Land' ? '起點（供應商，不需要標準化）' : '起點標準名稱'}
+                        </label>
+                        {shipModeChoice === 'Land' ? (
+                          <input value={originStd} onChange={(e) => setOriginStd(e.target.value)}
+                            className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm" placeholder="供應商名稱（自動帶入，通常不用改）" />
+                        ) : (
+                          <input list="port-options" value={originStd} onChange={(e) => setOriginStd(e.target.value)}
+                            className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm" placeholder="例如 Ho Chi Minh City" />
+                        )}
                       </div>
 
                       {shipModeChoice === 'Land' ? (

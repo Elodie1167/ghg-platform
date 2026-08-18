@@ -1,6 +1,5 @@
 import * as XLSX from 'xlsx';
 import { ParsedRow, SheetKind } from './types';
-import { guessCityFromAddress } from './address';
 
 // ERP 台供主副料 / 廠供副料 三種分頁的欄位對照，已用 IND 樣本檔驗證，Elodie 確認全產區一致
 // （規格 v6 第一節）：
@@ -100,10 +99,12 @@ export function parseVendorSheet(grid: unknown[][], sheetKind: 'fabric' | 'acces
 
 /**
  * 解析「廠供副料」分頁（工廠當地採購，欄名 SHIP_MODE / FACTORY 裸碼）。
- * 沒有 ExportPort/ImportPort 欄位——境內陸運起點借用 ADDRESS（供應商地址全文），
- * 用 guessCityFromAddress() 從地址文字猜出縣市/省份候選（放進 exportPort 欄位餵給
- * port_master 比對），原始地址全文另外存進 rawAddress 供資料覆核中心顯示比對用。
- * 猜測結果只是候選，命中與否、要不要收進 port_alias，仍由人工在覆核中心確認。
+ *
+ * 2026-08-18 Elodie 定調：廠供副料的陸運距離本來就是設計成「供應商地址 → 工廠」，
+ * 不是城市層級（跟主料/台供副料的「進口港 → 工廠」不同）。所以這裡的 origin 用
+ * VENDOR_NAME 本身當比對鍵（ERP 供應商名稱本身已經是穩定、精確的識別，不需要像
+ * 港口名稱那樣做模糊比對），不對地址做城市猜測；ADDRESS 全文存進 rawAddress，
+ * 純粹是給查證/覆核時人工核對用，不參與距離查詢比對。
  */
 export function parseFactorySuppliedSheet(grid: unknown[][]): ParsedRow[] {
   if (grid.length < 2) return [];
@@ -127,12 +128,13 @@ export function parseFactorySuppliedSheet(grid: unknown[][]): ParsedRow[] {
     const factoryRaw = toStr(row[iFactory]);
     if (!factoryRaw) continue;
     const address = iAddress >= 0 ? toStr(row[iAddress]) || null : null;
+    const vendorName = iVendor >= 0 ? toStr(row[iVendor]) || null : null;
     rows.push({
       sheetKind: 'accessory_factory',
       poNumber: toStr(row[iPO]),
       factoryRawCode: factoryRaw,
-      vendorName: iVendor >= 0 ? toStr(row[iVendor]) || null : null,
-      exportPort: guessCityFromAddress(address) ?? address,
+      vendorName,
+      exportPort: vendorName, // 陸運起點 = 供應商本身，見上方註解
       importPort: null,
       shipModeRaw: toStr(row[iShipMode]).toUpperCase(),
       category: iCategory >= 0 ? toStr(row[iCategory]) || null : null,

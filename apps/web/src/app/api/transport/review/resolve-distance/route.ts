@@ -50,7 +50,11 @@ export async function POST(req: NextRequest) {
 
   const user = await getCurrentUser().catch(() => null);
 
-  const originPort = await upsertPortMaster(p.origin_standard_name, guessPortType(p.ship_mode, 'origin'));
+  // 陸運起點是供應商本身（VENDOR_NAME），不是城市/港口，不寫入 port_master
+  // （port_master 專門給城市/港口標準名做模糊比對用，塞供應商名稱進去語意不對）。
+  const originPort = p.destination_type === 'factory'
+    ? p.origin_standard_name
+    : await upsertPortMaster(p.origin_standard_name, guessPortType(p.ship_mode, 'origin'));
   let destPort: string | null = null;
   if (p.destination_type === 'port') {
     destPort = await upsertPortMaster(p.destination_standard_port_name!, guessPortType(p.ship_mode, 'destination'));

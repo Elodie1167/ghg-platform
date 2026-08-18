@@ -192,7 +192,11 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    const originStd = resolveStandardPortNameSync(row.exportPort ?? '', portIndex);
+    // 廠供副料的陸運起點是供應商本身（VENDOR_NAME），不是城市/港口，不走 port_master 模糊比對
+    // （見 lib/transport/parse.ts 廠供副料解析註解，2026-08-18 Elodie 定調）。
+    const originStd = row.sheetKind === 'accessory_factory'
+      ? (row.exportPort || null)
+      : resolveStandardPortNameSync(row.exportPort ?? '', portIndex);
     const destPortStd = row.importPort ? resolveStandardPortNameSync(row.importPort, portIndex) : null;
 
     let route: { routeId: string; distanceKm: number } | null = null;
