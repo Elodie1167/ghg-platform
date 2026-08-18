@@ -34,3 +34,6 @@ Thumbs.db
 
 # 報告書產出（暫存）
 *.docx.tmp
+
+# 上游運輸佐證檔案（存在本機磁碟，不進版控，見 apps/web/data/transport-evidence）
+apps/web/data/transport-evidence/

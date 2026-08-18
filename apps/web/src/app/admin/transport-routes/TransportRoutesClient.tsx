@@ -38,18 +38,45 @@ function destinationLabel(r: Route): string {
 const MODE_LABEL: Record<Route['mode'], string> = { Sea: '海運', Air: '空運', Land: '陸運' };
 
 export default function TransportRoutesClient({ initialRoutes }: { initialRoutes: Route[] }) {
+  const [routes, setRoutes] = useState(initialRoutes);
   const [keyword, setKeyword] = useState('');
   const [modeFilter, setModeFilter] = useState<'all' | Route['mode']>('all');
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+
+  async function handleUpload(routeId: string, file: File) {
+    setUploadingId(routeId);
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const res = await fetch(`/api/transport/routes/${routeId}/evidence`, { method: 'POST', body });
+      const json = await res.json();
+      if (!res.ok || json.error) { alert(json.error ?? '上傳失敗'); return; }
+      setRoutes((prev) => prev.map((r) => r.id === routeId
+        ? {
+            ...r,
+            evidence: [...r.evidence, {
+              id: json.data.id, display_alias: json.data.display_alias,
+              blob_url: `/api/transport/evidence/${json.data.id}`,
+              version: r.evidence.length + 1, source_label: '', uploaded_at: new Date().toISOString(),
+            }],
+          }
+        : r));
+    } catch {
+      alert('網路錯誤，請稍後再試');
+    } finally {
+      setUploadingId(null);
+    }
+  }
 
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
-    return initialRoutes.filter((r) => {
+    return routes.filter((r) => {
       if (modeFilter !== 'all' && r.mode !== modeFilter) return false;
       if (!kw) return true;
       const hay = `${r.origin} ${destinationLabel(r)}`.toLowerCase();
       return hay.includes(kw);
     });
-  }, [initialRoutes, keyword, modeFilter]);
+  }, [routes, keyword, modeFilter]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -58,7 +85,7 @@ export default function TransportRoutesClient({ initialRoutes }: { initialRoutes
           <a href="/" className="text-green-300 text-xs hover:underline">← 返回首頁</a>
           <h1 className="text-xl font-bold mt-0.5">上游運輸｜路線主檔查詢</h1>
           <p className="text-xs text-green-200 mt-0.5">
-            共 {initialRoutes.length} 條已建立路線 · 查已有距離/佐證，缺的路線請到「資料覆核中心」補值
+            共 {routes.length} 條已建立路線 · 查已有距離/佐證，缺的路線請到「資料覆核中心」補值
           </p>
         </div>
       </div>
@@ -85,13 +112,13 @@ export default function TransportRoutesClient({ initialRoutes }: { initialRoutes
           </a>
         </div>
 
-        {initialRoutes.length === 0 && (
+        {routes.length === 0 && (
           <div className="text-center text-gray-400 py-16 text-sm">
             目前還沒有任何路線資料。歷史種子資料尚未匯入，或請到「資料覆核中心」開始補值。
           </div>
         )}
 
-        {initialRoutes.length > 0 && (
+        {routes.length > 0 && (
           <div className="overflow-x-auto rounded-lg border border-gray-200 shadow-sm bg-white">
             <table className="w-full border-collapse text-sm">
               <thead>
@@ -115,14 +142,18 @@ export default function TransportRoutesClient({ initialRoutes }: { initialRoutes
                     <td className="px-3 py-2 text-right font-mono">{Number(r.distance_km).toLocaleString()}</td>
                     <td className="px-3 py-2 text-gray-500 text-xs">{r.source ?? '—'}</td>
                     <td className="px-3 py-2 text-xs">
-                      {r.evidence.length === 0
-                        ? <span className="text-gray-400">無</span>
-                        : r.evidence.map((ev) => (
-                            <a key={ev.id} href={ev.blob_url} target="_blank" rel="noreferrer"
-                              className="text-blue-600 hover:underline block">
-                              {ev.display_alias}{ev.version > 1 ? ` (v${ev.version})` : ''}
-                            </a>
-                          ))}
+                      {r.evidence.map((ev) => (
+                        <a key={ev.id} href={ev.blob_url} target="_blank" rel="noreferrer"
+                          className="text-blue-600 hover:underline block">
+                          {ev.display_alias}{ev.version > 1 ? ` (v${ev.version})` : ''}
+                        </a>
+                      ))}
+                      <label className="text-gray-400 hover:text-blue-600 cursor-pointer inline-block mt-0.5">
+                        {uploadingId === r.id ? '上傳中…' : (r.evidence.length === 0 ? '無 · 上傳佐證' : '+ 上傳佐證')}
+                        <input type="file" accept="image/*,.pdf" className="hidden"
+                          disabled={uploadingId === r.id}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(r.id, f); e.target.value = ''; }} />
+                      </label>
                     </td>
                     <td className="px-3 py-2 text-xs text-gray-500">
                       {r.entered_by_name ?? r.entered_by_email ?? '—'}
