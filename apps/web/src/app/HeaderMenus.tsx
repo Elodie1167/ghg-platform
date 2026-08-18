@@ -45,6 +45,11 @@ export default function HeaderMenus({ currentYear }: Props) {
             <Link href="/admin/emission-sources" className={itemClass} onClick={() => setSettingsOpen(false)}>排放源設定</Link>
             <Link href="/admin/report-years" className={itemClass} onClick={() => setSettingsOpen(false)}>年度設定</Link>
             <Link href="/admin/verification" className={itemClass} onClick={() => setSettingsOpen(false)}>查證封存</Link>
+            <Link href="/admin/anomaly" className={itemClass} onClick={() => setSettingsOpen(false)}>異常清單</Link>
+            <div className="border-t border-gray-100 my-1" />
+            <Link href="/admin/transport-import" className={itemClass} onClick={() => setSettingsOpen(false)}>上游運輸：ERP 匯入</Link>
+            <Link href="/admin/transport-review" className={itemClass} onClick={() => setSettingsOpen(false)}>上游運輸：資料覆核中心</Link>
+            <Link href="/admin/transport-routes" className={itemClass} onClick={() => setSettingsOpen(false)}>上游運輸：路線主檔查詢</Link>
           </div>
         )}
       </div>
