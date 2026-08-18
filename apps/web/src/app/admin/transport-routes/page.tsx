@@ -9,6 +9,7 @@ export default async function TransportRoutesPage() {
        rd.id, rd.origin, rd.destination_type, rd.destination_port, rd.mode,
        rd.distance_km, rd.source, rd.entered_at, rd.last_verified_date, rd.note, rd.status,
        f.factory_code AS destination_factory_code, f.name_zh AS destination_factory_name,
+       f.country_code AS destination_country_code,
        u.display_name AS entered_by_name, u.email AS entered_by_email,
        COALESCE(
          (SELECT json_agg(json_build_object(

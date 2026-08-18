@@ -23,6 +23,7 @@ interface Route {
   status: 'active' | 'inactive';
   destination_factory_code: string | null;
   destination_factory_name: string | null;
+  destination_country_code: string | null;
   entered_by_name: string | null;
   entered_by_email: string | null;
   evidence: Evidence[];
@@ -37,11 +38,28 @@ function destinationLabel(r: Route): string {
 
 const MODE_LABEL: Record<Route['mode'], string> = { Sea: '海運', Air: '空運', Land: '陸運' };
 
+const KNOWN_REGIONS = ['IND', 'CAB', 'SLV', 'SVN', 'NVN', 'VIN', 'TWN', 'CHN', 'BGD'];
+
+/**
+ * 陸運路線有明確的目的工廠，直接用工廠的 country_code（查 DB，不猜）。
+ * 海/空運路線是全公司共用（不綁單一工廠），沒有 country_code 可查，
+ * 退而從歷史匯入的 source 標記（例如「歷史匯入_VIN_SeaDistance_blockA」）
+ * 解析出來源產區當作分類依據；使用者補建的路線（source='使用者補建'）沒有
+ * 這個線索，歸類為「共用/未知」。
+ */
+function regionOf(r: Route): string {
+  if (r.destination_country_code) return r.destination_country_code;
+  const m = (r.source ?? '').match(/歷史匯入_([A-Z]+)/);
+  if (m && KNOWN_REGIONS.includes(m[1])) return m[1];
+  return '共用/未知';
+}
+
 export default function TransportRoutesClient({ initialRoutes }: { initialRoutes: Route[] }) {
   const [routes, setRoutes] = useState(initialRoutes);
   const [keyword, setKeyword] = useState('');
   const [modeFilter, setModeFilter] = useState<'all' | Route['mode']>('all');
   const [evidenceFilter, setEvidenceFilter] = useState<'all' | 'has' | 'none'>('all');
+  const [regionFilter, setRegionFilter] = useState<string>('all');
   const [uploadingId, setUploadingId] = useState<string | null>(null);
 
   async function handleUpload(routeId: string, file: File) {
@@ -75,13 +93,19 @@ export default function TransportRoutesClient({ initialRoutes }: { initialRoutes
       if (modeFilter !== 'all' && r.mode !== modeFilter) return false;
       if (evidenceFilter === 'has' && r.evidence.length === 0) return false;
       if (evidenceFilter === 'none' && r.evidence.length > 0) return false;
+      if (regionFilter !== 'all' && regionOf(r) !== regionFilter) return false;
       if (!kw) return true;
       const hay = `${r.origin} ${destinationLabel(r)}`.toLowerCase();
       return hay.includes(kw);
     });
-  }, [routes, keyword, modeFilter, evidenceFilter]);
+  }, [routes, keyword, modeFilter, evidenceFilter, regionFilter]);
 
   const evidenceCount = routes.filter((r) => r.evidence.length > 0).length;
+  const regionOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of routes) counts.set(regionOf(r), (counts.get(regionOf(r)) ?? 0) + 1);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [routes]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -125,6 +149,13 @@ export default function TransportRoutesClient({ initialRoutes }: { initialRoutes
               </button>
             ))}
           </div>
+          <select value={regionFilter} onChange={(e) => setRegionFilter(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+            <option value="all">全部產區</option>
+            {regionOptions.map(([region, count]) => (
+              <option key={region} value={region}>{region}（{count}）</option>
+            ))}
+          </select>
           <a href="/admin/transport-review" className="ml-auto text-sm text-blue-600 hover:underline">
             前往資料覆核中心（補缺值）→
           </a>
