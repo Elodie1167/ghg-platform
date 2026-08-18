@@ -44,6 +44,7 @@ const RULE_LABELS: Record<string, string> = {
   TREND_YOY_CHANGE: '年變動異常（±30%）',
   TREND_ZERO_AFTER_ACTIVE: '突然歸零',
   GOV_DUPLICATE_ENTRY: '疑似重複輸入',
+  MISSING_ROUTE_DISTANCE: '上游運輸缺距離待補',
 };
 
 function ruleLabel(code: string): string {
