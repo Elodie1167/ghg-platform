@@ -41,6 +41,7 @@ export default function TransportRoutesClient({ initialRoutes }: { initialRoutes
   const [routes, setRoutes] = useState(initialRoutes);
   const [keyword, setKeyword] = useState('');
   const [modeFilter, setModeFilter] = useState<'all' | Route['mode']>('all');
+  const [evidenceFilter, setEvidenceFilter] = useState<'all' | 'has' | 'none'>('all');
   const [uploadingId, setUploadingId] = useState<string | null>(null);
 
   async function handleUpload(routeId: string, file: File) {
@@ -72,11 +73,15 @@ export default function TransportRoutesClient({ initialRoutes }: { initialRoutes
     const kw = keyword.trim().toLowerCase();
     return routes.filter((r) => {
       if (modeFilter !== 'all' && r.mode !== modeFilter) return false;
+      if (evidenceFilter === 'has' && r.evidence.length === 0) return false;
+      if (evidenceFilter === 'none' && r.evidence.length > 0) return false;
       if (!kw) return true;
       const hay = `${r.origin} ${destinationLabel(r)}`.toLowerCase();
       return hay.includes(kw);
     });
-  }, [routes, keyword, modeFilter]);
+  }, [routes, keyword, modeFilter, evidenceFilter]);
+
+  const evidenceCount = routes.filter((r) => r.evidence.length > 0).length;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -104,6 +109,19 @@ export default function TransportRoutesClient({ initialRoutes }: { initialRoutes
                 className={`px-4 py-1.5 font-medium transition ${modeFilter === m ? 'text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                 style={modeFilter === m ? { backgroundColor: HEADER_BG } : {}}>
                 {m === 'all' ? '全部運輸方式' : MODE_LABEL[m]}
+              </button>
+            ))}
+          </div>
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+            {([
+              ['all', '全部佐證狀態'],
+              ['has', `有佐證 (${evidenceCount})`],
+              ['none', `無佐證 (${routes.length - evidenceCount})`],
+            ] as const).map(([v, label]) => (
+              <button key={v} onClick={() => setEvidenceFilter(v)}
+                className={`px-4 py-1.5 font-medium transition whitespace-nowrap ${evidenceFilter === v ? 'text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                style={evidenceFilter === v ? { backgroundColor: HEADER_BG } : {}}>
+                {label}
               </button>
             ))}
           </div>
