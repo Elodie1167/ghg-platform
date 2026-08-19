@@ -20,6 +20,9 @@ interface ParsedRow {
   // 化糞池（1-4B-1）專用：上班天數→meter_number、上班人數→sub_location
   meter_number?: string;
   sub_location?: string;
+  // 滅火器（1-4C）專用：同月允許多筆，比照填報頁「+ 新增記錄」的行為 —
+  // 每一列都各自新增一筆 activity_records，不查詢/合併既有紀錄。
+  alwaysInsert?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -245,7 +248,8 @@ function parseWeldingRodLineItems(sheet: XLSX.WorkSheet): LineItemRow[] {
  * 解析「S1_滅火器」：固定 1-4C-1/1-4C-2，可變列數，col A=月份 B=新購(瓶) C=填充(瓶) D=一瓶(kg)。
  * 比照填報頁 FugitiveTab（ExtinguisherSection）：新購(瓶)存 sub_location、填充(瓶)存 notes、
  * 一瓶(kg)存 meter_number，activity_value = (新購+填充) × 一瓶公斤數（系統自動相乘）。
- * 同月若出現多列，取最後一列（不加總，比照 S1_LPG）。
+ * 同月允許多列，各自對應填報頁的一筆 activity_records（同月可按「+ 新增記錄」加多筆），
+ * 不合併也不覆蓋既有紀錄，見 alwaysInsert。
  */
 function parseExtinguisherSheet(sheet: XLSX.WorkSheet, sourceCode: string): ParsedRow[] {
   const rows: ParsedRow[] = [];
@@ -267,6 +271,7 @@ function parseExtinguisherSheet(sheet: XLSX.WorkSheet, sourceCode: string): Pars
       sub_location: newCount !== null ? String(newCount) : undefined,
       notes: refillCount !== null ? String(refillCount) : undefined,
       meter_number: String(kgPerBottle),
+      alwaysInsert: true,
     });
   }
   return rows;
@@ -527,6 +532,15 @@ async function buildPreview(
   for (const row of parsedRows) {
     const source = sourceMap.get(row.source_code);
     if (!source) continue; // 已在呼叫端記入 errors，這裡不重複
+    if (row.alwaysInsert) {
+      // 滅火器等「同月多筆」來源：每列都會各自新增一筆，不比對既有紀錄
+      fixedDiffs.push({
+        source_code: row.source_code, month: row.month, status: 'new',
+        old_value: null, old_unit: null, is_reviewed: false,
+        new_value: row.activity_value, new_unit: row.activity_unit,
+      });
+      continue;
+    }
     const existing = await query(
       `SELECT activity_value::float AS v, activity_unit, is_reviewed
          FROM activity_records
@@ -751,6 +765,23 @@ export async function POST(req: NextRequest) {
     if (!source) { skipped++; continue; } // 已記錄於 errors
 
     try {
+      // 滅火器等「同月多筆」來源：比照填報頁「+ 新增記錄」，每列都各自新增一筆，
+      // 不查詢/合併既有紀錄（同月本來就允許多筆 activity_records）。
+      if (row.alwaysInsert) {
+        await query(
+          `INSERT INTO activity_records
+             (factory_id, emission_source_id, year, month,
+              activity_value, activity_unit, notes, meter_number, sub_location,
+              import_source, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'excel_import', NOW(), NOW())`,
+          [factory_id, source.id, year, row.month,
+           row.activity_value, row.activity_unit, row.notes ?? null,
+           row.meter_number ?? null, row.sub_location ?? null],
+        );
+        imported++;
+        continue;
+      }
+
       // 找該 (廠×源×月) 既有紀錄時不限 import_source：這類固定分頁匯入是「每月一筆彙總」
       // 設計，若只比對 excel_import 會漏掉先前手動填的那筆，導致同月重複建立新紀錄
       // （例如手動填報頁清空過又重新匯入，會冒出一筆孤兒舊列）。
