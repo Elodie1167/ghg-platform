@@ -59,6 +59,21 @@ function cellVal(sheet: XLSX.WorkSheet, row: number, col: number): unknown {
   return sheet[addr]?.v ?? null;
 }
 
+/**
+ * 取百分比欄位的「%數字」（例如要存 0.08 代表 0.08%）。
+ * 使用者若把 Excel 儲存格設成「百分比」格式並輸入 0.08%，Excel 實際存的原始值
+ * 是 0.0008（0.08 / 100），.v 讀出來就是 0.0008，若直接當「0.0008%」存入會少乘 100 倍。
+ * 用儲存格格式字串（.z）含有 '%' 來判斷，此時要 ×100 還原成使用者看到的百分比數字；
+ * 若儲存格是一般數字格式（使用者直接輸入「0.08」代表 0.08%），則不需轉換。
+ */
+function cellPercent(sheet: XLSX.WorkSheet, row: number, col: number): unknown {
+  const addr = XLSX.utils.encode_cell({ r: row, c: col });
+  const cell = sheet[addr];
+  if (!cell || cell.v == null) return null;
+  const isPercentFormat = typeof cell.z === 'string' && cell.z.includes('%');
+  return isPercentFormat ? Number(cell.v) * 100 : cell.v;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Sheet 解析函式
 // rows 參數為 Excel 列索引（0-indexed）；row 2 → idx 1
@@ -225,7 +240,7 @@ function parseWeldingRodLineItems(sheet: XLSX.WorkSheet): LineItemRow[] {
     const month = parseMonth(cellVal(sheet, r, 0)); // col A
     if (month === null) continue;
     const qty = toNum(cellVal(sheet, r, 1));           // col B 採購量(kg)
-    const carbonContent = toNumKeepZero(cellVal(sheet, r, 2));  // col C 含碳量(%)，0 是有效值（真的 0%），不當作沒填
+    const carbonContent = toNumKeepZero(cellPercent(sheet, r, 2));  // col C 含碳量(%)，0 是有效值（真的 0%），不當作沒填
     const notes = strOrNull(cellVal(sheet, r, 3));      // col D 備註
     if (qty === null) continue; // activity_value 為 NOT NULL 且需 > 0，缺採購量無法建立紀錄
     rows.push({
