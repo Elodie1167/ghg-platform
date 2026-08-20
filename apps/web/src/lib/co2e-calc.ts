@@ -21,11 +21,16 @@ export interface CalcResult {
 
 const GWP_CH4 = 27.9;
 const GWP_N2O = 273.0;
-const GWP_SUBSTANCE: Record<string, number> = {
-  R134a: 1530, R507: 3985, R22: 1960, R32: 771,
-  R407C: 1774, R410A: 2088, SF6: 25200, FM200: 3220,
-  CO2: 1.0, // 滅火器-CO2（1-4C-1），es.substance 存的是 'CO2' 不是 'CO2_extinguisher'
-};
+
+/**
+ * 冷媒/滅火器/SF6 的 GWP 改存 substance_gwp 表（V56），讓 /admin/factors 頁面可以直接編輯，
+ * 不用再改這支程式碼重新 deploy。找不到對應物質時回傳 null（呼叫端視同「未知物質」處理）。
+ */
+async function getSubstanceGwp(substance: string): Promise<number | null> {
+  const r = await query('SELECT gwp::float AS gwp FROM substance_gwp WHERE substance = $1', [substance]);
+  return r.rows[0]?.gwp ?? null;
+}
+
 const UNIT_CONV: Record<string, number> = {
   MWh: 1000, GWh: 1e6, KL: 1000, m3: 1000, tonne: 1000, ton: 1000,
 };
@@ -258,7 +263,7 @@ export async function calcCo2e(params: {
   let t_substance = 0;
   let hfc_t: number | null = null;
   if (params.substance && f.factor_substance != null) {
-    const gwp = GWP_SUBSTANCE[params.substance];
+    const gwp = await getSubstanceGwp(params.substance);
     if (gwp) {
       const mass_leaked_t = r4(value * f.factor_substance / 1000);
       t_substance = r4(mass_leaked_t * gwp);

@@ -1,11 +1,12 @@
 import { query } from '@/lib/db';
 import FactorsClient from './FactorsClient';
+import SubstanceGwpPanel from './SubstanceGwpPanel';
 
 export const dynamic = 'force-dynamic';
 
 export default async function FactorsPage() {
 
-  const [factorsRes, factoriesRes, sourcesRes] = await Promise.all([
+  const [factorsRes, factoriesRes, sourcesRes, substanceGwpRes] = await Promise.all([
     query(`
       SELECT
         ef.id,
@@ -43,13 +44,17 @@ export default async function FactorsPage() {
            FROM factories ORDER BY country_code, factory_code`),
     query(`SELECT id, source_code, name_zh, scope, category
            FROM emission_sources ORDER BY scope, source_code`),
+    query(`SELECT substance, gwp::float AS gwp, note, updated_at FROM substance_gwp ORDER BY substance`),
   ]);
 
   return (
-    <FactorsClient
-      initialFactors={factorsRes.rows}
-      factories={factoriesRes.rows}
-      emissionSources={sourcesRes.rows}
-    />
+    <>
+      <SubstanceGwpPanel initialRows={substanceGwpRes.rows} />
+      <FactorsClient
+        initialFactors={factorsRes.rows}
+        factories={factoriesRes.rows}
+        emissionSources={sourcesRes.rows}
+      />
+    </>
   );
 }
