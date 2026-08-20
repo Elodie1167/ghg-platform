@@ -165,11 +165,13 @@ const TRAVEL_MODE_TO_SOURCE: Record<string, string> = {
 };
 
 /**
- * 解析「S3_商務旅行」：col A=日期 B=姓名或ID C=交通工具(飛機/高鐵/火車) D=出發地 E=目的地
- * F=趟次(單程/來回) G=距離(海浬，飛機常用) H=距離(km，高鐵/火車或已知km時填)。
- * 每一列 = 一人一趟出差，比照滅火器「+ 新增記錄」模式，各自新增一筆 activity_records
- * （不依月份合併），系統再從這些逐筆紀錄彙總出各交通工具的人數/PKM/CO2e（見 /api/travel-summary）。
- * 距離二擇一：飛機優先用海浬換算成km，若海浬未填則直接讀km欄。
+ * 解析「S3_商務旅行」：col A=日期 B=姓名或ID C=交通工具(飛機/高鐵/火車) D=人數 E=出發地
+ * F=中轉站 G=目的地 H=趟次(單程/來回) I=距離1(海浬) J=距離1(km) K=距離2(km) L=總距離(km，僅供參考)。
+ * 每一列 = 一趟出差（可多人同行），比照滅火器「+ 新增記錄」模式，各自新增一筆 activity_records
+ * （不依月份合併），CO2e 依人數等比例放大；填報頁再彙總出各交通工具的人數/PKM/CO2e。
+ * 距離1 二擇一：飛機優先用海浬換算成km，若海浬未填則直接讀km欄；轉機/轉車時再加上距離2（第二段，
+ * 已是km），加總得總距離。「總距離(km)」欄僅供使用者自行核對，系統一律以距離1+距離2重新算，
+ * 不採信該欄位數字（避免公式沒即時更新或手動改錯數字而算出錯誤結果）。
  */
 function parseBusinessTravelSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
   const rows: ParsedRow[] = [];
@@ -182,22 +184,27 @@ function parseBusinessTravelSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
     const modeText = String(cellVal(sheet, r, 2) ?? '').trim(); // col C 交通工具
     const source_code = TRAVEL_MODE_TO_SOURCE[modeText];
     if (!source_code) continue; // 交通工具欄無法辨識（飛機/高鐵/火車），略過該列
-    const origin = strOrNull(cellVal(sheet, r, 3)); // col D 出發地
-    const destination = strOrNull(cellVal(sheet, r, 4)); // col E 目的地
-    const tripText = String(cellVal(sheet, r, 5) ?? '').trim(); // col F 趟次
+    const headcount = toNum(cellVal(sheet, r, 3)); // col D 人數
+    const origin = strOrNull(cellVal(sheet, r, 4)); // col E 出發地
+    const transit = strOrNull(cellVal(sheet, r, 5)); // col F 中轉站
+    const destination = strOrNull(cellVal(sheet, r, 6)); // col G 目的地
+    const tripText = String(cellVal(sheet, r, 7) ?? '').trim(); // col H 趟次
     const is_round_trip = tripText.includes('來回') || tripText.includes('往返');
-    const distanceNm = toNum(cellVal(sheet, r, 6)); // col G 距離(海浬)
-    const distanceKm = toNum(cellVal(sheet, r, 7)); // col H 距離(km)
-    const km = distanceNm !== null ? distanceNm * NM_TO_KM : distanceKm;
-    if (km === null || km <= 0) continue; // 缺距離無法計算，略過該列
+    const distance1Nm = toNum(cellVal(sheet, r, 8)); // col I 距離1(海浬)
+    const distance1Km = toNum(cellVal(sheet, r, 9)); // col J 距離1(km)
+    const distance2Km = toNum(cellVal(sheet, r, 10)); // col K 距離2(km，轉機/轉車第二段)
+    const leg1 = distance1Nm !== null ? distance1Nm * NM_TO_KM : distance1Km;
+    if (leg1 === null || leg1 <= 0) continue; // 缺第一段距離無法計算，略過該列
+    const km = leg1 + (distance2Km ?? 0);
 
+    const routeParts = [origin, transit, destination].filter((p): p is string => !!p);
     rows.push({
       month,
       source_code,
       activity_value: km,
       activity_unit: 'km',
-      meter_number: '1', // 每列固定代表 1 人 1 趟，人數彙總改用 COUNT(*)，不靠此欄相乘
-      sub_location: origin && destination ? `${origin}→${destination}` : (origin ?? destination ?? undefined),
+      meter_number: headcount !== null && headcount > 0 ? String(headcount) : '1',
+      sub_location: routeParts.length > 0 ? routeParts.join('→') : undefined,
       notes: traveler ?? undefined,
       date_from: dateVal,
       is_round_trip,
@@ -845,11 +852,16 @@ export async function POST(req: NextRequest) {
         // 不受 recomputeScope2ForFactoryYear 影響，需在此當場算）
         if (row.activity_value != null) {
           try {
+            // meter_number 在其他 alwaysInsert 來源另有用途（例如滅火器存「一瓶公斤數」），
+            // 只有商務旅行（3-6-*）的 meter_number 代表同行人數，才能拿來當 CO2e 倍數。
+            const isTravelRow = row.source_code.startsWith('3-6-');
+            const headcount = isTravelRow && row.meter_number ? parseFloat(row.meter_number) : undefined;
             const calc = await calcCo2e({
               factory_id, emission_source_id: source.id, country_code: factoryCountryCode,
               year, activity_value: row.activity_value, activity_unit: row.activity_unit,
               scope: source.scope, is_biomass: source.is_biomass, source_code: row.source_code,
               substance: source.substance, is_round_trip: row.is_round_trip,
+              headcount: headcount != null && !isNaN(headcount) ? headcount : undefined,
             });
             if (calc) {
               await query(

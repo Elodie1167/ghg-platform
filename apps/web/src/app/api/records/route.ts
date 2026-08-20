@@ -321,6 +321,11 @@ export async function POST(req: NextRequest) {
         // 但焊條含碳量 0% 是有效輸入，不能被當成「未填」而略過計算（見 co2e-calc.ts）
         const bio_fraction_raw = meter_number ? parseFloat(meter_number) : NaN;
         const bio_fraction = isNaN(bio_fraction_raw) ? undefined : bio_fraction_raw;
+        // 商務旅行（3-6-*）的 meter_number 代表「同行人數」，CO2e 依人數等比例放大；
+        // 其他排放源的 meter_number 另有用途（焊條含碳量等），不可混用。
+        const isTravelSrc = (srcCode ?? '').startsWith('3-6-');
+        const headcount_raw = isTravelSrc && meter_number ? parseFloat(meter_number) : NaN;
+        const headcount = isNaN(headcount_raw) ? undefined : headcount_raw;
         const fastApiPayload = {
           emission_source_id, factory_id, country_code, year, month,
           activity_value, activity_unit, scope, is_biomass,
@@ -328,7 +333,7 @@ export async function POST(req: NextRequest) {
           bio_fraction,
         };
         calc = await callCalculate(fastApiPayload)
-          ?? await calcCo2e({ ...fastApiPayload, substance: substance ?? null, is_round_trip });
+          ?? await calcCo2e({ ...fastApiPayload, substance: substance ?? null, is_round_trip, headcount });
       }
     }
 

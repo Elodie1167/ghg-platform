@@ -292,6 +292,10 @@ export async function PUT(
         // 未填與「填 0」意義不同（焊條含碳量 0% 是有效輸入），未填傳 undefined，見 route.ts 同段註解
         const bio_fraction_raw = updatedRow.meter_number ? parseFloat(updatedRow.meter_number) : NaN;
         const bio_fraction = isNaN(bio_fraction_raw) ? undefined : bio_fraction_raw;
+        // 商務旅行（3-6-*）的 meter_number 代表「同行人數」，CO2e 依人數等比例放大
+        const isTravelSrc = (srcCode ?? '').startsWith('3-6-');
+        const headcount_raw = isTravelSrc && updatedRow.meter_number ? parseFloat(updatedRow.meter_number) : NaN;
+        const headcount = isNaN(headcount_raw) ? undefined : headcount_raw;
         const calcParams = {
           emission_source_id: updatedRow.emission_source_id,
           factory_id: updatedRow.factory_id,
@@ -309,7 +313,7 @@ export async function PUT(
         };
         // FastAPI 優先，未設定/失敗時走 TypeScript 備援（Vercel serverless 必要）
         const calc = (await callCalculate(calcParams))
-          ?? (await calcCo2e({ ...calcParams, substance: substance ?? null }));
+          ?? (await calcCo2e({ ...calcParams, substance: substance ?? null, headcount }));
         if (calc) {
           await query(
             `UPDATE activity_records

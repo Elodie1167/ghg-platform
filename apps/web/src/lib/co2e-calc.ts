@@ -53,6 +53,9 @@ export async function calcCo2e(params: {
   substance?: string | null;
   bio_fraction?: number;
   is_round_trip?: boolean;
+  // 商務旅行同行人數：同一趟出差多人同行時，一筆紀錄可代表多人，CO2e 需按人數等比例放大
+  // （PKM＝距離×人數的概念），預設 1 不影響其他排放源既有行為。
+  headcount?: number;
 }): Promise<CalcResult | null> {
   // Scope 1 — 焊條（製程排放，1-3A-1）：無 NCV/年度係數概念，用「含碳量%」× 採購重量(kg)
   // × 碳氧化成 CO2 的分子量比(44/12) 直接算，含碳量由填報頁逐筆填寫（存於 meter_number，
@@ -110,8 +113,10 @@ export async function calcCo2e(params: {
   const factorGwpCH4 = f.gwp_ch4 ?? GWP_CH4;
   const factorGwpN2O = f.gwp_n2o ?? GWP_N2O;
 
-  // 商務旅行「往返」：使用者填單程距離，往返時計算要乘2（畫面上的距離欄位維持顯示單程）
-  const value = params.activity_value * (UNIT_CONV[params.activity_unit] ?? 1) * (params.is_round_trip ? 2 : 1);
+  // 商務旅行「往返」：使用者填單程距離，往返時計算要乘2（畫面上的距離欄位維持顯示單程）；
+  // 「人數」：多人同行一筆紀錄時，CO2e 依人數等比例放大，預設 1 人不影響其他排放源。
+  const value = params.activity_value * (UNIT_CONV[params.activity_unit] ?? 1)
+    * (params.is_round_trip ? 2 : 1) * (params.headcount ?? 1);
 
   if (params.scope === 2) {
     const gridEf = f.grid_emission_factor ?? 0;

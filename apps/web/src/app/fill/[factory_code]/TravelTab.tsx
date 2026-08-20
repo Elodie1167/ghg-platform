@@ -68,19 +68,24 @@ export default function TravelTab({
 }
 
 /**
- * 各交通工具彙總：人數（=該交通工具的出差紀錄筆數，每筆代表一人一趟，見匯入設計）／
- * PKM（人公里 = Σ 距離 × 往返係數，機票/車票碳排法沒有距離無法算，顯示「—」）／CO₂e 加總。
+ * 各交通工具彙總：人數（= Σ meter_number，一趟可多人同行）／
+ * PKM（人公里 = Σ 距離 × 往返係數 × 人數，機票/車票碳排法沒有距離無法算，顯示「—」）／CO₂e 加總。
  */
 function TravelSummary({ sources, existingRecords }: { sources: EmissionSource[]; existingRecords: ActivityRecord[] }) {
   const rows = sources.map((src) => {
     const recs = existingRecords.filter((r) => r.emission_source_id === src.id);
     const distanceRecs = recs.filter((r) => !r.is_manual_co2e);
     const hasDistance = distanceRecs.length > 0 && distanceRecs.every((r) => r.activity_value != null);
+    const headcountOf = (r: ActivityRecord) => {
+      const n = r.meter_number != null ? parseFloat(String(r.meter_number)) : NaN;
+      return !isNaN(n) && n > 0 ? n : 1;
+    };
     const pkm = hasDistance
-      ? distanceRecs.reduce((s, r) => s + (r.activity_value ?? 0) * (r.is_round_trip ? 2 : 1), 0)
+      ? distanceRecs.reduce((s, r) => s + (r.activity_value ?? 0) * (r.is_round_trip ? 2 : 1) * headcountOf(r), 0)
       : null;
     const co2e = recs.reduce((s, r) => s + (r.co2e_total ?? 0), 0);
-    return { source: src, headcount: recs.length, pkm, co2e };
+    const headcount = recs.reduce((s, r) => s + headcountOf(r), 0);
+    return { source: src, headcount, pkm, co2e };
   }).filter((r) => r.headcount > 0);
 
   if (rows.length === 0) return null;
