@@ -66,6 +66,7 @@ export interface ActivityRecord {
   is_round_trip: boolean;
   sub_location: string | null;
   meter_number: string | null;
+  leak_rate_pct: number | null;
   date_from: string | null;
   date_to: string | null;
   line_items_count: number;

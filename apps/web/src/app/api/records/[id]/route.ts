@@ -63,6 +63,8 @@ const UpdateRecordSchema = z.object({
   year: z.number().int().min(2020).max(2100).optional(),
   sub_location: z.string().nullable().optional(),
   meter_number: z.string().nullable().optional(),
+  // 斷路器-SF6（1-4D-1）專用：逸散率(%)，activity_value = 每台填充 × 台數 × leak_rate_pct/100
+  leak_rate_pct: z.number().min(0).max(100).nullable().optional(),
   date_from: z.string().nullable().optional(),
   date_to: z.string().nullable().optional(),
   source_doc_url: z.string().nullable().optional(),
@@ -201,6 +203,10 @@ export async function PUT(
     if (updates.meter_number !== undefined) {
       setClauses.push(`meter_number = $${paramIdx++}`);
       values.push(updates.meter_number);
+    }
+    if (updates.leak_rate_pct !== undefined) {
+      setClauses.push(`leak_rate_pct = $${paramIdx++}`);
+      values.push(updates.leak_rate_pct);
     }
     if (updates.date_from !== undefined) {
       setClauses.push(`date_from = $${paramIdx++}::date`);

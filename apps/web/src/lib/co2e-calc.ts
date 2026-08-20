@@ -265,9 +265,12 @@ export async function calcCo2e(params: {
   if (params.substance && f.factor_substance != null) {
     const gwp = await getSubstanceGwp(params.substance);
     if (gwp) {
-      const mass_leaked_t = r4(value * f.factor_substance / 1000);
-      t_substance = r4(mass_leaked_t * gwp);
-      hfc_t = mass_leaked_t;
+      // 先用未四捨五入的洩漏噸數乘 GWP，才四捨五入存 t_substance：先把 mass_leaked_t 存成
+      // r4 再乘 GWP，遇到高 GWP 物質（SF6=25200）+ 極小洩漏量（例如斷路器逸散率 0.1%
+      // 算出來零點幾公克）會被提前四捨五入成 0，導致乘完 GWP 後整筆 CO2e 消失。
+      const mass_leaked_t_raw = value * f.factor_substance / 1000;
+      t_substance = r4(mass_leaked_t_raw * gwp);
+      hfc_t = r6(mass_leaked_t_raw);
     }
   }
 

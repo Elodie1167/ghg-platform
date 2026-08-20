@@ -41,6 +41,7 @@ interface EventRow {
   sub_location: string;
   activity_value: string;
   unit_count: string;
+  leak_rate_pct: string; // 斷路器-SF6 專用：逸散率(%)
   notes: string;
   co2e_total: number | null;
   hfc_t: number | null;
@@ -671,13 +672,20 @@ function EventFugitiveSection({
     records.map((r) => {
       const unitCnt = r.meter_number ?? '';
       const unitNum = parseFloat(unitCnt);
-      const actVal = isSF6 && unitNum > 0 && r.activity_value != null
-        ? String(parseFloat(String(r.activity_value)) / unitNum)
+      const leakRatePct = r.leak_rate_pct ?? null;
+      // 每台填充 = activity_value ÷ (台數 × 逸散率%)；逸散率尚未填的舊資料退回只除台數
+      // （比照修正前的行為，直到補上逸散率為止都視為 100% 逸散）
+      const divisor = isSF6 && unitNum > 0
+        ? (leakRatePct != null && leakRatePct > 0 ? unitNum * (leakRatePct / 100) : unitNum)
+        : 0;
+      const actVal = isSF6 && divisor > 0 && r.activity_value != null
+        ? String(parseFloat(String(r.activity_value)) / divisor)
         : r.activity_value != null ? String(r.activity_value) : '';
       return {
         tempKey: r.id, id: r.id, month: r.month,
         date_from: r.date_from ?? '', sub_location: r.sub_location ?? '',
         activity_value: actVal, unit_count: unitCnt,
+        leak_rate_pct: leakRatePct != null ? String(leakRatePct) : '',
         notes: r.notes ?? '', co2e_total: r.co2e_total,
         hfc_t: r.hfc_t ?? null,
         is_reviewed: r.is_reviewed ?? false,
@@ -730,7 +738,7 @@ function EventFugitiveSection({
 
   function addRow() {
     const tempKey = `new-${Date.now()}`;
-    setRows((p) => [...p, { tempKey, id: null, month: new Date().getMonth() + 1, date_from: '', sub_location: '', activity_value: '', unit_count: '', notes: '', co2e_total: null, hfc_t: null, is_reviewed: false, line_items_count: 0, saveStatus: 'idle' }]);
+    setRows((p) => [...p, { tempKey, id: null, month: new Date().getMonth() + 1, date_from: '', sub_location: '', activity_value: '', unit_count: '', leak_rate_pct: '', notes: '', co2e_total: null, hfc_t: null, is_reviewed: false, line_items_count: 0, saveStatus: 'idle' }]);
   }
 
   async function toggleReview(tempKey: string) {
@@ -757,8 +765,14 @@ function EventFugitiveSection({
     setRows((p) => p.map((r) => r.tempKey === tempKey ? { ...r, saveStatus: 'saving' } : r));
     const fillPerUnit = row.activity_value !== '' ? parseFloat(row.activity_value) : null;
     const unitCnt = row.unit_count !== '' ? parseFloat(row.unit_count) : null;
-    const totalVal = isSF6 && fillPerUnit != null && !isNaN(fillPerUnit) && unitCnt != null && !isNaN(unitCnt)
-      ? fillPerUnit * unitCnt
+    const leakRate = row.leak_rate_pct !== '' ? parseFloat(row.leak_rate_pct) : null;
+    // 斷路器-SF6：activity_value = 每台填充 × 台數 × 逸散率% （逸散率未填時不計算，
+    // 避免比照舊行為誤把 100% 充填量當成已洩漏量）
+    const totalVal = isSF6
+      ? (fillPerUnit != null && !isNaN(fillPerUnit) && unitCnt != null && !isNaN(unitCnt)
+          && leakRate != null && !isNaN(leakRate)
+          ? fillPerUnit * unitCnt * (leakRate / 100)
+          : null)
       : fillPerUnit != null && !isNaN(fillPerUnit) ? fillPerUnit : null;
     const payload: Record<string, unknown> = {
       factory_id: factory.id, emission_source_id: source.id, year, month: row.month,
@@ -766,7 +780,10 @@ function EventFugitiveSection({
       activity_unit: source.default_unit,
       sub_location: row.sub_location || null, date_from: row.date_from || null, notes: row.notes || null,
     };
-    if (isSF6) payload.meter_number = row.unit_count || null;
+    if (isSF6) {
+      payload.meter_number = row.unit_count || null;
+      payload.leak_rate_pct = leakRate != null && !isNaN(leakRate) ? leakRate : null;
+    }
     try {
       if (row.id) {
         const res = await fetch(`/api/records/${row.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -843,6 +860,7 @@ function EventFugitiveSection({
                 <th className="whitespace-nowrap px-3 py-2.5 text-left">{locPlaceholder}</th>
                 {isSF6 && <th className="whitespace-nowrap px-3 py-2.5 text-right w-20">台數</th>}
                 <th className="whitespace-nowrap px-3 py-2.5 text-right w-28">{isSF6 ? `每台填充 (${source.default_unit})` : `用量 (${source.default_unit})`}</th>
+                {isSF6 && <th className="whitespace-nowrap px-3 py-2.5 text-right w-24">逸散率 (%)</th>}
                 <th className="whitespace-nowrap px-3 py-2.5 text-left w-28">備註</th>
                 <th className="whitespace-nowrap px-3 py-2.5 text-right w-24">CO₂e (t)</th>
                 <th className="whitespace-nowrap px-2 py-2.5 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>HFCs (t)</th>
@@ -890,6 +908,14 @@ function EventFugitiveSection({
                       onChange={(e) => updateRow(row.tempKey, 'activity_value', e.target.value)}
                       className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
                   </td>
+                  {isSF6 && (
+                    <td className="px-2 py-1.5">
+                      <input type="number" min="0" max="100" step="any" placeholder="例如 0.1"
+                        value={row.leak_rate_pct}
+                        onChange={(e) => updateRow(row.tempKey, 'leak_rate_pct', e.target.value)}
+                        className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </td>
+                  )}
                   <td className="px-2 py-1.5">
                     <input type="text" placeholder="備註" value={row.notes}
                       onChange={(e) => updateRow(row.tempKey, 'notes', e.target.value)}
@@ -926,6 +952,7 @@ function EventFugitiveSection({
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalVol.toLocaleString(undefined, { maximumFractionDigits: 10 })} {source.default_unit}
                 </td>
+                {isSF6 && <td />}
                 <td />
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {totalCo2e > 0 ? totalCo2e.toFixed(4) + ' t' : '—'}

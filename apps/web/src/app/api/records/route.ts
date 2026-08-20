@@ -25,6 +25,8 @@ const CreateRecordSchema = z.object({
   notes: z.string().nullable().optional(),
   sub_location: z.string().nullable().optional(),
   meter_number: z.string().nullable().optional(),
+  // 斷路器-SF6（1-4D-1）專用：逸散率(%)，activity_value = 每台填充 × 台數 × leak_rate_pct/100
+  leak_rate_pct: z.number().min(0).max(100).nullable().optional(),
   date_from: z.string().nullable().optional(),
   date_to: z.string().nullable().optional(),
   // 商務旅行「機票/車票碳排法」：直接填票證上的 CO2e（kg），跳過排放係數計算
@@ -139,6 +141,7 @@ export async function GET(req: NextRequest) {
         ar.notes,
         ar.sub_location,
         ar.meter_number,
+        ar.leak_rate_pct::float AS leak_rate_pct,
         ar.date_from,
         ar.date_to,
         ar.co2e_location::float AS co2e_location,
@@ -219,6 +222,7 @@ export async function POST(req: NextRequest) {
     notes,
     sub_location,
     meter_number,
+    leak_rate_pct,
     date_from,
     date_to,
     is_manual_co2e,
@@ -270,13 +274,13 @@ export async function POST(req: NextRequest) {
       `INSERT INTO activity_records
          (factory_id, emission_source_id, year, month,
           activity_value, activity_unit, notes,
-          sub_location, meter_number, date_from, date_to,
+          sub_location, meter_number, leak_rate_pct, date_from, date_to,
           is_manual_co2e, is_round_trip, import_source, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $11::date, $12, $13, 'manual', NOW(), NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::date, $12::date, $13, $14, 'manual', NOW(), NOW())
        RETURNING id`,
       [factory_id, emission_source_id, year, month,
        activity_value ?? null, activity_unit, notes ?? null,
-       sub_location ?? null, meter_number ?? null, date_from ?? null, date_to ?? null,
+       sub_location ?? null, meter_number ?? null, leak_rate_pct ?? null, date_from ?? null, date_to ?? null,
        is_manual_co2e, is_round_trip],
     );
 
