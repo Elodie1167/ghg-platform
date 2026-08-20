@@ -1616,7 +1616,11 @@ export default function FillPageClient({
         setSelected(new Set());
       }
 
-      function onWasteChange(month: number, val: string) {
+      function onWasteChange(month: number, rawVal: string) {
+        // 從 Excel 貼上的數字常帶千分位逗號或前後空白/換行——input type="number" 遇到這種
+        // 格式會直接把值重設成空字串（瀏覽器原生行為），畫面上看起來就是「貼上後一下子不見了」。
+        // 這裡改用 type="text"，貼上時先去除逗號與空白再存，不受原生 number 解析限制。
+        const val = rawVal.replace(/,/g, '').trim();
         const next = { ...lvRef.current, [month]: val };
         lvRef.current = next;
         setLv(next);
@@ -1641,8 +1645,15 @@ export default function FillPageClient({
             });
             if (!res.ok) throw new Error();
             // 清運 tkm 由伺服器端 cascadeWasteDerived 連帶重算（見 /api/records/autosave），
-            // 這裡只要把畫面上的清運表拉新即可
+            // 這裡只要把畫面上的清運表拉新即可。
+            // ⚠️ refreshWaste() 會 setWasteData，觸發 FillPageClient 重新 render；WasteTab()
+            // 是每次 render 都重新呼叫的一般函式，裡面的 WasteSection 因此變成全新的函式參照，
+            // React 會判定成不同元件而整個重新掛載，local state `lv` 被 useState 初始值重置——
+            // 初始值讀的是 existingRecords，若沒有一併更新，剛存好的值會憑空消失且不會再回來
+            // （這正是「貼上數字後一下又不見了」的成因，不是輸入驗證問題）。故這裡要跟著呼叫
+            // refreshRecords() 讓 existingRecords 也拿到剛存的值，重新掛載時才讀得到正確資料。
             refreshWaste();
+            refreshRecords();
             setSecStatus('saved');
             setTimeout(() => setSecStatus('idle'), 2000);
           } catch { setSecStatus('error'); }
@@ -1718,7 +1729,7 @@ export default function FillPageClient({
                     </td>
                     <td className="px-4 py-1.5 font-medium text-gray-700">{m} 月</td>
                     <td className="px-4 py-1.5">
-                      <input type="number" min="0" step="any" placeholder="輸入重量"
+                      <input type="text" inputMode="decimal" placeholder="輸入重量"
                         value={val}
                         onChange={(e) => onWasteChange(m, e.target.value)}
                         className="w-full border border-gray-300 rounded px-2 py-1 text-right focus:outline-none focus:ring-2 focus:ring-green-500"
