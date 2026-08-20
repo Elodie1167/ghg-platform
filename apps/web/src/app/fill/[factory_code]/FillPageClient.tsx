@@ -1329,7 +1329,10 @@ export default function FillPageClient({
       // 清空某月（activity_value→null，後端一併清 co2e）
       async function clearMonth(month: number) {
         const row = rowsRef.current[month];
-        const cleared = { ...row, value: '', carbonContent: '', notes: '', co2e: null };
+        // activity_value 設 null 時 API 會一併刪掉這筆底下的單據明細（避免清空後
+        // 主表格顯示空白、「明細」按鈕點進去卻還是舊資料的孤兒列問題），這裡同步
+        // 把畫面上的明細筆數歸零，不然要等下次重新整理才會消失。
+        const cleared = { ...row, value: '', carbonContent: '', notes: '', co2e: null, line_items_count: 0 };
         rowsRef.current = { ...rowsRef.current, [month]: cleared };
         setRows((prev) => ({ ...prev, [month]: cleared }));
         if (!row.id) return;

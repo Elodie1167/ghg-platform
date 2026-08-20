@@ -249,6 +249,16 @@ export async function PUT(
     const result = await query(updateSql, values);
     const updatedRow = result.rows[0];
 
+    // 「清空」語意：呼叫端把 activity_value 明確設為 null，代表這個月不要了。
+    // 若該紀錄底下還掛著單據明細（activity_line_items，例如焊條逐筆含碳量、
+    // 或其他排放源附加的發票明細），沒有一併刪除會留下孤兒列——畫面上主表格
+    // 顯示已清空，但「明細」按鈕點進去舊資料還在，兩邊不一致。
+    // （2026-08-20：焊條「全選清空」回報的問題，其實 FillPageClient/CombustionTab/
+    // PurchaseTab 的 clearMonth 都是同一種寫法，所以在這裡統一處理，不用三處各自補。）
+    if (updates.activity_value === null) {
+      await query(`DELETE FROM activity_line_items WHERE activity_record_id = $1`, [id]);
+    }
+
     // 人為改動活動數據 → 清除檢核狀態，除非本次請求已明確自行處理
     // is_reviewed（例如「審核並儲存」一次送出兩者，尊重呼叫端的明確意圖，
     // 不要反過來把它剛設的 true 蓋回 false）。
