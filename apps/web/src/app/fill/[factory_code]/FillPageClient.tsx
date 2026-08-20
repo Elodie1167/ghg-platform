@@ -1425,7 +1425,13 @@ export default function FillPageClient({
                         )}
                       </td>
                       <td className="px-3 py-1.5 text-right font-mono text-xs text-gray-700">
-                        {!hasLineItems && estC != null ? estC.toFixed(3) : '—'}
+                        {!hasLineItems && estC != null
+                          ? estC.toFixed(3)
+                          : hasLineItems && row.co2e != null
+                            // 有明細時各筆含碳量不同，無法用單一輸入格算，改用後端逐筆算好的
+                            // CO₂e 反推碳重（碳重 = CO₂e(t) × 1000 ÷ (44/12)），供對帳用。
+                            ? (row.co2e * 1000 / (44 / 12)).toFixed(3)
+                            : '—'}
                       </td>
                       <td className="px-2 py-1.5">
                         <input type="text" placeholder="供應商、規格等"
@@ -1435,7 +1441,9 @@ export default function FillPageClient({
                           className="w-full border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-100 disabled:text-gray-400" />
                       </td>
                       <td className="px-3 py-1.5 text-right font-mono text-xs text-gray-400">
-                        {row.co2e != null ? row.co2e.toFixed(4) : '—'}
+                        {/* 含碳量常是 0.0x%，4 位小數常四捨五入成 0.0000 讓人誤以為沒算出來，
+                            此分頁改用 6 位精度顯示（不影響資料庫實際存的值） */}
+                        {row.co2e != null ? row.co2e.toFixed(6) : '—'}
                       </td>
                       <td className="px-3 py-1.5 text-center">
                         <LineItemsCell recordId={row.id} count={row.line_items_count}

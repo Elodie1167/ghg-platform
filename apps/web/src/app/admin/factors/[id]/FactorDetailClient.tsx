@@ -362,8 +362,14 @@ export default function FactorDetailClient({ factor, factories }: Props) {
               </div>
             ) : isWelding ? (
               <div className="p-4 bg-amber-50 rounded-lg border border-amber-100">
-                <p className="text-xs text-amber-700 mb-3">焊條：碳含量已於填報前換算，係數僅需 CO₂ 係數（通常為 <code>1</code>），計算引擎以 <code>活動量 × CO₂係數 ÷ 1000</code> 得 tCO₂。</p>
-                <NumField label="CO₂ 係數" value={n(edit.factor_co2)} onChange={(v) => setEdit((e) => ({ ...e, factor_co2: p(v) }))} unit="kg CO₂/kg" hint="通常填 1" />
+                <p className="text-xs text-amber-700 mb-3">
+                  焊條：CO₂e 由填報頁逐筆「含碳量 (%)」直接計算，套用的是化學換算係數——
+                  碳完全燃燒轉化為二氧化碳的質量比（<code>44 / 12 ≈ 3.67</code>），固定寫在計算引擎裡，
+                  公式為 <code>採購量(kg) × 含碳量% × (44/12) ÷ 1000 = tCO₂</code>。
+                  這個係數不是「1」，也不會查這裡設定的年度係數。
+                  下方「CO₂ 係數」欄位目前計算引擎<strong>不會讀取</strong>，僅保留歷史欄位，請勿依此欄位判斷計算方式。
+                </p>
+                <NumField label="CO₂ 係數（未使用）" value={n(edit.factor_co2)} onChange={(v) => setEdit((e) => ({ ...e, factor_co2: p(v) }))} unit="kg CO₂/kg" hint="計算引擎不讀取此值，固定用 44/12" />
               </div>
             ) : isWaste ? (
               <div className="p-4 bg-orange-50 rounded-lg border border-orange-100">
