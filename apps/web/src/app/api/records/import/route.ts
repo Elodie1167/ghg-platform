@@ -23,6 +23,9 @@ interface ParsedRow {
   // 滅火器（1-4C）專用：同月允許多筆，比照填報頁「+ 新增記錄」的行為 —
   // 每一列都各自新增一筆 activity_records，不查詢/合併既有紀錄。
   alwaysInsert?: boolean;
+  // 商務旅行（3-6-A/C/D）專用：出發日期、是否為來回票（距離維持單程輸入，計算時系統乘2）
+  date_from?: string | null;
+  is_round_trip?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -151,20 +154,55 @@ function parseTransportSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
 }
 
 /** 解析「S3_商務旅行」：可變列數，col A=月份、B=類型、D=航班km（3-6-B 飯店住宿已停用，不再解析） */
+/** 海浬→公里，飛機航程常用海浬（nautical mile）標示，1 海浬 = 1.852 公里 */
+const NM_TO_KM = 1.852;
+
+/** 中文交通工具名稱 → 排放源代碼（3-6-A 飛機／3-6-C 高鐵／3-6-D 火車，飯店住宿 3-6-B 已停用不支援匯入） */
+const TRAVEL_MODE_TO_SOURCE: Record<string, string> = {
+  '飛機': '3-6-A', '航班': '3-6-A', '搭機': '3-6-A',
+  '高鐵': '3-6-C',
+  '火車': '3-6-D', '台鐵': '3-6-D',
+};
+
+/**
+ * 解析「S3_商務旅行」：col A=日期 B=姓名或ID C=交通工具(飛機/高鐵/火車) D=出發地 E=目的地
+ * F=趟次(單程/來回) G=距離(海浬，飛機常用) H=距離(km，高鐵/火車或已知km時填)。
+ * 每一列 = 一人一趟出差，比照滅火器「+ 新增記錄」模式，各自新增一筆 activity_records
+ * （不依月份合併），系統再從這些逐筆紀錄彙總出各交通工具的人數/PKM/CO2e（見 /api/travel-summary）。
+ * 距離二擇一：飛機優先用海浬換算成km，若海浬未填則直接讀km欄。
+ */
 function parseBusinessTravelSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
   const rows: ParsedRow[] = [];
   const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1');
   for (let r = 1; r <= range.e.r; r++) {
-    const monthVal = parseMonth(cellVal(sheet, r, 0)); // col A
-    if (monthVal === null) continue;
-    const type = String(cellVal(sheet, r, 1) ?? '').trim(); // col B
+    const dateVal = toDateStr(cellVal(sheet, r, 0)); // col A 日期
+    if (dateVal === null) continue;
+    const month = parseInt(dateVal.slice(5, 7), 10);
+    const traveler = strOrNull(cellVal(sheet, r, 1)); // col B 姓名或ID
+    const modeText = String(cellVal(sheet, r, 2) ?? '').trim(); // col C 交通工具
+    const source_code = TRAVEL_MODE_TO_SOURCE[modeText];
+    if (!source_code) continue; // 交通工具欄無法辨識（飛機/高鐵/火車），略過該列
+    const origin = strOrNull(cellVal(sheet, r, 3)); // col D 出發地
+    const destination = strOrNull(cellVal(sheet, r, 4)); // col E 目的地
+    const tripText = String(cellVal(sheet, r, 5) ?? '').trim(); // col F 趟次
+    const is_round_trip = tripText.includes('來回') || tripText.includes('往返');
+    const distanceNm = toNum(cellVal(sheet, r, 6)); // col G 距離(海浬)
+    const distanceKm = toNum(cellVal(sheet, r, 7)); // col H 距離(km)
+    const km = distanceNm !== null ? distanceNm * NM_TO_KM : distanceKm;
+    if (km === null || km <= 0) continue; // 缺距離無法計算，略過該列
 
-    if (type.includes('航班')) {
-      const km = toNum(cellVal(sheet, r, 3)); // col D
-      if (km !== null) {
-        rows.push({ month: monthVal, source_code: '3-6-A', activity_value: km, activity_unit: 'km' });
-      }
-    }
+    rows.push({
+      month,
+      source_code,
+      activity_value: km,
+      activity_unit: 'km',
+      meter_number: '1', // 每列固定代表 1 人 1 趟，人數彙總改用 COUNT(*)，不靠此欄相乘
+      sub_location: origin && destination ? `${origin}→${destination}` : (origin ?? destination ?? undefined),
+      notes: traveler ?? undefined,
+      date_from: dateVal,
+      is_round_trip,
+      alwaysInsert: true,
+    });
   }
   return rows;
 }
@@ -793,12 +831,14 @@ export async function POST(req: NextRequest) {
           `INSERT INTO activity_records
              (factory_id, emission_source_id, year, month,
               activity_value, activity_unit, notes, meter_number, sub_location,
+              date_from, is_round_trip,
               import_source, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'excel_import', NOW(), NOW())
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'excel_import', NOW(), NOW())
            RETURNING id`,
           [factory_id, source.id, year, row.month,
            row.activity_value, row.activity_unit, row.notes ?? null,
-           row.meter_number ?? null, row.sub_location ?? null],
+           row.meter_number ?? null, row.sub_location ?? null,
+           row.date_from ?? null, row.is_round_trip ?? false],
         );
         imported++;
         // 比照填報頁手動輸入：新增後立即算 CO₂e（滅火器等走 substance 係數，非年度電力係數，
@@ -809,7 +849,7 @@ export async function POST(req: NextRequest) {
               factory_id, emission_source_id: source.id, country_code: factoryCountryCode,
               year, activity_value: row.activity_value, activity_unit: row.activity_unit,
               scope: source.scope, is_biomass: source.is_biomass, source_code: row.source_code,
-              substance: source.substance,
+              substance: source.substance, is_round_trip: row.is_round_trip,
             });
             if (calc) {
               await query(

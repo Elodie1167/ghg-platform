@@ -51,6 +51,7 @@ export default function TravelTab({
         <h2 className="text-lg font-semibold text-gray-800">差旅 S3</h2>
         <p className="text-sm text-gray-500 mt-0.5">商務出差飛機、高鐵、火車記錄，每次出差一筆</p>
       </div>
+      <TravelSummary sources={sources} existingRecords={existingRecords} />
       {sources.map((src) => (
         <TravelSection
           key={src.id}
@@ -62,6 +63,64 @@ export default function TravelTab({
           isManualMode={travelMode?.[src.source_code] === 'manual'}
         />
       ))}
+    </div>
+  );
+}
+
+/**
+ * 各交通工具彙總：人數（=該交通工具的出差紀錄筆數，每筆代表一人一趟，見匯入設計）／
+ * PKM（人公里 = Σ 距離 × 往返係數，機票/車票碳排法沒有距離無法算，顯示「—」）／CO₂e 加總。
+ */
+function TravelSummary({ sources, existingRecords }: { sources: EmissionSource[]; existingRecords: ActivityRecord[] }) {
+  const rows = sources.map((src) => {
+    const recs = existingRecords.filter((r) => r.emission_source_id === src.id);
+    const distanceRecs = recs.filter((r) => !r.is_manual_co2e);
+    const hasDistance = distanceRecs.length > 0 && distanceRecs.every((r) => r.activity_value != null);
+    const pkm = hasDistance
+      ? distanceRecs.reduce((s, r) => s + (r.activity_value ?? 0) * (r.is_round_trip ? 2 : 1), 0)
+      : null;
+    const co2e = recs.reduce((s, r) => s + (r.co2e_total ?? 0), 0);
+    return { source: src, headcount: recs.length, pkm, co2e };
+  }).filter((r) => r.headcount > 0);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="mb-6 rounded-lg border border-gray-200 overflow-hidden">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
+            <th className="whitespace-nowrap px-3 py-2 text-left">交通工具</th>
+            <th className="whitespace-nowrap px-3 py-2 text-right">人數（趟次）</th>
+            <th className="whitespace-nowrap px-3 py-2 text-right">PKM（人公里）</th>
+            <th className="whitespace-nowrap px-3 py-2 text-right">CO₂e (t)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.source.id} className="bg-white even:bg-gray-50">
+              <td className="px-3 py-1.5 font-medium text-gray-700">{r.source.name_zh}</td>
+              <td className="px-3 py-1.5 text-right font-mono">{r.headcount}</td>
+              <td className="px-3 py-1.5 text-right font-mono">
+                {r.pkm != null ? r.pkm.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—'}
+              </td>
+              <td className="px-3 py-1.5 text-right font-mono">{r.co2e.toFixed(4)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold">
+            <td className="px-3 py-2">合計</td>
+            <td className="px-3 py-2 text-right font-mono">{rows.reduce((s, r) => s + r.headcount, 0)}</td>
+            <td className="px-3 py-2 text-right font-mono">
+              {rows.some((r) => r.pkm == null)
+                ? '各筆混合，見下方'
+                : rows.reduce((s, r) => s + (r.pkm ?? 0), 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            </td>
+            <td className="px-3 py-2 text-right font-mono">{rows.reduce((s, r) => s + r.co2e, 0).toFixed(4)}</td>
+          </tr>
+        </tfoot>
+      </table>
     </div>
   );
 }

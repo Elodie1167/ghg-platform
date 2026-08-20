@@ -22,11 +22,17 @@ const LPG_SOURCE_CODE = '1-1A-3';
 // 「用量/單位/發票號」單據明細模式不同，範本欄名對應顯示。
 const EXTINGUISHER_SOURCE_PREFIX = '1-4C';
 
+// 商務旅行（3-6-A 飛機／3-6-C 高鐵／3-6-D 火車）填報頁實際欄位為「日期/姓名/交通工具/
+// 出發地/目的地/趟次/距離」，每一列代表一人一趟出差，與其他排放源的「用量/單位/發票號」
+// 單據明細模式不同，範本欄名對應顯示。
+const TRAVEL_SOURCE_PREFIX = '3-6-';
+
 export function buildTemplateWorkbook(sourceCode: string, year: string, nameZh: string, unit: string): Buffer {
   const isSepticTank = sourceCode === SEPTIC_TANK_SOURCE_CODE;
   const isWeldingRod = sourceCode === WELDING_ROD_SOURCE_CODE;
   const isLpg = sourceCode === LPG_SOURCE_CODE;
   const isExtinguisher = sourceCode.startsWith(EXTINGUISHER_SOURCE_PREFIX);
+  const isTravel = sourceCode.startsWith(TRAVEL_SOURCE_PREFIX) && sourceCode !== '3-6-B';
 
   if (isLpg) {
     // LPG 專用格式：每月一列，採購桶數 + 一桶公斤數，合計 kg = 兩者相乘，
@@ -118,6 +124,43 @@ export function buildTemplateWorkbook(sourceCode: string, year: string, nameZh: 
     // 因為滅火器範本沒有像通用「單據明細」那樣逐列填代碼欄，解析時得從 sheet 名稱認出代碼。
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `S1_滅火器_${sourceCode}`);
+    XLSX.utils.book_append_sheet(wb, note, '說明');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+
+  if (isTravel) {
+    // 商務旅行專用格式：每一列 = 一人一趟出差，比照滅火器「+新增記錄」模式，
+    // 系統匯入後各自新增一筆填報紀錄（不依月份合併），再彙總出各交通工具的
+    // 人數/PKM(人公里)/CO2e。「交通工具」欄要填「飛機」「高鐵」或「火車」（三選一，
+    // 系統靠這欄文字判斷套用哪一種排放係數），拼錯或空白該列會被略過不會誤算。
+    // 距離二擇一：飛機通常用「距離(海浬)」，系統自動換算成 km（1 海浬=1.852 km）；
+    // 高鐵/火車直接填「距離(km)」。兩欄都填時以海浬換算優先。
+    const header = ['日期*', '姓名或ID', '交通工具*(飛機/高鐵/火車)', '出發地', '目的地', '趟次(單程/來回)', '距離(海浬)', '距離(km)'];
+    const example = [
+      ['2026-03-05', '王小明', '飛機', 'TPE', 'HAN', '來回', 750, ''],
+      ['2026-03-12', '陳小華', '高鐵', '台北', '台中', '單程', '', 150],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([header, ...example]);
+    ws['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 10 }];
+
+    const note = XLSX.utils.aoa_to_sheet([
+      ['商務旅行匯入範本 — 說明'],
+      [''],
+      [`排放源：${nameZh || '(未指定)'}（代碼 ${sourceCode}）`],
+      [''],
+      ['1. 每一列代表一人一趟出差，欄名有 * 者為必填：日期、交通工具、距離（海浬或km擇一填）。'],
+      ['2. 「交通工具」請填「飛機」「高鐵」或「火車」三選一的中文字，系統依此判斷套用哪一種排放係數；'],
+      ['   拼錯字或留空的列會被系統略過，不會誤算或誤套係數。'],
+      ['3. 「距離」二擇一：飛機通常用「距離(海浬)」，系統會自動換算成公里（1 海浬 = 1.852 公里）；'],
+      ['   高鐵/火車直接填「距離(km)」。兩欄都填時系統優先採用海浬換算的結果。'],
+      ['4. 距離請填單程距離；「趟次」填「來回」時系統計算 CO₂e 會自動乘 2，不需自行加倍。'],
+      ['5. 匯入後每一列會各自新增一筆填報紀錄（不依月份合併成一筆），填報頁「商務旅行 3.6」'],
+      ['   分頁上方會顯示各交通工具的人數/PKM(人公里)/CO₂e 彙總表。'],
+      ['6. 範例列可刪除或覆蓋。'],
+    ]);
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'S3_商務旅行');
     XLSX.utils.book_append_sheet(wb, note, '說明');
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
   }
