@@ -683,12 +683,18 @@ export async function POST(req: NextRequest) {
 
   // 查詢 emission_sources source_code → id 映射
   const sourcesResult = await query(
-    'SELECT id, source_code, default_unit, scope FROM emission_sources',
+    'SELECT id, source_code, default_unit, scope, is_biomass, substance FROM emission_sources',
   );
-  const sourceMap = new Map<string, { id: string; default_unit: string; scope: number }>(
-    sourcesResult.rows.map((r: { source_code: string; id: string; default_unit: string; scope: number }) => [
+  const sourceMap = new Map<
+    string,
+    { id: string; default_unit: string; scope: number; is_biomass: boolean; substance: string | null }
+  >(
+    sourcesResult.rows.map((r: {
+      source_code: string; id: string; default_unit: string; scope: number;
+      is_biomass: boolean; substance: string | null;
+    }) => [
       r.source_code,
-      { id: r.id, default_unit: r.default_unit, scope: r.scope },
+      { id: r.id, default_unit: r.default_unit, scope: r.scope, is_biomass: r.is_biomass, substance: r.substance },
     ]),
   );
 
@@ -768,17 +774,44 @@ export async function POST(req: NextRequest) {
       // 滅火器等「同月多筆」來源：比照填報頁「+ 新增記錄」，每列都各自新增一筆，
       // 不查詢/合併既有紀錄（同月本來就允許多筆 activity_records）。
       if (row.alwaysInsert) {
-        await query(
+        const ins = await query(
           `INSERT INTO activity_records
              (factory_id, emission_source_id, year, month,
               activity_value, activity_unit, notes, meter_number, sub_location,
               import_source, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'excel_import', NOW(), NOW())`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'excel_import', NOW(), NOW())
+           RETURNING id`,
           [factory_id, source.id, year, row.month,
            row.activity_value, row.activity_unit, row.notes ?? null,
            row.meter_number ?? null, row.sub_location ?? null],
         );
         imported++;
+        // 比照填報頁手動輸入：新增後立即算 CO₂e（滅火器等走 substance 係數，非年度電力係數，
+        // 不受 recomputeScope2ForFactoryYear 影響，需在此當場算）
+        if (row.activity_value != null) {
+          try {
+            const calc = await calcCo2e({
+              factory_id, emission_source_id: source.id, country_code: factoryCountryCode,
+              year, activity_value: row.activity_value, activity_unit: row.activity_unit,
+              scope: source.scope, is_biomass: source.is_biomass, source_code: row.source_code,
+              substance: source.substance,
+            });
+            if (calc) {
+              await query(
+                `UPDATE activity_records
+                 SET co2e_total = $1, co2e_location = $2, co2e_market = $3, co2e_biomass_co2 = $4,
+                     emission_factor_id = $5, co2_t = $6, ch4_t = $7, n2o_t = $8, hfc_t = $9,
+                     updated_at = NOW()
+                 WHERE id = $10`,
+                [calc.co2e_total, calc.co2e_location, calc.co2e_market, calc.co2e_biomass_co2,
+                 calc.emission_factor_id, calc.co2_t, calc.ch4_t, calc.n2o_t, calc.hfc_t,
+                 ins.rows[0].id],
+              );
+            }
+          } catch (err) {
+            console.error('[import 滅火器等 alwaysInsert co2e]', err);
+          }
+        }
         continue;
       }
 

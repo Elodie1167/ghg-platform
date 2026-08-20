@@ -38,7 +38,7 @@ GWP: dict[str, float] = {
     # 其他
     "SF6":   25200.0,
     "FM200": 3220.0,
-    "CO2_extinguisher": 1.0,  # 滅火器 CO2，GWP = 1
+    "CO2": 1.0,  # 滅火器-CO2（1-4C-1），es.substance 存的是 'CO2' 不是 'CO2_extinguisher'
 }
 
 # 單位換算（→ 標準單位）

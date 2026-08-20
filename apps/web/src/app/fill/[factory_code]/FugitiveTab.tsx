@@ -512,7 +512,10 @@ function ExtinguisherSection({
   }
 
   const totalKg = rows.reduce((s, r) => {
-    return s + (parseFloat(r.new_count) + parseFloat(r.refill_count) || 0) * (parseFloat(r.kg_per_bottle) || 0);
+    const newC = parseFloat(r.new_count) || 0;
+    const refillC = parseFloat(r.refill_count) || 0;
+    const kgPerB = parseFloat(r.kg_per_bottle) || 0;
+    return s + (newC + refillC) * kgPerB;
   }, 0);
   const totalCo2e = rows.reduce((s, r) => s + (r.co2e_total ?? 0), 0);
 

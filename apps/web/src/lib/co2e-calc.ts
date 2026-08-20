@@ -24,7 +24,7 @@ const GWP_N2O = 273.0;
 const GWP_SUBSTANCE: Record<string, number> = {
   R134a: 1530, R507: 3985, R22: 1960, R32: 771,
   R407C: 1774, R410A: 2088, SF6: 25200, FM200: 3220,
-  CO2_extinguisher: 1.0,
+  CO2: 1.0, // 滅火器-CO2（1-4C-1），es.substance 存的是 'CO2' 不是 'CO2_extinguisher'
 };
 const UNIT_CONV: Record<string, number> = {
   MWh: 1000, GWh: 1e6, KL: 1000, m3: 1000, tonne: 1000, ton: 1000,
