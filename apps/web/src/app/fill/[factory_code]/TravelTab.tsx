@@ -97,7 +97,7 @@ function TravelSummary({ sources, existingRecords }: { sources: EmissionSource[]
           <tr style={{ backgroundColor: HEADER_BG }} className="text-white">
             <th className="whitespace-nowrap px-3 py-2 text-left">交通工具</th>
             <th className="whitespace-nowrap px-3 py-2 text-right">人數（趟次）</th>
-            <th className="whitespace-nowrap px-3 py-2 text-right">PKM（人公里）</th>
+            <th className="whitespace-nowrap px-3 py-2 text-right" title="PKM = 距離 × 人數（人次大於1時會比下方各筆「距離加總」大，是正常加權結果）">PKM（人公里）</th>
             <th className="whitespace-nowrap px-3 py-2 text-right">CO₂e (t)</th>
           </tr>
         </thead>
@@ -289,6 +289,13 @@ function TravelSection({
 
   const totalAct = rows.reduce((s, r) => s + (parseFloat(r.activity_value) || 0), 0);
   const totalCo2e = rows.reduce((s, r) => s + (r.co2e_total ?? 0), 0);
+  // PKM（人公里）＝距離×人數，人次>1 時會比下面「距離加總」大——兩者本來就是不同東西，
+  // 不是算錯。與上方彙總表的 PKM 對得起來，供互相核對。
+  const totalPkm = rows.reduce((s, r) => {
+    const headcount = parseFloat(r.meter_number) || 1;
+    const tripFactor = r.is_round_trip ? 2 : 1;
+    return s + (parseFloat(r.activity_value) || 0) * tripFactor * headcount;
+  }, 0);
 
   return (
     <div className="mb-8">
@@ -442,7 +449,16 @@ function TravelSection({
             </tbody>
             <tfoot>
               <tr style={{ backgroundColor: '#f0fdf4' }} className="font-semibold text-sm">
-                <td colSpan={isManualMode ? 4 : 5} className="px-3 py-2 text-gray-700">合計</td>
+                <td colSpan={isManualMode ? 4 : 5} className="px-3 py-2 text-gray-700">
+                  合計
+                  {!isManualMode && (
+                    <span
+                      className="ml-2 font-normal text-xs text-gray-500"
+                      title="PKM(人公里)＝距離×人數，人次大於1的紀錄會讓PKM比左邊的距離加總大，這是正常的加權結果，不是算錯">
+                      ｜PKM {totalPkm.toLocaleString(undefined, { maximumFractionDigits: 1 })} 人公里
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right font-mono text-gray-700">
                   {isManualMode
                     ? '—'
