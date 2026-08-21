@@ -37,3 +37,6 @@ Thumbs.db
 
 # 上游運輸佐證檔案（存在本機磁碟，不進版控，見 apps/web/data/transport-evidence）
 apps/web/data/transport-evidence/
+
+# 商務旅行機場距離佐證檔案（存在本機磁碟，不進版控）
+apps/web/data/airport-distance-evidence/

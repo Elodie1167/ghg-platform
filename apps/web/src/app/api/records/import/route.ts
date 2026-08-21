@@ -7,6 +7,7 @@ import { clearReviewStatus } from '@/lib/review-reset';
 import { snapshotRecordBeforeOverwrite, snapshotLineItemsBeforeDelete } from '@/lib/import-history';
 import { isFrozen, FROZEN_MESSAGE } from '@/lib/freeze-guard';
 import { getCurrentUser } from '@/lib/session';
+import { lookupRouteDistance } from '@/lib/airport-distance';
 
 // ─────────────────────────────────────────────────────────────────
 // 型別定義
@@ -194,8 +195,11 @@ function parseBusinessTravelSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
     const distance1Km = toNum(cellVal(sheet, r, 9)); // col J 距離1(km)
     const distance2Km = toNum(cellVal(sheet, r, 10)); // col K 距離2(km，轉機/轉車第二段)
     const leg1 = distance1Nm !== null ? distance1Nm * NM_TO_KM : distance1Km;
-    if (leg1 === null || leg1 <= 0) continue; // 缺第一段距離無法計算，略過該列
-    const km = leg1 + (distance2Km ?? 0);
+    // Excel 沒填距離時不再整列略過：改成距離留 null 照樣建立這筆紀錄（機場代碼、人數、
+    // 日期等其他欄位都還是有效資料，不該因為缺一個距離就整筆丟掉）。之後 enrichTravelDistances()
+    // 會先試著用出發地/中轉站/目的地的機場代碼查 airport_distance 資料庫；查不到就留給
+    // 使用者在填報頁「商務旅行」分頁補值，見 TravelTab.tsx 的缺距離提示。
+    const km = leg1 !== null && leg1 > 0 ? leg1 + (distance2Km ?? 0) : null;
 
     const routeParts = [origin, transit, destination].filter((p): p is string => !!p);
     rows.push({
@@ -212,6 +216,23 @@ function parseBusinessTravelSheet(sheet: XLSX.WorkSheet): ParsedRow[] {
     });
   }
   return rows;
+}
+
+/**
+ * Excel 沒填距離的商務旅行列，試著用「出發地→[中轉站→]目的地」的機場代碼查
+ * airport_distance 資料庫補上；查不到就維持 activity_value=null，留給使用者在
+ * 填報頁「商務旅行」分頁看到缺距離提示後手動補值（見 TravelTab.tsx）。
+ * parseWorkbook() 本身刻意維持同步（其他 sheet 解析都不查 DB），這段查詢在
+ * parseWorkbook() 執行完之後單獨跑一次，只挑商務旅行且缺距離的列處理。
+ */
+async function enrichTravelDistances(rows: ParsedRow[]): Promise<void> {
+  for (const row of rows) {
+    if (!row.source_code.startsWith('3-6-') || row.activity_value != null || !row.sub_location) continue;
+    const codes = row.sub_location.split('→').map((s) => s.trim()).filter(Boolean);
+    if (codes.length < 2) continue;
+    const km = await lookupRouteDistance(codes);
+    if (km != null) row.activity_value = km;
+  }
 }
 
 /**
@@ -740,6 +761,9 @@ export async function POST(req: NextRequest) {
 
   // 解析所有 sheets（純函式，preview / commit 共用，不寫入任何東西）
   const parsedRows = parseWorkbook(wb);
+  // 商務旅行缺距離的列，試著查機場距離資料庫補上（preview 階段就做，讓使用者在
+  // 確認匯入前就能看到哪些列查得到、哪些還是缺）
+  await enrichTravelDistances(parsedRows);
 
   // 查詢 emission_sources source_code → id 映射
   const sourcesResult = await query(

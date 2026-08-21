@@ -130,6 +130,56 @@ function TravelSummary({ sources, existingRecords }: { sources: EmissionSource[]
   );
 }
 
+/**
+ * 匯入時查不到機場距離、activity_value 留 null 的紀錄，在填報頁用這個小表單就地補值：
+ * 填距離＋（可選）上傳佐證截圖，一次送出。兩站直飛的話系統會把這條航線寫回機場距離
+ * 資料庫供以後查詢；有中轉站的多段行程只補這一筆，不寫回資料庫（見後端註解）。
+ */
+function MissingDistanceFix({ recordId, onResolved }: { recordId: string; onResolved: (km: number, co2e: number | null) => void }) {
+  const [km, setKm] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle');
+  const [warning, setWarning] = useState<string | null>(null);
+
+  async function submit() {
+    const num = parseFloat(km);
+    if (isNaN(num) || num <= 0) { setStatus('error'); return; }
+    setStatus('saving');
+    setWarning(null);
+    try {
+      const fd = new FormData();
+      fd.append('distance_km', String(num));
+      if (file) fd.append('evidence', file);
+      const res = await fetch(`/api/records/${recordId}/resolve-travel-distance`, { method: 'POST', body: fd });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? '補值失敗');
+      if (json.warning) setWarning(json.warning);
+      onResolved(num, json?.data?.co2e_total ?? null);
+    } catch {
+      setStatus('error');
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1 bg-amber-50 border border-amber-300 rounded p-1.5">
+      <div className="text-[11px] text-amber-700 font-medium">⚠️ 缺距離，匯入時查不到機場距離</div>
+      <div className="flex items-center gap-1">
+        <input type="number" min="0" step="any" placeholder="補上單程 km"
+          value={km} onChange={(e) => setKm(e.target.value)}
+          className="w-24 border border-gray-300 rounded px-1.5 py-1 text-right text-xs focus:outline-none focus:ring-2 focus:ring-amber-500" />
+        <input type="file" accept="image/*,.pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          title="佐證截圖（選填）" className="text-[10px] w-24" />
+        <button onClick={submit} disabled={status === 'saving'}
+          className="px-2 py-1 rounded bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 disabled:opacity-50">
+          {status === 'saving' ? '送出中…' : '送出'}
+        </button>
+      </div>
+      {status === 'error' && <div className="text-[11px] text-red-600">請填正確的距離（km）</div>}
+      {warning && <div className="text-[11px] text-amber-700">{warning}</div>}
+    </div>
+  );
+}
+
 function TravelSection({
   source, factory, year, records, onReviewToggle, isManualMode,
 }: {
@@ -394,11 +444,22 @@ function TravelSection({
                   )}
                   {!isManualMode && (
                     <td className="px-2 py-1.5">
-                      <input type="number" min="0" step="any"
-                        placeholder="單程 km"
-                        value={row.activity_value}
-                        onChange={(e) => updateRow(row.tempKey, 'activity_value', e.target.value)}
-                        className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                      {row.id && row.activity_value === '' && row.sub_location !== '' ? (
+                        <MissingDistanceFix
+                          recordId={row.id}
+                          onResolved={(km, co2e) => {
+                            setRows((p) => p.map((r) => r.tempKey === row.tempKey
+                              ? { ...r, activity_value: String(km), co2e_total: co2e }
+                              : r));
+                          }}
+                        />
+                      ) : (
+                        <input type="number" min="0" step="any"
+                          placeholder="單程 km"
+                          value={row.activity_value}
+                          onChange={(e) => updateRow(row.tempKey, 'activity_value', e.target.value)}
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                      )}
                     </td>
                   )}
                   {!isManualMode && (
