@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { recalcPendingForSource } from '@/lib/recalc';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -82,6 +83,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     values,
   );
   if (result.rowCount === 0) return NextResponse.json({ data: null, error: '係數不存在' }, { status: 404 });
+
+  // 只補算目前還是 NULL（從沒算出過）的舊紀錄，不動已經有數字的（改係數要讓已算出的舊資料
+  // 跟著變，仍照 CLAUDE.md 規則走「先 NULL 再重算」手動流程，這裡不是要取代那個流程）。
+  recalcPendingForSource(result.rows[0].emission_source_id).catch((err) =>
+    console.error('[admin/factors PATCH] 自動補算失敗:', err),
+  );
+
   return NextResponse.json({ data: result.rows[0], error: null });
 }
 

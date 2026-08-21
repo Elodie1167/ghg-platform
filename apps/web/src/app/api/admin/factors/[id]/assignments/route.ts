@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { recalcPendingForSource } from '@/lib/recalc';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -32,6 +33,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     await query(
       `INSERT INTO emission_factor_assignments (emission_factor_id, factory_id) VALUES ${placeholders}`,
       [id, ...factory_ids],
+    );
+  }
+
+  // 指定廠別後自動補算該廠過去「已填資料但因當時還沒有這顆係數而算不出碳排」的舊紀錄，
+  // 不用等人手動想到要點「重新計算」——這正是這次盤點發現好幾個排放源反覆出現
+  // 「填了卻沒算出碳排」的共同根因：紀錄比係數指定早，calcCo2e 當下回傳 null 就卡住。
+  const factorSourceRow = await query(
+    'SELECT emission_source_id FROM emission_factors WHERE id = $1',
+    [id],
+  );
+  const emissionSourceId = factorSourceRow.rows[0]?.emission_source_id;
+  if (emissionSourceId) {
+    recalcPendingForSource(emissionSourceId).catch((err) =>
+      console.error('[admin/factors assignments] 自動補算失敗:', err),
     );
   }
 

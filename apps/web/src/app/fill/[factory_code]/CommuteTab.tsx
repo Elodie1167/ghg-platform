@@ -134,7 +134,19 @@ function CommuteTable({
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error();
-      const saved = { ...rowsRef.current, [srcId]: { ...rowsRef.current[srcId], status: 'saved' as SaveStatus } };
+      const json = await res.json();
+      // 首次儲存是用 POST 新增，回應裡的 id 沒有寫回 row.id，之後查核按鈕的
+      // disabled={!row?.id} 永遠為 true，勾不了查核，要重新整理頁面才會恢復——
+      // 這裡把回應的 id 補回去，不需要重新整理。
+      const saved = {
+        ...rowsRef.current,
+        [srcId]: {
+          ...rowsRef.current[srcId],
+          id: json?.data?.id ?? rowsRef.current[srcId].id,
+          co2e: json?.data?.co2e_total ?? rowsRef.current[srcId].co2e,
+          status: 'saved' as SaveStatus,
+        },
+      };
       rowsRef.current = saved;
       setRows(saved);
       setTimeout(() => {
