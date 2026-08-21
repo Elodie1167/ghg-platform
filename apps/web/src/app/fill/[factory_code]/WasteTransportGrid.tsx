@@ -194,6 +194,23 @@ export default function WasteTransportGrid({
     }
   }
 
+  /** 對某流「已存在記錄且已查核」的月份做全選取消查核 */
+  async function bulkUnreview(stream: 'general' | 'textile') {
+    const targets = MONTHS.filter((m) => {
+      if (selected[stream].size > 0 && !selected[stream].has(m)) return false;
+      const r = recOf(stream, m);
+      return r && r.is_reviewed;
+    });
+    if (targets.length === 0) return;
+    setBulkBusy(stream);
+    try {
+      for (const m of targets) await toggleReview(stream, m);
+      setSelected((s) => ({ ...s, [stream]: new Set() }));
+    } finally {
+      setBulkBusy(null);
+    }
+  }
+
   /** 對某流「已存在記錄且未查核」的月份做全選刪除（已查核者跳過，須先取消查核） */
   async function bulkDelete(stream: 'general' | 'textile') {
     const candidates = MONTHS.filter((m) => selected[stream].size === 0 || selected[stream].has(m));
@@ -291,6 +308,10 @@ export default function WasteTransportGrid({
               <button onClick={() => bulkReview(st.key)} disabled={recordMonths.length === 0 || bulkBusy === st.key}
                 className="px-3 py-1 rounded text-xs font-medium text-white disabled:opacity-40" style={{ backgroundColor: HEADER_BG }}>
                 全選查核
+              </button>
+              <button onClick={() => bulkUnreview(st.key)} disabled={recordMonths.length === 0 || bulkBusy === st.key}
+                className="px-3 py-1 rounded text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+                全選取消查核
               </button>
               <button onClick={() => bulkDelete(st.key)} disabled={recordMonths.length === 0 || bulkBusy === st.key}
                 className="px-3 py-1 rounded text-xs font-medium border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-40">

@@ -224,6 +224,12 @@ function MonthlySection({
     setSelected(new Set());
   }
 
+  async function bulkUnreview() {
+    const targets = targetMonths().filter((m) => !!recordIds[m] && (reviewed[m] ?? false));
+    await Promise.all(targets.map((m) => toggleReview(m)));
+    setSelected(new Set());
+  }
+
   async function bulkClear() {
     const candidates = targetMonths();
     const targets = candidates.filter((m) => !!recordIds[m] && !(reviewed[m] ?? false));
@@ -391,6 +397,10 @@ function MonthlySection({
               className="px-3 py-1.5 rounded-lg border border-green-700 text-green-700 text-xs font-medium transition hover:bg-green-50">
               全選查核
             </button>
+            <button onClick={bulkUnreview}
+              className="px-3 py-1.5 rounded-lg border border-gray-400 text-gray-500 text-xs font-medium transition hover:bg-gray-50">
+              全選取消查核
+            </button>
             <button onClick={bulkClear}
               className="px-3 py-1.5 rounded-lg border border-red-400 text-red-500 text-xs font-medium transition hover:bg-red-50">
               全選清空
@@ -551,6 +561,10 @@ function MonthlySection({
           <button onClick={bulkReview}
             className="px-3 py-1.5 rounded-lg border border-green-700 text-green-700 text-xs font-medium transition hover:bg-green-50">
             全選查核
+          </button>
+          <button onClick={bulkUnreview}
+            className="px-3 py-1.5 rounded-lg border border-gray-400 text-gray-500 text-xs font-medium transition hover:bg-gray-50">
+            全選取消查核
           </button>
           <button onClick={bulkClear}
             className="px-3 py-1.5 rounded-lg border border-red-400 text-red-500 text-xs font-medium transition hover:bg-red-50">
@@ -716,6 +730,12 @@ function EventSection({
     setSelected(new Set());
   }
 
+  async function bulkUnreview() {
+    const targets = targetRows().filter((r) => r.id && r.is_reviewed);
+    await Promise.all(targets.map((r) => toggleReview(r.tempKey)));
+    setSelected(new Set());
+  }
+
   async function bulkDelete() {
     const candidates = targetRows();
     const targets = candidates.filter((r) => r.id && !r.is_reviewed);
@@ -839,6 +859,11 @@ function EventSection({
             disabled={rows.length === 0}
             className="px-3 py-1.5 rounded-lg border border-green-700 text-green-700 text-xs font-medium transition hover:bg-green-50 disabled:opacity-30 disabled:cursor-not-allowed">
             全選查核
+          </button>
+          <button onClick={bulkUnreview}
+            disabled={rows.length === 0}
+            className="px-3 py-1.5 rounded-lg border border-gray-400 text-gray-500 text-xs font-medium transition hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">
+            全選取消查核
           </button>
           <button onClick={bulkDelete}
             disabled={rows.length === 0}

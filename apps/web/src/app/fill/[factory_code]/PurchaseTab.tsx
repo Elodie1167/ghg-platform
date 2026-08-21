@@ -205,6 +205,12 @@ function WaterMonthly({
     setSelected(new Set());
   }
 
+  async function bulkUnreview() {
+    const targets = targetMonths().filter((m) => !!recordIds[m] && (reviewed[m] ?? false));
+    await Promise.all(targets.map((m) => toggleReview(m)));
+    setSelected(new Set());
+  }
+
   async function bulkClear() {
     const candidates = targetMonths();
     const targets = candidates.filter((m) => !!recordIds[m] && !(reviewed[m] ?? false));
@@ -297,6 +303,10 @@ function WaterMonthly({
           <button onClick={bulkReview}
             className="px-3 py-1.5 rounded-lg border border-green-700 text-green-700 text-xs font-medium transition hover:bg-green-50">
             全選查核
+          </button>
+          <button onClick={bulkUnreview}
+            className="px-3 py-1.5 rounded-lg border border-gray-400 text-gray-500 text-xs font-medium transition hover:bg-gray-50">
+            全選取消查核
           </button>
           <button onClick={bulkClear}
             className="px-3 py-1.5 rounded-lg border border-red-400 text-red-500 text-xs font-medium transition hover:bg-red-50">

@@ -431,6 +431,12 @@ function ExtinguisherSection({
     setSelected(new Set());
   }
 
+  async function bulkUnreview() {
+    const targets = targetRows().filter((r) => r.id && r.is_reviewed);
+    await Promise.all(targets.map((r) => toggleReview(r.tempKey)));
+    setSelected(new Set());
+  }
+
   async function bulkDelete() {
     const candidates = targetRows();
     const targets = candidates.filter((r) => r.id && !r.is_reviewed);
@@ -532,6 +538,11 @@ function ExtinguisherSection({
             disabled={rows.length === 0}
             className="px-3 py-1.5 rounded-lg border border-green-700 text-green-700 text-xs font-medium transition hover:bg-green-50 disabled:opacity-30 disabled:cursor-not-allowed">
             全選查核
+          </button>
+          <button onClick={bulkUnreview}
+            disabled={rows.length === 0}
+            className="px-3 py-1.5 rounded-lg border border-gray-400 text-gray-500 text-xs font-medium transition hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">
+            全選取消查核
           </button>
           <button onClick={bulkDelete}
             disabled={rows.length === 0}
@@ -721,6 +732,12 @@ function EventFugitiveSection({
     setSelected(new Set());
   }
 
+  async function bulkUnreview() {
+    const targets = targetRows().filter((r) => r.id && r.is_reviewed);
+    await Promise.all(targets.map((r) => toggleReview(r.tempKey)));
+    setSelected(new Set());
+  }
+
   async function bulkDelete() {
     const candidates = targetRows();
     const targets = candidates.filter((r) => r.id && !r.is_reviewed);
@@ -828,6 +845,11 @@ function EventFugitiveSection({
             disabled={rows.length === 0}
             className="px-3 py-1.5 rounded-lg border border-green-700 text-green-700 text-xs font-medium transition hover:bg-green-50 disabled:opacity-30 disabled:cursor-not-allowed">
             全選查核
+          </button>
+          <button onClick={bulkUnreview}
+            disabled={rows.length === 0}
+            className="px-3 py-1.5 rounded-lg border border-gray-400 text-gray-500 text-xs font-medium transition hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">
+            全選取消查核
           </button>
           <button onClick={bulkDelete}
             disabled={rows.length === 0}

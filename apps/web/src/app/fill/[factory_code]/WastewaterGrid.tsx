@@ -140,6 +140,23 @@ export default function WastewaterGrid({
     }
   }
 
+  /** 全選取消查核：對「已存在記錄且已查核」的月份（若有勾選則限於勾選範圍）取消查核 */
+  async function bulkUnreviewAll() {
+    const targets = MONTHS.filter((m) => {
+      if (selected.size > 0 && !selected.has(m)) return false;
+      const r = recOf(m);
+      return r && r.is_reviewed;
+    });
+    if (targets.length === 0) return;
+    setBulkBusy(true);
+    try {
+      for (const m of targets) await toggleReview(m);
+      setSelected(new Set());
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   /** 全選刪除：跳過已查核的月份（須先取消查核才能刪） */
   async function bulkDeleteAll() {
     const candidates = MONTHS.filter((m) => selected.size === 0 || selected.has(m));
@@ -220,6 +237,10 @@ export default function WastewaterGrid({
           className={`${isMeasured ? 'ml-auto' : ''} px-3 py-1 rounded text-xs font-medium text-white disabled:opacity-40`}
           style={{ backgroundColor: HEADER_BG }}>
           全選查核
+        </button>
+        <button onClick={bulkUnreviewAll} disabled={bulkBusy}
+          className="px-3 py-1 rounded text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+          全選取消查核
         </button>
         <button onClick={bulkDeleteAll} disabled={bulkBusy}
           className="px-3 py-1 rounded text-xs font-medium border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-40">

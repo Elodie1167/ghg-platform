@@ -192,6 +192,22 @@ export default function WastewaterTransportGrid({
     }
   }
 
+  async function bulkUnreviewAll() {
+    const targets = MONTHS.filter((m) => {
+      if (selected.size > 0 && !selected.has(m)) return false;
+      const r = recOf(m);
+      return r && r.is_reviewed;
+    });
+    if (targets.length === 0) return;
+    setBulkBusy(true);
+    try {
+      for (const m of targets) await toggleReview(m);
+      setSelected(new Set());
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   async function bulkDeleteAll() {
     const candidates = MONTHS.filter((m) => selected.size === 0 || selected.has(m));
     const targets = candidates.filter((m) => {
@@ -246,6 +262,10 @@ export default function WastewaterTransportGrid({
           <button onClick={bulkReviewAll} disabled={recordMonths.length === 0 || bulkBusy}
             className="px-3 py-1.5 rounded-lg border border-green-700 text-green-700 text-xs font-medium transition hover:bg-green-50 disabled:opacity-30 disabled:cursor-not-allowed">
             全選查核
+          </button>
+          <button onClick={bulkUnreviewAll} disabled={recordMonths.length === 0 || bulkBusy}
+            className="px-3 py-1.5 rounded-lg border border-gray-400 text-gray-500 text-xs font-medium transition hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">
+            全選取消查核
           </button>
           <button onClick={bulkDeleteAll} disabled={recordMonths.length === 0 || bulkBusy}
             className="px-3 py-1.5 rounded-lg border border-red-400 text-red-500 text-xs font-medium transition hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed">
