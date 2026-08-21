@@ -1,10 +1,17 @@
 import { query } from '@/lib/db';
 
-/** 查單一航段距離（km），大小寫不拘；查不到回傳 null。 */
+/**
+ * 查單一航段距離（km），大小寫不拘；查不到回傳 null。
+ * 飛行距離兩個方向理論上一樣遠，資料庫裡常常只存了其中一個方向（例如只存了 SGN→CGK，
+ * 沒有反過來的 CGK→SGN），正查沒有時會再查反方向，避免同一個機場對還要分別存兩筆
+ * 才查得到——之前沒做這層 fallback，導致「CGK→SGN→CGK」這種去回程用不同方向表示的
+ * 航段，即使資料庫裡其實已經有 SGN→CGK，還是會被判定成缺距離。
+ */
 export async function lookupAirportDistance(fromCode: string, toCode: string): Promise<number | null> {
   const r = await query(
     `SELECT distance_km::float AS km FROM airport_distance
-     WHERE UPPER(from_code) = UPPER($1) AND UPPER(to_code) = UPPER($2)
+     WHERE (UPPER(from_code) = UPPER($1) AND UPPER(to_code) = UPPER($2))
+        OR (UPPER(from_code) = UPPER($2) AND UPPER(to_code) = UPPER($1))
      LIMIT 1`,
     [fromCode.trim(), toCode.trim()],
   );
