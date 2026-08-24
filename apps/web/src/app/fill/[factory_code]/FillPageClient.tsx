@@ -39,6 +39,12 @@ const SOURCE_GROUPS = [
 
 type SourceGroupTabId = typeof SOURCE_GROUPS[number]['tabId'];
 
+// 碳排彙總表點列跳轉用：依排放源代碼找回它所屬的填報分頁
+function tabIdForSourceCode(sourceCode: string): SourceGroupTabId | null {
+  const g = SOURCE_GROUPS.find((g) => sourceCode.startsWith(g.prefix));
+  return g ? g.tabId : null;
+}
+
 // 碳排彙總分頁（SummaryTab）分類用：依 GHG Protocol 類別編號排序，不用資料庫
 // emission_sources.category 欄位（新舊排放源分別存過中英文，不統一）
 const CAT_ORDER: { prefix: string; label: string }[] = [
@@ -2126,6 +2132,26 @@ export default function FillPageClient({
       if (r.co2_t != null) row.annual_co2_t = (row.annual_co2_t ?? 0) + Number(r.co2_t);
       if (r.ch4_t != null) row.annual_ch4_t = (row.annual_ch4_t ?? 0) + Number(r.ch4_t);
       if (r.n2o_t != null) row.annual_n2o_t = (row.annual_n2o_t ?? 0) + Number(r.n2o_t);
+    }
+
+    // 3-3-A 電力 T&D 損失：EnergyTab 是唯讀即時預覽，從不寫入 activity_records
+    // （見 EnergyTab 註解），這裡的彙總是純前端算 reviewedRecords，所以看不到它。
+    // 用同一套公式（已查核市電 2-1-A 用電量 × T&D 係數 ÷ 1000）補一列進來，
+    // 跟 /summary 彙整表（lib/summary-data.ts）做法一致，不落地存資料庫。
+    const tdSource = sourceById[Object.keys(sourceById).find((id) => sourceById[id].source_code === '3-3-A') ?? ''];
+    if (tdSource && elecSource) {
+      const reviewedKwh = reviewedRecords
+        .filter((r) => r.emission_source_id === elecSource.id && r.activity_value != null && Number(r.activity_value) > 0)
+        .reduce((s, r) => s + Number(r.activity_value), 0);
+      const tdFactor = assignedFactors.find((f) => f.source_code === '3-3-A')?.scope3_factor ?? null;
+      const tdCo2e = tdFactor != null && reviewedKwh > 0 ? reviewedKwh * Number(tdFactor) / 1000 : 0;
+      if (tdCo2e > 0) {
+        sourceMap.set(tdSource.id, {
+          source: tdSource, annual_co2e: tdCo2e,
+          annual_co2_t: null, annual_ch4_t: null, annual_n2o_t: null,
+          hasData: true, hasPending: false,
+        });
+      }
     }
 
     const activeRows = Array.from(sourceMap.values()).filter((r) => r.hasData);
