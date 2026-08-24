@@ -336,6 +336,39 @@ function TravelSection({
     }
   }
 
+  /**
+   * 補上一筆缺距離的紀錄後，同一路線（sub_location 完全相同）、目前也缺距離的
+   * 其他紀錄一起補上同一個距離，不用使用者逐筆手動填。
+   *
+   * 為什麼不能靠 airport_distance 查詢重新偵測：有中轉站的多段行程
+   * （如 SRG→TPE→SRG）依設計不會寫回 airport_distance（那是「這趟」的總距離，
+   * 不是單一航段的客觀距離，見 resolve-travel-distance route.ts 註解），
+   * 所以只能在同一批填報資料裡直接比對路線字串。
+   */
+  async function resolveMissingDistance(resolvedTempKey: string, km: number, co2e: number | null) {
+    const resolvedRow = rowsRef.current.find((r) => r.tempKey === resolvedTempKey);
+    setRows((p) => p.map((r) => r.tempKey === resolvedTempKey ? { ...r, activity_value: String(km), co2e_total: co2e } : r));
+    if (!resolvedRow) return;
+
+    const siblings = rowsRef.current.filter((r) =>
+      r.tempKey !== resolvedTempKey && r.id && r.activity_value === '' && r.sub_location === resolvedRow.sub_location
+    );
+    await Promise.all(siblings.map(async (sib) => {
+      try {
+        const fd = new FormData();
+        fd.append('distance_km', String(km));
+        const res = await fetch(`/api/records/${sib.id}/resolve-travel-distance`, { method: 'POST', body: fd });
+        if (!res.ok) return;
+        const json = await res.json();
+        setRows((p) => p.map((r) => r.tempKey === sib.tempKey
+          ? { ...r, activity_value: String(km), co2e_total: json?.data?.co2e_total ?? null }
+          : r));
+      } catch {
+        // 個別失敗不影響其他筆，該筆會維持缺距離提示，使用者仍能單獨手動補
+      }
+    }));
+  }
+
   async function deleteRow(tempKey: string) {
     const row = rowsRef.current.find((r) => r.tempKey === tempKey);
     if (!row) return;
@@ -458,11 +491,7 @@ function TravelSection({
                       {row.id && row.activity_value === '' && row.sub_location !== '' ? (
                         <MissingDistanceFix
                           recordId={row.id}
-                          onResolved={(km, co2e) => {
-                            setRows((p) => p.map((r) => r.tempKey === row.tempKey
-                              ? { ...r, activity_value: String(km), co2e_total: co2e }
-                              : r));
-                          }}
+                          onResolved={(km, co2e) => resolveMissingDistance(row.tempKey, km, co2e)}
                         />
                       ) : (
                         <input type="number" min="0" step="any"
