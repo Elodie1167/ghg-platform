@@ -2544,6 +2544,7 @@ export default function FillPageClient({
 
   return (
     <div className="min-h-screen bg-gray-50" style={{ fontFamily: 'system-ui, sans-serif' }}>
+      <div className="sticky top-0 z-20">
       <header style={{ backgroundColor: '#0C3D2E' }} className="text-white shadow-lg">
         <div className="max-w-[1920px] mx-auto px-6 md:px-10 py-3">
           <div className="flex items-center justify-between gap-4">
@@ -2611,7 +2612,7 @@ export default function FillPageClient({
         </div>
       )}
 
-      <nav className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
+      <nav className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-[1920px] mx-auto px-6 md:px-10">
           <div className="flex gap-0.5 overflow-x-auto py-1">
             {TABS.map((tab) => {
@@ -2634,6 +2635,7 @@ export default function FillPageClient({
           </div>
         </div>
       </nav>
+      </div>
 
       {/* UpstreamTab always mounted; CSS hides it when not active to preserve state */}
       <div style={{ display: activeTab === 'upstream' ? undefined : 'none' }}
