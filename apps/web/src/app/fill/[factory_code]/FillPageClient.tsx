@@ -2296,24 +2296,52 @@ export default function FillPageClient({
                           {sg.label}
                         </td>
                       </tr>
-                      {sg.cats.flatMap(({ cat, rows }) => [
-                        <tr key={`cat-${sg.scope}-${cat}`} className="bg-gray-50">
-                          <td className="sticky left-0 bg-gray-50 px-3 py-1.5 text-gray-500 pl-6">{cat}</td>
-                          <td colSpan={5} />
-                        </tr>,
-                        ...rows.map((row, idx) => (
-                          <tr key={row.source.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                            <td className="sticky left-0 bg-inherit px-3 py-2 font-mono text-gray-500 pl-8 text-sm">{row.source.source_code}</td>
-                            <td className="px-3 py-2 text-gray-700 truncate" title={row.source.name_zh}>{row.source.name_zh}</td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-600">{fmtG(row.annual_co2_t)}</td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-600">{fmtG(row.annual_ch4_t)}</td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-600">{fmtG(row.annual_n2o_t)}</td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold text-gray-800">
-                              {row.hasPending && row.annual_co2e === 0 ? <span className="text-amber-500 font-medium">待計算</span> : fmtN(row.annual_co2e)}
+                      {sg.cats.flatMap(({ cat, rows }) => {
+                        const catCo2e = rows.reduce((s, r) => s + r.annual_co2e, 0);
+                        const catCo2 = rows.reduce<number | null>((s, r) => r.annual_co2_t != null ? (s ?? 0) + r.annual_co2_t : s, null);
+                        const catCh4 = rows.reduce<number | null>((s, r) => r.annual_ch4_t != null ? (s ?? 0) + r.annual_ch4_t : s, null);
+                        const catN2o = rows.reduce<number | null>((s, r) => r.annual_n2o_t != null ? (s ?? 0) + r.annual_n2o_t : s, null);
+                        return [
+                          <tr key={`cat-${sg.scope}-${cat}`} className="bg-gray-50">
+                            <td className="sticky left-0 bg-gray-50 px-3 py-1.5 text-gray-500 pl-6">{cat}</td>
+                            <td colSpan={5} />
+                          </tr>,
+                          ...rows.map((row, idx) => {
+                            const tabId = tabIdForSourceCode(row.source.source_code);
+                            return (
+                              <tr key={row.source.id}
+                                onClick={() => {
+                                  if (!tabId) return;
+                                  setActiveTab(tabId);
+                                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                title={tabId ? '點擊回到此排放源的填報分頁' : undefined}
+                                className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'} ${
+                                  tabId ? 'cursor-pointer hover:bg-blue-100' : ''
+                                } transition-colors`}
+                              >
+                                <td className="sticky left-0 bg-inherit px-3 py-2 font-mono text-gray-500 pl-8 text-sm">{row.source.source_code}</td>
+                                <td className="px-3 py-2 text-gray-700 truncate" title={row.source.name_zh}>{row.source.name_zh}</td>
+                                <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-600">{fmtG(row.annual_co2_t)}</td>
+                                <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-600">{fmtG(row.annual_ch4_t)}</td>
+                                <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-600">{fmtG(row.annual_n2o_t)}</td>
+                                <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold text-gray-800">
+                                  {row.hasPending && row.annual_co2e === 0 ? <span className="text-amber-500 font-medium">待計算</span> : fmtN(row.annual_co2e)}
+                                </td>
+                              </tr>
+                            );
+                          }),
+                          <tr key={`catsub-${sg.scope}-${cat}`} className="bg-amber-50/60 border-t border-amber-100">
+                            <td colSpan={2} className="sticky left-0 bg-amber-50 px-3 py-1.5 text-amber-800 text-xs pl-8">
+                              {cat} 小計
                             </td>
-                          </tr>
-                        )),
-                      ])}
+                            <td className="px-3 py-1.5 text-right font-mono tabular-nums text-xs text-amber-800">{fmtG(catCo2)}</td>
+                            <td className="px-3 py-1.5 text-right font-mono tabular-nums text-xs text-amber-800">{fmtG(catCh4)}</td>
+                            <td className="px-3 py-1.5 text-right font-mono tabular-nums text-xs text-amber-800">{fmtG(catN2o)}</td>
+                            <td className="px-3 py-1.5 text-right font-mono tabular-nums text-xs font-semibold text-amber-900">{fmtN(catCo2e)}</td>
+                          </tr>,
+                        ];
+                      })}
                       <tr key={`stotal-${sg.scope}`} className="bg-gray-200 font-semibold">
                         <td colSpan={2} className="sticky left-0 bg-gray-200 px-3 py-2 text-gray-700 pl-4">
                           {sg.label} 小計
