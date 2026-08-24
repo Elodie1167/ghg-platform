@@ -2545,7 +2545,7 @@ export default function FillPageClient({
   return (
     <div className="min-h-screen bg-gray-50" style={{ fontFamily: 'system-ui, sans-serif' }}>
       <header style={{ backgroundColor: '#0C3D2E' }} className="text-white shadow-lg">
-        <div className="max-w-[1600px] mx-auto px-4 md:px-8 py-3">
+        <div className="max-w-[1920px] mx-auto px-6 md:px-10 py-3">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
               <a href="/" className="text-green-300 hover:text-white text-sm transition flex-shrink-0">
@@ -2612,7 +2612,7 @@ export default function FillPageClient({
       )}
 
       <nav className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4">
+        <div className="max-w-[1920px] mx-auto px-6 md:px-10">
           <div className="flex gap-0.5 overflow-x-auto py-1">
             {TABS.map((tab) => {
               const isActive = activeTab === tab.id;
@@ -2637,7 +2637,7 @@ export default function FillPageClient({
 
       {/* UpstreamTab always mounted; CSS hides it when not active to preserve state */}
       <div style={{ display: activeTab === 'upstream' ? undefined : 'none' }}
-        className="max-w-7xl mx-auto px-4 py-6">
+        className="max-w-[1920px] mx-auto px-6 md:px-10 py-6">
         <UpstreamTab factory={factory} year={year} emissionSources={emissionSources}
           selectedSourceIds={selectedSourceIds} existingRecords={enrichedRecords}
           setActiveTab={(t) => setActiveTab(t as TabId)}
@@ -2646,7 +2646,7 @@ export default function FillPageClient({
         {activeTab === 'upstream' && <FactorPanel />}
       </div>
 
-      <main className="max-w-[1600px] mx-auto px-4 md:px-8 py-6" style={{ display: activeTab === 'upstream' ? 'none' : undefined }}>
+      <main className="max-w-[1920px] mx-auto px-6 md:px-10 py-6" style={{ display: activeTab === 'upstream' ? 'none' : undefined }}>
         <TabContent />
         {activeTab !== 'basic' && activeTab !== 'summary' && <FactorPanel />}
       </main>

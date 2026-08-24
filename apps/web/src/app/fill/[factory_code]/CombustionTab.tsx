@@ -425,8 +425,8 @@ function MonthlySection({
                 <th className="whitespace-nowrap px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CH₄ (t)</th>
                 <th className="whitespace-nowrap px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>N₂O (t)</th>
                 <th className="whitespace-nowrap px-4 py-2 text-right w-28">CO₂e (t)</th>
-                <th className="whitespace-nowrap px-3 py-2 text-center w-16">明細</th>
-                <th className="whitespace-nowrap px-4 py-2 text-center w-10">查核</th>
+                <th className="whitespace-nowrap px-3 py-2 text-center w-20">明細</th>
+                <th className="whitespace-nowrap px-4 py-2 text-center w-16">查核</th>
               </tr>
             </thead>
             <tbody>
@@ -583,13 +583,13 @@ function MonthlySection({
                   onChange={toggleSelectAll} />
               </th>
               <th className="whitespace-nowrap px-4 py-2 text-left w-16">月份</th>
-              <th className="whitespace-nowrap px-4 py-2 text-right">重量 ({source.default_unit})</th>
+              <th className="whitespace-nowrap px-4 py-2 text-right w-40">重量 ({source.default_unit})</th>
               <th className="whitespace-nowrap px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CO₂ (t)</th>
               <th className="whitespace-nowrap px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>CH₄ (t)</th>
               <th className="whitespace-nowrap px-2 py-2 text-right w-20 text-gray-700" style={{ backgroundColor: '#fef9c3' }}>N₂O (t)</th>
               <th className="whitespace-nowrap px-4 py-2 text-right w-28">CO₂e (t)</th>
-              <th className="whitespace-nowrap px-3 py-2 text-center w-16">明細</th>
-              <th className="whitespace-nowrap px-4 py-2 text-center w-10">查核</th>
+              <th className="whitespace-nowrap px-3 py-2 text-center w-20">明細</th>
+              <th className="whitespace-nowrap px-4 py-2 text-center w-16">查核</th>
             </tr>
           </thead>
           <tbody>
