@@ -163,7 +163,7 @@ export default function SetupWizard({ defaultYear, defaultFactorYear, countries,
   return (
     <div className="min-h-screen bg-gray-50">
       <header style={{ backgroundColor: HEADER_BG }} className="text-white shadow-lg">
-        <div className="max-w-[1600px] mx-auto px-6 md:px-10 py-4">
+        <div className="max-w-[1920px] mx-auto px-6 md:px-10 py-4">
           <a href="/" className="text-green-300 text-xs hover:underline">← 返回首頁</a>
           <h1 className="text-xl font-bold mt-0.5">減碳績效追蹤</h1>
           <p className="text-green-300 text-sm">S1/S2（地域·市場）· 減碳 KPI · 綠電占比 · 2020–2050 減碳路徑</p>

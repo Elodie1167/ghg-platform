@@ -147,7 +147,7 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
   return (
     <div className="min-h-screen bg-gray-50">
       <div style={{ backgroundColor: HEADER_BG }} className="text-white px-6 py-4">
-        <div className="max-w-[1400px] mx-auto flex items-center justify-between">
+        <div className="max-w-[1920px] mx-auto px-6 md:px-10 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold">排放係數管理</h1>
             <p className="text-xs text-green-200 mt-0.5">點擊「細部設定」進入各排放源的係數詳細設定與廠區指定</p>
@@ -156,7 +156,7 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
         </div>
       </div>
 
-      <div className="max-w-[1400px] mx-auto px-4 py-6">
+      <div className="max-w-[1920px] mx-auto px-6 md:px-10 py-6">
         {/* 篩選列 */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">

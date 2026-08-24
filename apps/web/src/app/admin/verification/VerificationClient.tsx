@@ -96,7 +96,7 @@ export default function VerificationClient({
   }
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
+    <div className="p-6 max-w-[1920px] mx-auto">
       <h1 className="text-xl font-semibold text-gray-800">第三方查證封存</h1>
       <p className="text-sm text-gray-500 mt-1">
         以廠別 × 年度為單位。封存後該年度主表不可再寫入，對外揭露一律讀封存快照。

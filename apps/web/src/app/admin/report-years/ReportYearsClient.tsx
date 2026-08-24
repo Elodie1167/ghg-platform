@@ -73,7 +73,7 @@ export default function ReportYearsClient({ initialYears }: Props) {
   return (
     <div className="min-h-screen bg-gray-50">
       <div style={{ backgroundColor: HEADER_BG }} className="text-white px-6 py-4">
-        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
+        <div className="max-w-[1920px] mx-auto px-6 md:px-10 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold">盤查年度設定</h1>
             <p className="text-xs text-green-200 mt-0.5">
@@ -85,7 +85,7 @@ export default function ReportYearsClient({ initialYears }: Props) {
         </div>
       </div>
 
-      <div className="max-w-[1600px] mx-auto px-4 py-6">
+      <div className="max-w-[1920px] mx-auto px-6 md:px-10 py-6">
         <div className="mb-4 flex items-center justify-between">
           <p className="text-sm text-gray-500">
             新增年度後不需要改任何程式碼，首頁與填報頁的年度選單會立即出現該年度。

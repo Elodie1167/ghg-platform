@@ -124,7 +124,7 @@ export default function AnomalyClient({ initialFlags, factories }: Props) {
   return (
     <div className="min-h-screen bg-gray-50">
       <div style={{ backgroundColor: HEADER_BG }} className="text-white px-6 py-4">
-        <div className="max-w-[1400px] mx-auto flex items-center justify-between flex-wrap gap-3">
+        <div className="max-w-[1920px] mx-auto px-6 md:px-10 flex items-center justify-between flex-wrap gap-3">
           <div>
             <a href="/" className="text-green-300 text-xs hover:underline">← 返回首頁</a>
             <h1 className="text-xl font-bold mt-0.5">異常清單</h1>
@@ -146,10 +146,10 @@ export default function AnomalyClient({ initialFlags, factories }: Props) {
             </button>
           </div>
         </div>
-        {runMsg && <p className="max-w-[1400px] mx-auto text-xs mt-2 text-amber-200">{runMsg}</p>}
+        {runMsg && <p className="max-w-[1920px] mx-auto px-6 md:px-10 text-xs mt-2 text-amber-200">{runMsg}</p>}
       </div>
 
-      <div className="max-w-[1400px] mx-auto px-4 py-6">
+      <div className="max-w-[1920px] mx-auto px-6 md:px-10 py-6">
         {/* 篩選列 */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">

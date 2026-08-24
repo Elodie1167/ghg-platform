@@ -40,7 +40,7 @@ export default function DashboardClient({
   return (
     <div className="min-h-screen bg-gray-50">
       <header style={{ backgroundColor: HEADER_BG }} className="text-white shadow-lg">
-        <div className="max-w-[1600px] mx-auto px-6 md:px-10 py-4 flex items-center justify-between">
+        <div className="max-w-[1920px] mx-auto px-6 md:px-10 py-4 flex items-center justify-between">
           <div>
             <a href="/" className="text-green-300 text-xs hover:underline">← 返回首頁</a>
             <h1 className="text-xl font-bold mt-0.5">年度指標維護</h1>
@@ -57,7 +57,7 @@ export default function DashboardClient({
         </div>
       </header>
 
-      <main className="max-w-[1600px] mx-auto px-6 md:px-10 py-6 space-y-8">
+      <main className="max-w-[1920px] mx-auto px-6 md:px-10 py-6 space-y-8">
         <section className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
           <h2 className="text-base font-bold text-gray-800 mb-1">{year} 年度指標（供排放強度計算）</h2>
           <p className="text-xs text-gray-400 mb-4">填入全集團當年度數值；排放強度 = (S1 + S2 市場) × 1000 ÷ 分母。1 標打 = 12 件。</p>

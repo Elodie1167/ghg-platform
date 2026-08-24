@@ -110,7 +110,7 @@ export default function TransportRoutesClient({ initialRoutes }: { initialRoutes
   return (
     <div className="min-h-screen bg-gray-50">
       <div style={{ backgroundColor: HEADER_BG }} className="text-white px-6 py-4">
-        <div className="max-w-[1400px] mx-auto">
+        <div className="max-w-[1920px] mx-auto px-6 md:px-10">
           <a href="/" className="text-green-300 text-xs hover:underline">← 返回首頁</a>
           <h1 className="text-xl font-bold mt-0.5">上游運輸｜路線主檔查詢</h1>
           <p className="text-xs text-green-200 mt-0.5">
@@ -119,7 +119,7 @@ export default function TransportRoutesClient({ initialRoutes }: { initialRoutes
         </div>
       </div>
 
-      <div className="max-w-[1400px] mx-auto px-4 py-6">
+      <div className="max-w-[1920px] mx-auto px-6 md:px-10 py-6">
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <input
             value={keyword}

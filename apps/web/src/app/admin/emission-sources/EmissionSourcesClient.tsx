@@ -110,7 +110,7 @@ export default function EmissionSourcesClient({ sources }: { sources: AdminEmiss
   return (
     <div className="min-h-screen bg-gray-50">
       <header style={{ backgroundColor: HEADER_BG }} className="text-white shadow-lg">
-        <div className="max-w-[1600px] mx-auto px-6 md:px-10 py-4">
+        <div className="max-w-[1920px] mx-auto px-6 md:px-10 py-4">
           <a href="/" className="text-green-300 text-xs hover:underline">← 返回首頁</a>
           <h1 className="text-xl font-bold mt-0.5">排放源設定</h1>
           <p className="text-green-300 text-sm">
@@ -120,7 +120,7 @@ export default function EmissionSourcesClient({ sources }: { sources: AdminEmiss
         </div>
       </header>
 
-      <main className="max-w-[1600px] mx-auto px-6 md:px-10 py-6">
+      <main className="max-w-[1920px] mx-auto px-6 md:px-10 py-6">
         {(msg || err) && (
           <div className={`mb-4 rounded-lg px-4 py-2 text-sm ${
             err ? 'bg-red-50 border border-red-200 text-red-700'

@@ -104,7 +104,7 @@ export default function TransportReviewClient({ initialItems, ports, factories }
   return (
     <div className="min-h-screen bg-gray-50">
       <div style={{ backgroundColor: HEADER_BG }} className="text-white px-6 py-4">
-        <div className="max-w-[1400px] mx-auto">
+        <div className="max-w-[1920px] mx-auto px-6 md:px-10">
           <a href="/" className="text-green-300 text-xs hover:underline">← 返回首頁</a>
           <h1 className="text-xl font-bold mt-0.5">資料覆核中心｜上游運輸缺距離待補</h1>
           <p className="text-xs text-green-200 mt-0.5">
@@ -113,7 +113,7 @@ export default function TransportReviewClient({ initialItems, ports, factories }
         </div>
       </div>
 
-      <div className="max-w-[1400px] mx-auto px-4 py-6">
+      <div className="max-w-[1920px] mx-auto px-6 md:px-10 py-6">
         {items.length === 0 && (
           <div className="text-center text-gray-400 py-16 text-sm">目前沒有缺距離的路線，都補齊了。</div>
         )}
