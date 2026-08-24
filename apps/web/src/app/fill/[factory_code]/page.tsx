@@ -42,6 +42,7 @@ export interface EmissionSource {
   is_biomass: boolean;
   is_always_active: boolean;
   factor_source_id: string | null;
+  substance: string | null;
 }
 
 export interface ActivityRecord {
@@ -165,11 +166,19 @@ export default async function FillPage({
   const allFactories: FactoryListItem[] = allFactoriesResult.rows;
 
   const sourcesResult = await query(
-    `SELECT id, source_code, name_zh, name_en, scope, category, default_unit, is_biomass, is_always_active, factor_source_id
+    `SELECT id, source_code, name_zh, name_en, scope, category, default_unit, is_biomass, is_always_active, factor_source_id, substance
      FROM emission_sources
      ORDER BY scope ASC, source_code ASC`,
   );
   const emissionSources: EmissionSource[] = sourcesResult.rows;
+
+  // 冷媒/滅火器/SF6 的實際 GWP 存在 substance_gwp 表（可在 /admin/factors 直接編輯，
+  // 不用改程式碼重 deploy），填報頁「參考係數」面板要顯示這份真正的 GWP，
+  // 不能誤用 emission_factors.factor_substance（那是逸散源自己的質量轉換係數，非 GWP）。
+  const substanceGwpResult = await query(`SELECT substance, gwp::float AS gwp FROM substance_gwp`);
+  const substanceGwpMap: Record<string, number> = Object.fromEntries(
+    substanceGwpResult.rows.map((r) => [r.substance, r.gwp]),
+  );
 
   const recordsResult = await query(
     `SELECT ar.id, ar.emission_source_id, es.source_code, ar.year, ar.month,
@@ -253,6 +262,7 @@ export default async function FillPage({
       factorySettings={factorySettings}
       applicability={applicability}
       reportYears={reportYears}
+      substanceGwpMap={substanceGwpMap}
     />
   );
 }

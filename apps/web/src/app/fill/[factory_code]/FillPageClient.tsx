@@ -119,6 +119,7 @@ interface Props {
   factorySettings: FactorySettings;
   applicability: SourceApplicability[];
   reportYears: number[];
+  substanceGwpMap: Record<string, number>;
 }
 
 function buildRecordMap(records: ActivityRecord[]): Map<string, ActivityRecord> {
@@ -143,6 +144,7 @@ export default function FillPageClient({
   factorySettings,
   applicability,
   reportYears,
+  substanceGwpMap,
 }: Props) {
   // Build a lookup: emission_source_id → assigned factor for quick access in tabs.
   // 共用係數的來源（如太陽能 2-1-B 的 factor_source_id 指到 2-1-A）本身沒有自己的
@@ -2378,32 +2380,42 @@ export default function FillPageClient({
           </button>
           {expanded && (
             <div className="px-4 pb-4 space-y-2">
+              <div className="flex justify-end">
+                <a href="/admin/factors#substance-gwp-panel" target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:text-blue-800 underline">
+                  GWP 數值不對？前往設定 GWP 對照表 →
+                </a>
+              </div>
               {selFactors.map(({ source, factor }) => {
                 const isSeptic = source.source_code === '1-4B-1';
                 const isSF6 = source.source_code === '1-4D-1';
                 const isRefrig = source.source_code.startsWith('1-4A');
 
                 if (isRefrig) {
+                  // 實際 GWP 存在 substance_gwp 表（依 emission_sources.substance 查），
+                  // factor_substance 是這顆逸散源自己的質量轉換係數，不是 GWP，兩者別搞混。
+                  const realGwp = source.substance != null ? substanceGwpMap[source.substance] ?? null : null;
                   return (
                     <div key={source.id} className="flex items-center gap-3 text-xs bg-white rounded-lg px-3 py-2 border border-blue-100">
                       <span className="font-mono text-gray-400 w-16 flex-shrink-0">{source.source_code}</span>
                       <span className="text-gray-800 flex-1">{source.name_zh}</span>
                       <span className="text-gray-500 text-xs">HFCs GWP</span>
                       <span className="font-mono font-bold text-blue-700 text-sm">
-                        {factor!.factor_substance != null ? Number(factor!.factor_substance).toLocaleString() : '—'}
+                        {realGwp != null ? realGwp.toLocaleString() : '—'}
                       </span>
                     </div>
                   );
                 }
 
                 if (isSF6) {
+                  const realGwp = source.substance != null ? substanceGwpMap[source.substance] ?? null : null;
                   return (
                     <div key={source.id} className="flex items-center gap-3 text-xs bg-white rounded-lg px-3 py-2 border border-purple-100">
                       <span className="font-mono text-gray-400 w-16 flex-shrink-0">{source.source_code}</span>
                       <span className="text-gray-800 flex-1">{source.name_zh}</span>
                       <span className="text-gray-500 text-xs">SF₆ GWP</span>
                       <span className="font-mono font-bold text-purple-700 text-sm">
-                        {factor!.factor_substance != null ? Number(factor!.factor_substance).toLocaleString() : '—'}
+                        {realGwp != null ? realGwp.toLocaleString() : '—'}
                       </span>
                     </div>
                   );
