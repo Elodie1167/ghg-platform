@@ -2239,15 +2239,15 @@ export default function FillPageClient({
           </div>
         ) : (
           <div className="overflow-x-auto border border-gray-200 rounded-xl mb-6">
-            <table className="w-full text-xs border-collapse" style={{ minWidth: '640px' }}>
+            <table className="w-full text-sm border-collapse" style={{ minWidth: '760px' }}>
               <thead>
                 <tr className="bg-gray-800 text-white">
-                  <th className="whitespace-nowrap sticky left-0 bg-gray-800 px-3 py-2 text-left w-28">代碼</th>
-                  <th className="whitespace-nowrap px-3 py-2 text-left">排放源名稱</th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right w-28">CO₂ (tCO₂)</th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right w-28">CH₄ (tCH₄)</th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right w-28">N₂O (tN₂O)</th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right w-28 font-bold">CO₂e (tCO₂e)</th>
+                  <th className="whitespace-nowrap sticky left-0 bg-gray-800 px-3 py-2.5 text-left w-32">代碼</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-left">排放源名稱</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-right w-32">CO₂ (tCO₂)</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-right w-32">CH₄ (tCH₄)</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-right w-32">N₂O (tN₂O)</th>
+                  <th className="whitespace-nowrap px-3 py-2.5 text-right w-32 font-bold">CO₂e (tCO₂e)</th>
                 </tr>
               </thead>
               <tbody>
@@ -2264,46 +2264,46 @@ export default function FillPageClient({
                   return (
                     <>
                       <tr key={`scope-${sg.scope}`} className="bg-gray-100">
-                        <td colSpan={6} className="px-3 py-1.5 font-semibold text-gray-700 text-xs">
+                        <td colSpan={6} className="px-3 py-2 font-semibold text-gray-700 text-sm">
                           {sg.label}
                         </td>
                       </tr>
                       {sg.cats.flatMap(({ cat, rows }) => [
                         <tr key={`cat-${sg.scope}-${cat}`} className="bg-gray-50">
-                          <td className="sticky left-0 bg-gray-50 px-3 py-1 text-gray-500 pl-6">{cat}</td>
+                          <td className="sticky left-0 bg-gray-50 px-3 py-1.5 text-gray-500 pl-6">{cat}</td>
                           <td colSpan={5} />
                         </tr>,
                         ...rows.map((row, idx) => (
                           <tr key={row.source.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
-                            <td className="sticky left-0 bg-inherit px-3 py-1.5 font-mono text-gray-500 pl-8 text-xs">{row.source.source_code}</td>
-                            <td className="px-3 py-1.5 text-gray-700 truncate" title={row.source.name_zh}>{row.source.name_zh}</td>
-                            <td className="px-3 py-1.5 text-right font-mono text-gray-600">{fmtG(row.annual_co2_t)}</td>
-                            <td className="px-3 py-1.5 text-right font-mono text-gray-600">{fmtG(row.annual_ch4_t)}</td>
-                            <td className="px-3 py-1.5 text-right font-mono text-gray-600">{fmtG(row.annual_n2o_t)}</td>
-                            <td className="px-3 py-1.5 text-right font-mono font-semibold text-gray-800">
-                              {row.hasPending && row.annual_co2e === 0 ? <span className="text-amber-400">待計算</span> : fmtN(row.annual_co2e)}
+                            <td className="sticky left-0 bg-inherit px-3 py-2 font-mono text-gray-500 pl-8 text-sm">{row.source.source_code}</td>
+                            <td className="px-3 py-2 text-gray-700 truncate" title={row.source.name_zh}>{row.source.name_zh}</td>
+                            <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-600">{fmtG(row.annual_co2_t)}</td>
+                            <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-600">{fmtG(row.annual_ch4_t)}</td>
+                            <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-600">{fmtG(row.annual_n2o_t)}</td>
+                            <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold text-gray-800">
+                              {row.hasPending && row.annual_co2e === 0 ? <span className="text-amber-500 font-medium">待計算</span> : fmtN(row.annual_co2e)}
                             </td>
                           </tr>
                         )),
                       ])}
                       <tr key={`stotal-${sg.scope}`} className="bg-gray-200 font-semibold">
-                        <td colSpan={2} className="sticky left-0 bg-gray-200 px-3 py-1.5 text-gray-700 pl-4">
+                        <td colSpan={2} className="sticky left-0 bg-gray-200 px-3 py-2 text-gray-700 pl-4">
                           {sg.label} 小計
                         </td>
-                        <td className="px-3 py-1.5 text-right font-mono">{fmtG(stCo2)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">{fmtG(stCh4)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">{fmtG(stN2o)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono font-bold">{fmtN(stCo2e)}</td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtG(stCo2)}</td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtG(stCh4)}</td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtG(stN2o)}</td>
+                        <td className="px-3 py-2 text-right font-mono tabular-nums font-bold">{fmtN(stCo2e)}</td>
                       </tr>
                     </>
                   );
                 })}
                 <tr className="bg-gray-800 text-white font-bold">
-                  <td colSpan={2} className="sticky left-0 bg-gray-800 px-3 py-2">全年碳排合計</td>
-                  <td className="px-3 py-2 text-right font-mono">—</td>
-                  <td className="px-3 py-2 text-right font-mono">—</td>
-                  <td className="px-3 py-2 text-right font-mono">—</td>
-                  <td className="px-3 py-2 text-right font-mono">{fmtN(grandTotal)}</td>
+                  <td colSpan={2} className="sticky left-0 bg-gray-800 px-3 py-2.5">全年碳排合計</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums">—</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums">—</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums">—</td>
+                  <td className="px-3 py-2.5 text-right font-mono tabular-nums">{fmtN(grandTotal)}</td>
                 </tr>
               </tbody>
             </table>
