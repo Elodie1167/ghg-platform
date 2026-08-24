@@ -40,9 +40,10 @@ export interface GasResult {
 }
 
 const GAS_VOLUME_UNITS = new Set(['L', 'l', 'KL', 'Nm3', 'Nm³', 'm3', 'm³']);
-function r4(v: number): number { return Math.round(v * 10000) / 10000; }
-// CH₄/N₂O 用量常遠小於 CO₂，4 位小數常四捨五入成 0，故單獨用 6 位精度（與 co2e-calc.ts 對齊）
-function r6(v: number): number { return Math.round(v * 1000000) / 1000000; }
+// 2026-08 起不在這裡捨位（跟 co2e-calc.ts 的調整對齊）：這是即時預覽用的公式，
+// 「合計」欄是把每個月的 GasResult 加總後才 toFixed(4) 顯示一次，如果這裡先
+// 對每個月捨位，加總出來的合計會跟後端存的未捨位精度不一致（例如 12 筆月資料
+// 加總誤差 0.0003 tCO2e）。捨位只留在畫面顯示（fmtGas / toFixed）那一層。
 
 // 氣體數值顯示：>0 才顯示，否則「—」。預設 4 位小數；若 4 位小數會四捨五入成
 // 0.0000（柴油等 CH₄/N₂O 量極小時常見），改延伸到能顯示出第一個有效數字為止
@@ -82,11 +83,11 @@ export function computeGas(
     if (isBiomass && bioFrac > 0) {
       const bioCo2Kg = bioTj * (factor.factor_co2 ?? 0);
       return {
-        co2_t: r4(co2_kg / 1000),
-        ch4_t: r6(ch4_kg / 1000),
-        n2o_t: r6(n2o_kg / 1000),
-        co2e_t: r4((co2_kg + ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000),
-        biomass_co2_t: r4(bioCo2Kg / 1000),
+        co2_t: co2_kg / 1000,
+        ch4_t: ch4_kg / 1000,
+        n2o_t: n2o_kg / 1000,
+        co2e_t: (co2_kg + ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000,
+        biomass_co2_t: bioCo2Kg / 1000,
       };
     }
   } else {
@@ -98,17 +99,17 @@ export function computeGas(
   if (isBiomass) {
     return {
       co2_t: null,
-      ch4_t: r6(ch4_kg / 1000),
-      n2o_t: r6(n2o_kg / 1000),
-      co2e_t: r4((ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000),
-      biomass_co2_t: r4(co2_kg / 1000),
+      ch4_t: ch4_kg / 1000,
+      n2o_t: n2o_kg / 1000,
+      co2e_t: (ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000,
+      biomass_co2_t: co2_kg / 1000,
     };
   }
   return {
-    co2_t: r4(co2_kg / 1000),
-    ch4_t: r6(ch4_kg / 1000),
-    n2o_t: r6(n2o_kg / 1000),
-    co2e_t: r4((co2_kg + ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000),
+    co2_t: co2_kg / 1000,
+    ch4_t: ch4_kg / 1000,
+    n2o_t: n2o_kg / 1000,
+    co2e_t: (co2_kg + ch4_kg * GWP_CH4 + n2o_kg * GWP_N2O) / 1000,
     biomass_co2_t: null,
   };
 }
