@@ -91,6 +91,7 @@ export async function calcCo2e(params: {
 
   const fRow = await query(
     `SELECT ef.id, ef.factor_co2::float, ef.factor_ch4::float, ef.factor_n2o::float,
+            ef.factor_co2_bio::float, ef.factor_ch4_bio::float, ef.factor_n2o_bio::float,
             ef.factor_substance::float, ef.grid_emission_factor::float,
             ef.market_residual_factor::float, ef.scope3_factor::float,
             ef.ncv::float, ef.ncv_unit, ef.density::float,
@@ -110,6 +111,7 @@ export async function calcCo2e(params: {
   const f = fRow.rows[0] as {
     id: string; factor_co2: number | null; factor_ch4: number | null;
     factor_n2o: number | null; factor_substance: number | null;
+    factor_co2_bio: number | null; factor_ch4_bio: number | null; factor_n2o_bio: number | null;
     grid_emission_factor: number | null; market_residual_factor: number | null;
     scope3_factor: number | null; ncv: number | null; ncv_unit: string | null;
     density: number | null; gwp_ch4: number | null; gwp_n2o: number | null;
@@ -250,13 +252,16 @@ export async function calcCo2e(params: {
     // bio_fraction 傳入），若不判斷 is_biomass 就直接套用，會把這些數值誤當生質占比，
     // 把化石排放打折（例如 LPG 一桶 12kg 會被當成生質占比 12% 而少算 12%）。
     const bioFrac = params.is_biomass ? Math.min((params.bio_fraction ?? 0) / 100, 1) : 0;
-    const fossilTj = (energy_mj / 1_000_000) * (1 - bioFrac);
-    const bioTj   = (energy_mj / 1_000_000) * bioFrac;
+    const totalTj = energy_mj / 1_000_000;
+    const fossilTj = totalTj * (1 - bioFrac);
+    const bioTj   = totalTj * bioFrac;
     co2_kg = fossilTj * (f.factor_co2 ?? 0);
-    ch4_kg = fossilTj * (f.factor_ch4 ?? 0);
-    n2o_kg = fossilTj * (f.factor_n2o ?? 0);
+    // CH4/N2O 照常計入 S1，用全量能量（不論生質占比），與 CO2 的生質/化石拆分邏輯不同
+    ch4_kg = totalTj * (f.factor_ch4 ?? 0);
+    n2o_kg = totalTj * (f.factor_n2o ?? 0);
     if (params.is_biomass && bioFrac > 0) {
-      const bioCo2 = bioTj * (f.factor_co2 ?? 0);
+      // 生質部分優先用生質專屬係數（factor_co2_bio），未填才 fallback 用一般係數
+      const bioCo2 = bioTj * (f.factor_co2_bio ?? f.factor_co2 ?? 0);
       return {
         co2e_total: (co2_kg + ch4_kg * factorGwpCH4 + n2o_kg * factorGwpN2O) / 1000,
         co2e_location: null, co2e_market: null,

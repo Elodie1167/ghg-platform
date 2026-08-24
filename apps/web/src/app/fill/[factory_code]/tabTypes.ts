@@ -74,14 +74,17 @@ export function computeGas(
   let co2_kg: number, ch4_kg: number, n2o_kg: number;
   if (ncv > 0) {
     const energyMj = kg * ncv;
-    const fossilTj = (energyMj / 1_000_000) * (1 - bioFrac);
-    const bioTj = (energyMj / 1_000_000) * bioFrac;
+    const totalTj = energyMj / 1_000_000;
+    const fossilTj = totalTj * (1 - bioFrac);
+    const bioTj = totalTj * bioFrac;
     co2_kg = fossilTj * (factor.factor_co2 ?? 0);
-    ch4_kg = fossilTj * (factor.factor_ch4 ?? 0);
-    n2o_kg = fossilTj * (factor.factor_n2o ?? 0);
+    // CH4/N2O 照常計入 S1，用全量能量（不論生質占比），與 CO2 的生質/化石拆分邏輯不同
+    ch4_kg = totalTj * (factor.factor_ch4 ?? 0);
+    n2o_kg = totalTj * (factor.factor_n2o ?? 0);
     // 部分生質：化石 CO₂ 計入 co2e、生質 CO₂ 另計
+    // 生質部分優先用生質專屬係數（factor_co2_bio），未填才 fallback 用一般係數
     if (isBiomass && bioFrac > 0) {
-      const bioCo2Kg = bioTj * (factor.factor_co2 ?? 0);
+      const bioCo2Kg = bioTj * (factor.factor_co2_bio ?? factor.factor_co2 ?? 0);
       return {
         co2_t: co2_kg / 1000,
         ch4_t: ch4_kg / 1000,
