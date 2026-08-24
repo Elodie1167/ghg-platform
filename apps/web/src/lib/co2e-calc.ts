@@ -1,6 +1,16 @@
 /**
  * TypeScript 內建 CO₂e 計算（FastAPI 備援）
  * 與 apps/agents/agents/calculation_agent.py 邏輯一致
+ *
+ * ⚠️ 2026-08 起：這裡回傳的 co2_t/ch4_t/n2o_t/hfc_t/co2e_total/co2e_location/
+ *    co2e_market/co2e_biomass_co2 一律是未捨位的原始精度，不在這裡四捨五入。
+ *    以前每筆月記錄先捨到小數第 4 位才存 DB，年度／範疇彙總再把這些已捨位的
+ *    數字加總，跟「先加總、最後才捨一次」比會有小幅落差（例如 12 筆月記錄加總
+ *    誤差 0.0003 tCO2e）。四捨五入只在顯示/報表輸出層做（畫面 toFixed(4)、
+ *    Excel 匯出等），資料庫存的是可以往上累加不失真的原始值。
+ *    activity_records.co2e_location/co2e_market/co2e_total/co2e_biomass_co2
+ *    的欄位精度已隨這次調整放寬（見 V60 migration），舊資料需要重算才會補回
+ *    未捨位精度，見 scripts/recompute-precision.mjs。
  */
 import { query } from '@/lib/db';
 import { WASTE_DETAIL_CODES } from '@/lib/waste-detail';
@@ -36,10 +46,6 @@ const UNIT_CONV: Record<string, number> = {
 };
 const VOLUME_UNITS = new Set(['L', 'l', 'liter', 'litre', 'KL', 'Nm3', 'Nm³', 'm3', 'm³']);
 
-function r4(v: number): number { return Math.round(v * 10000) / 10000; }
-// CH₄/N₂O 用量常遠小於 CO₂，4 位小數常四捨五入成 0 讓人誤會沒算出來，故量體單獨用 6 位精度存
-function r6(v: number): number { return Math.round(v * 1000000) / 1000000; }
-
 export async function calcCo2e(params: {
   factory_id: string;
   emission_source_id: string;
@@ -66,16 +72,16 @@ export async function calcCo2e(params: {
     const CO2_CARBON_MASS_RATIO = 44 / 12;
     const co2_kg = params.activity_value * (carbonPct / 100) * CO2_CARBON_MASS_RATIO;
     return {
-      co2e_total: r4(co2_kg / 1000), co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
+      co2e_total: co2_kg / 1000, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
       emission_factor_id: null, warnings: [],
-      co2_t: r4(co2_kg / 1000), ch4_t: null, n2o_t: null, hfc_t: null,
+      co2_t: co2_kg / 1000, ch4_t: null, n2o_t: null, hfc_t: null,
     };
   }
 
   // 使用者已直接填最終 CO2e（例如 3-1-A 採購布料，由 Higg MSI 外部試算後貼入年度總量），
   // 沒有、也不需要對應的排放係數，原樣存回即可，不查 emission_factors。
   if (params.activity_unit === 'tCO2e') {
-    const co2e = r4(params.activity_value);
+    const co2e = params.activity_value;
     return {
       co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
       emission_factor_id: null, warnings: [],
@@ -146,10 +152,10 @@ export async function calcCo2e(params: {
     // 本月分攤 REC = 全年 REC × (本月電量 / 合計全年電量)
     const monthRecAlloc = annualKwh > 0 ? annualRec * (monthKwh / annualKwh) : 0;
     const marketBase = Math.max(0, monthKwh - monthRecAlloc);
-    const co2e_location = r4(value * gridEf / 1000);
+    const co2e_location = value * gridEf / 1000;
     const co2e_market = params.country_code === 'CHN'
-      ? r4(marketBase * (f.market_residual_factor ?? 0) / 1000)
-      : r4(marketBase * gridEf / 1000);
+      ? marketBase * (f.market_residual_factor ?? 0) / 1000
+      : marketBase * gridEf / 1000;
     return {
       co2e_total: co2e_location, co2e_location, co2e_market, co2e_biomass_co2: null,
       emission_factor_id: f.id, warnings: [],
@@ -183,7 +189,7 @@ export async function calcCo2e(params: {
     const weightedFactor = pcts.reduce((s, [pct, factor]) => s + ((pct ?? 0) / 100) * (factor ?? 0), 0);
     // 係數單位為 kg CO2e/tonnes（每噸廢棄物），activity_value 為 kg，故先除 1000 換算成噸再乘係數，
     // 結果為 kg CO2e，再除 1000 得 tCO2e
-    const co2e = r4(value * weightedFactor / 1_000_000);
+    const co2e = value * weightedFactor / 1_000_000;
     return {
       co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
       emission_factor_id: f.id, warnings: [],
@@ -196,7 +202,7 @@ export async function calcCo2e(params: {
   // 'm3' 在 UNIT_CONV 是燃料體積→公升的 ×1000，套到廢水量會整整放大 1000 倍。
   if (params.scope === 3 && WASTE_DETAIL_CODES.includes(params.source_code)) {
     if (f.scope3_factor == null) return null; // 係數未維護 → 不算，留 NULL 讓填報頁顯示待補
-    const co2e = r4(params.activity_value * f.scope3_factor / 1000);
+    const co2e = params.activity_value * f.scope3_factor / 1000;
     return {
       co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
       emission_factor_id: f.id, warnings: [],
@@ -205,7 +211,7 @@ export async function calcCo2e(params: {
   }
 
   if (params.scope === 3) {
-    const co2e = r4(value * (f.scope3_factor ?? 0) / 1000);
+    const co2e = value * (f.scope3_factor ?? 0) / 1000;
     return {
       co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
       emission_factor_id: f.id, warnings: [],
@@ -223,9 +229,9 @@ export async function calcCo2e(params: {
     const ch4_kg = (params.activity_value / 24) * (f.factor_co2 ?? 0.04) * (f.factor_ch4 ?? 0.6) * (f.factor_substance ?? 0.5) * CH4_CARBON_MASS_RATIO;
     const gwpCh4 = f.gwp_ch4 ?? SEPTIC_GWP_CH4;
     return {
-      co2e_total: r4(ch4_kg * gwpCh4 / 1000), co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
+      co2e_total: ch4_kg * gwpCh4 / 1000, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
       emission_factor_id: f.id, warnings: [],
-      co2_t: null, ch4_t: r6(ch4_kg / 1000), n2o_t: null, hfc_t: null,
+      co2_t: null, ch4_t: ch4_kg / 1000, n2o_t: null, hfc_t: null,
     };
   }
 
@@ -252,11 +258,11 @@ export async function calcCo2e(params: {
     if (params.is_biomass && bioFrac > 0) {
       const bioCo2 = bioTj * (f.factor_co2 ?? 0);
       return {
-        co2e_total: r4((co2_kg + ch4_kg * factorGwpCH4 + n2o_kg * factorGwpN2O) / 1000),
+        co2e_total: (co2_kg + ch4_kg * factorGwpCH4 + n2o_kg * factorGwpN2O) / 1000,
         co2e_location: null, co2e_market: null,
-        co2e_biomass_co2: r4(bioCo2 / 1000),
+        co2e_biomass_co2: bioCo2 / 1000,
         emission_factor_id: f.id, warnings: [],
-        co2_t: r4(co2_kg / 1000), ch4_t: r6(ch4_kg / 1000), n2o_t: r6(n2o_kg / 1000), hfc_t: null,
+        co2_t: co2_kg / 1000, ch4_t: ch4_kg / 1000, n2o_t: n2o_kg / 1000, hfc_t: null,
       };
     }
   } else {
@@ -270,29 +276,29 @@ export async function calcCo2e(params: {
   if (params.substance && f.factor_substance != null) {
     const gwp = await getSubstanceGwp(params.substance);
     if (gwp) {
-      // 先用未四捨五入的洩漏噸數乘 GWP，才四捨五入存 t_substance：先把 mass_leaked_t 存成
-      // r4 再乘 GWP，遇到高 GWP 物質（SF6=25200）+ 極小洩漏量（例如斷路器逸散率 0.1%
-      // 算出來零點幾公克）會被提前四捨五入成 0，導致乘完 GWP 後整筆 CO2e 消失。
+      // 洩漏噸數與 CO2e 一律用未捨位的原始精度存，遇到高 GWP 物質（SF6=25200）+ 極小
+      // 洩漏量（例如斷路器逸散率 0.1% 算出來零點幾公克）才不會被提前捨位成 0，
+      // 導致乘完 GWP 後整筆 CO2e 消失。
       const mass_leaked_t_raw = value * f.factor_substance / 1000;
-      t_substance = r4(mass_leaked_t_raw * gwp);
-      hfc_t = r6(mass_leaked_t_raw);
+      t_substance = mass_leaked_t_raw * gwp;
+      hfc_t = mass_leaked_t_raw;
     }
   }
 
-  const co2e = r4((co2_kg + ch4_kg * factorGwpCH4 + n2o_kg * factorGwpN2O) / 1000 + t_substance);
+  const co2e = (co2_kg + ch4_kg * factorGwpCH4 + n2o_kg * factorGwpN2O) / 1000 + t_substance;
   if (params.is_biomass) {
     return {
-      co2e_total: r4((ch4_kg * factorGwpCH4 + n2o_kg * factorGwpN2O) / 1000),
+      co2e_total: (ch4_kg * factorGwpCH4 + n2o_kg * factorGwpN2O) / 1000,
       co2e_location: null, co2e_market: null,
-      co2e_biomass_co2: r4(co2_kg / 1000),
+      co2e_biomass_co2: co2_kg / 1000,
       emission_factor_id: f.id, warnings: [],
-      co2_t: null, ch4_t: r6(ch4_kg / 1000), n2o_t: r6(n2o_kg / 1000), hfc_t: null,
+      co2_t: null, ch4_t: ch4_kg / 1000, n2o_t: n2o_kg / 1000, hfc_t: null,
     };
   }
   return {
     co2e_total: co2e, co2e_location: null, co2e_market: null, co2e_biomass_co2: null,
     emission_factor_id: f.id, warnings: [],
-    co2_t: r4(co2_kg / 1000), ch4_t: r6(ch4_kg / 1000), n2o_t: r6(n2o_kg / 1000), hfc_t,
+    co2_t: co2_kg / 1000, ch4_t: ch4_kg / 1000, n2o_t: n2o_kg / 1000, hfc_t,
   };
 }
 
