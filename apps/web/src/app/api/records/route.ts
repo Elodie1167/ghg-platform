@@ -270,21 +270,46 @@ export async function POST(req: NextRequest) {
     }
 
     // Step 1：寫入 DB（co2e 先存 null）
-    const insertResult = await query(
-      `INSERT INTO activity_records
-         (factory_id, emission_source_id, year, month,
-          activity_value, activity_unit, notes,
-          sub_location, meter_number, leak_rate_pct, date_from, date_to,
-          is_manual_co2e, is_round_trip, import_source, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::date, $12::date, $13, $14, 'manual', NOW(), NOW())
-       RETURNING id`,
-      [factory_id, emission_source_id, year, month,
-       activity_value ?? null, activity_unit, notes ?? null,
-       sub_location ?? null, meter_number ?? null, leak_rate_pct ?? null, date_from ?? null, date_to ?? null,
-       is_manual_co2e, is_round_trip],
-    );
-
-    const newId: string = insertResult.rows[0].id;
+    // 3-1-A/B/C/D/E（布料/線料/紙箱/塑料袋/外購水）每廠每年只該有一筆年度彙總紀錄，
+    // DB 有 partial unique index 擋重複（V61）。填報頁快速切分頁時偶爾會對同一筆
+    // 觸發兩次自動存檔（remount 造成前端還不知道剛剛已經存過），撞到這個 unique
+    // constraint 時視為「其實是要更新」，改成 UPDATE 既有那筆，而不是讓使用者看到 500。
+    let newId: string;
+    try {
+      const insertResult = await query(
+        `INSERT INTO activity_records
+           (factory_id, emission_source_id, year, month,
+            activity_value, activity_unit, notes,
+            sub_location, meter_number, leak_rate_pct, date_from, date_to,
+            is_manual_co2e, is_round_trip, import_source, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::date, $12::date, $13, $14, 'manual', NOW(), NOW())
+         RETURNING id`,
+        [factory_id, emission_source_id, year, month,
+         activity_value ?? null, activity_unit, notes ?? null,
+         sub_location ?? null, meter_number ?? null, leak_rate_pct ?? null, date_from ?? null, date_to ?? null,
+         is_manual_co2e, is_round_trip],
+      );
+      newId = insertResult.rows[0].id;
+    } catch (err) {
+      const pgErr = err as { code?: string; constraint?: string };
+      if (pgErr.code !== '23505' || pgErr.constraint !== 'activity_records_annual_singleton_uniq') throw err;
+      const existing = await query(
+        `SELECT id FROM activity_records WHERE factory_id = $1 AND emission_source_id = $2 AND year = $3 AND month = $4`,
+        [factory_id, emission_source_id, year, month],
+      );
+      newId = existing.rows[0].id;
+      await query(
+        `UPDATE activity_records
+         SET activity_value = $1, activity_unit = $2, notes = $3,
+             sub_location = $4, meter_number = $5, leak_rate_pct = $6,
+             date_from = $7::date, date_to = $8::date,
+             is_manual_co2e = $9, is_round_trip = $10, updated_at = NOW()
+         WHERE id = $11`,
+        [activity_value ?? null, activity_unit, notes ?? null,
+         sub_location ?? null, meter_number ?? null, leak_rate_pct ?? null, date_from ?? null, date_to ?? null,
+         is_manual_co2e, is_round_trip, newId],
+      );
+    }
 
     if (detail) await upsertWasteDetail(newId, detail);
 

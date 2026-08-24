@@ -119,7 +119,7 @@ export async function getSummaryData(year: number): Promise<SummaryData> {
       AND COALESCE(ef.density::float, 0) > 0
     THEN ef.density::float ELSE 1.0 END`;
 
-  const [factoryRows, countryLabels, sourcesRes, matrixRes, scopeAggRes, recRes, gasRes, scopeGasRes] = await Promise.all([
+  const [factoryRows, countryLabels, sourcesRes, matrixRes, scopeAggRes, recRes, gasRes, scopeGasRes, tdLossRes] = await Promise.all([
     // 停用的廠若該年度仍有填報資料就照樣列出 —— 已盤查年度不因之後關廠而少一欄
     getFactories({ year }),
     getCountryLabels(),
@@ -314,14 +314,41 @@ export async function getSummaryData(year: number): Promise<SummaryData> {
        GROUP BY es.scope`,
       [year],
     ),
+    // 3-3-A 電力 T&D 輸配電損失：填報頁 EnergyTab 只是即時預覽，從不寫入
+    // activity_records（見 FillPageClient.tsx EnergyTab 註解），故彙整表在這裡
+    // 用同一套公式（已查核市電 2-1-A 用電量 × T&D 係數 ÷ 1000，不含太陽能 2-1-B）
+    // 即時算出虛擬 cell 補上，不落地存資料庫（維持這顆排放源「唯讀不可填」的設計）。
+    query(
+      `SELECT f.factory_code,
+              COALESCE(SUM(ar.activity_value::float * COALESCE(ef.scope3_factor::float, 0)), 0) / 1000 AS co2e
+       FROM activity_records ar
+       JOIN factories f ON ar.factory_id = f.id
+       JOIN emission_sources es ON es.id = ar.emission_source_id AND es.source_code = '2-1-A'
+       LEFT JOIN LATERAL (
+         SELECT ef2.scope3_factor
+         FROM emission_factors ef2
+         JOIN emission_factor_assignments efa ON efa.emission_factor_id = ef2.id
+         JOIN emission_sources es3 ON es3.id = ef2.emission_source_id AND es3.source_code = '3-3-A'
+         WHERE efa.factory_id = f.id AND ef2.year <= ar.year
+         ORDER BY ef2.year DESC LIMIT 1
+       ) ef ON TRUE
+       WHERE ar.year = $1 AND ar.is_reviewed = TRUE
+         AND ar.activity_value IS NOT NULL AND ar.activity_value > 0
+       GROUP BY f.factory_code
+       HAVING COALESCE(SUM(ar.activity_value::float * COALESCE(ef.scope3_factor::float, 0)), 0) > 0`,
+      [year],
+    ),
   ]);
+
+  const tdLossCells: MatrixCell[] = (tdLossRes.rows as { factory_code: string; co2e: number }[])
+    .map(({ factory_code, co2e }) => ({ factory_code, source_code: '3-3-A', co2e }));
 
   return {
     factories: factoryRows.map(({ factory_code, name_zh, country_code }) => ({
       factory_code, name_zh, country_code,
     })),
     sources: sourcesRes.rows as SourceMeta[],
-    cells: matrixRes.rows as MatrixCell[],
+    cells: [...(matrixRes.rows as MatrixCell[]), ...tdLossCells],
     scopeAggs: scopeAggRes.rows as ScopeAgg[],
     recAggs: recRes.rows as RecAgg[],
     gasAggs: gasRes.rows as GasAgg[],
