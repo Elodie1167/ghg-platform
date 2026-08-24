@@ -1,8 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const HEADER_BG = '#0C3D2E';
+
+export const OPEN_GWP_PANEL_EVENT = 'ghg:open-gwp-panel';
 
 export interface SubstanceGwpRow {
   substance: string;
@@ -20,6 +22,24 @@ export default function SubstanceGwpPanel({ initialRows }: { initialRows: Substa
   );
   const [status, setStatus] = useState<Record<string, SaveStatus>>({});
   const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // 由頁面上其他地方的「設定 GWP」按鈕觸發：展開面板、捲動過去、短暫高亮提示位置
+  useEffect(() => {
+    function handleOpen() {
+      setOpen(true);
+      requestAnimationFrame(() => {
+        panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      setHighlight(true);
+      setTimeout(() => setHighlight(false), 1800);
+    }
+    window.addEventListener(OPEN_GWP_PANEL_EVENT, handleOpen);
+    // 支援直接用網址 #substance-gwp-panel 連進來（例如從填報頁的逸散分頁連過來）
+    if (window.location.hash === '#substance-gwp-panel') handleOpen();
+    return () => window.removeEventListener(OPEN_GWP_PANEL_EVENT, handleOpen);
+  }, []);
 
   async function save(substance: string) {
     const raw = drafts[substance];
@@ -42,7 +62,13 @@ export default function SubstanceGwpPanel({ initialRows }: { initialRows: Substa
   }
 
   return (
-    <div className="mb-6 rounded-xl border border-gray-200 bg-white overflow-hidden">
+    <div
+      id="substance-gwp-panel"
+      ref={panelRef}
+      className={`mb-6 rounded-xl border bg-white overflow-hidden transition-shadow ${
+        highlight ? 'border-amber-400 ring-4 ring-amber-200' : 'border-gray-200'
+      }`}
+    >
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-4 py-3 text-left"
