@@ -153,17 +153,7 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
             <h1 className="text-xl font-bold">排放係數管理</h1>
             <p className="text-xs text-green-200 mt-0.5">點擊「細部設定」進入各排放源的係數詳細設定與廠區指定</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new Event(OPEN_GWP_PANEL_EVENT))}
-              className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-amber-950 font-semibold text-sm px-3 py-1.5 rounded-lg shadow transition"
-              title="展開並跳到冷媒／滅火器／SF6 的 GWP 對照表"
-            >
-              ⚙ 設定 GWP 對照表
-            </button>
-            <a href="/" className="text-green-200 hover:text-white text-sm underline">← 返回填報</a>
-          </div>
+          <a href="/" className="text-green-200 hover:text-white text-sm underline">← 返回填報</a>
         </div>
       </div>
 
@@ -200,6 +190,14 @@ export default function FactorsClient({ initialFactors, factories, emissionSourc
             >
               ⬇ 匯出係數表{yearFilter != null ? `（${yearFilter}）` : ''}
             </a>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new Event(OPEN_GWP_PANEL_EVENT))}
+              className="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-300 text-amber-950 font-semibold text-sm px-4 py-1.5 rounded-lg shadow transition"
+              title="展開並跳到冷媒／滅火器／SF6 的 GWP 對照表"
+            >
+              ⚙ 設定 GWP 對照表
+            </button>
             <button onClick={() => { setShowCopyForm(!showCopyForm); setShowAddForm(false); }}
               className="px-4 py-1.5 rounded-lg text-sm font-medium hover:opacity-90 transition border"
               style={{ borderColor: HEADER_BG, color: HEADER_BG }}>
