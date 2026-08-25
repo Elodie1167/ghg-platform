@@ -48,12 +48,16 @@ export async function getFillProgress(year: number): Promise<Map<string, Factory
     `SELECT id, source_code, name_zh, is_always_active, fill_frequency FROM emission_sources WHERE is_active`,
   );
 
+  // activity_value IS NULL 代表「清空/無資料」（V20__activity_value_nullable.sql），
+  // 同一個排放源同月可能混著真正的資料列與這種空殼列（例如上游運輸把 TKM 與
+  // 品項重量拆成多筆、只填了其中幾筆），空殼列不該拉低 bool_and(is_reviewed)，
+  // 否則會出現「有資料且已確認，卻因為同組另一筆空殼未確認」被誤判缺項。
   const existingRows = await query(
     `SELECT f.factory_code, es.source_code, ar.month, bool_and(ar.is_reviewed) AS all_reviewed
      FROM activity_records ar
      JOIN factories f ON f.id = ar.factory_id
      JOIN emission_sources es ON es.id = ar.emission_source_id
-     WHERE ar.year = $1
+     WHERE ar.year = $1 AND ar.activity_value IS NOT NULL AND ar.activity_value > 0
      GROUP BY f.factory_code, es.source_code, ar.month`,
     [year],
   );
