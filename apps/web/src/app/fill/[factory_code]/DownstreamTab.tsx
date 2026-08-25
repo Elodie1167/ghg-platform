@@ -61,30 +61,39 @@ export default function DownstreamTab({
     ? allSources.filter((s) => (FOB_TRANSPORT_CODES as readonly string[]).includes(s.source_code))
     : allSources;
 
-  // Each source has one cell (no per-customer split)
-  const initCells = useCallback((): Map<string, CellState> => {
+  // 陸運（3-9-A）依交貨條件分開存：FOB/FCA 訂單跟 DDP 訂單的後段運輸安排不同，
+  // 同一年度可能兩種都有，不該共用同一筆數字。用 sub_location 存 tradeTerm 標記
+  // 區分；空運/海運只在 DDP 才會顯示，不需要區分，sub_location 維持 null。
+  // 舊資料（改版前存的、sub_location 是 null）視為 FOB/FCA 的資料，因為那是
+  // 預設切換狀態；使用者若當初是在 DDP 畫面填的陸運，改版後需要重新填一次。
+  const initCells = useCallback((currentTradeTerm: TradeTerm): Map<string, CellState> => {
     const map = new Map<string, CellState>();
     for (const r of existingRecords) {
       if (!r.source_code?.startsWith('3-9')) continue;
       if (r.month !== ANNUAL_MONTH) continue;
-      // Use the record with sub_location=null; if not found, use first record per source
-      const existing = map.get(r.emission_source_id);
-      if (!existing || r.sub_location === null) {
-        map.set(r.emission_source_id, {
-          id: r.id,
-          tkm: r.activity_value != null ? String(r.activity_value) : '',
-          co2e_total: r.co2e_total,
-          is_reviewed: r.is_reviewed ?? false,
-          saveStatus: 'idle',
-        });
+      if (r.source_code === '3-9-A') {
+        const belongsToFobFca = r.sub_location === 'FOB_FCA' || r.sub_location === null;
+        const matches = currentTradeTerm === 'FOB_FCA' ? belongsToFobFca : r.sub_location === 'DDP';
+        if (!matches) continue;
       }
+      map.set(r.emission_source_id, {
+        id: r.id,
+        tkm: r.activity_value != null ? String(r.activity_value) : '',
+        co2e_total: r.co2e_total,
+        is_reviewed: r.is_reviewed ?? false,
+        saveStatus: 'idle',
+      });
     }
     return map;
   }, [existingRecords]);
 
-  const [cells, setCells] = useState<Map<string, CellState>>(initCells);
+  const [cells, setCells] = useState<Map<string, CellState>>(() => initCells(tradeTerm));
   const cellsRef = useRef(cells);
   useEffect(() => { cellsRef.current = cells; }, [cells]);
+  // 切換交貨條件時，換一批對應的儲存格資料（陸運欄位會換成另一組數字）
+  useEffect(() => { setCells(initCells(tradeTerm)); }, [tradeTerm, initCells]);
+  const tradeTermRef = useRef(tradeTerm);
+  useEffect(() => { tradeTermRef.current = tradeTerm; }, [tradeTerm]);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   function getCell(sourceId: string): CellState {
@@ -105,6 +114,7 @@ export default function DownstreamTab({
     const cell = cellsRef.current.get(sourceId);
     if (!cell) return;
     const tkmNum = cell.tkm !== '' ? parseFloat(cell.tkm) : null;
+    const isLandTransport = allSources.find((s) => s.id === sourceId)?.source_code === '3-9-A';
     const payload = {
       factory_id: factory.id,
       emission_source_id: sourceId,
@@ -112,7 +122,7 @@ export default function DownstreamTab({
       month: ANNUAL_MONTH,
       activity_value: tkmNum != null && !isNaN(tkmNum) ? tkmNum : null,
       activity_unit: 'tonne-km',
-      sub_location: null,
+      sub_location: isLandTransport ? tradeTermRef.current : null,
     };
     try {
       if (cell.id) {
@@ -255,7 +265,7 @@ export default function DownstreamTab({
                   </td>
                   <td className="px-3 py-2 text-center">
                     <LineItemsCell recordId={cell.id}
-                      count={existingRecords.find((r) => r.emission_source_id === src.id && r.month === ANNUAL_MONTH)?.line_items_count ?? 0}
+                      count={existingRecords.find((r) => r.id === cell.id)?.line_items_count ?? 0}
                       title={`${src.name_zh} 年度`} unit="tonne-km" sourceCode={src.source_code} />
                   </td>
                   <td className="px-3 py-2 text-center">
