@@ -70,7 +70,8 @@ export default function FillProgressBar({ progress }: { progress: FactoryFillPro
               <ul className="space-y-0.5 max-h-32 overflow-y-auto">
                 {missing.map((m) => (
                   <li key={m.source_code}>
-                    {m.source_name}（{m.months.length} 月未填）
+                    {m.source_name}
+                    {m.months.length > 0 ? `（${m.months.length} 月未填）` : '（年度未填或未確認）'}
                   </li>
                 ))}
               </ul>
