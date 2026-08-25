@@ -16,7 +16,16 @@ import { query } from '@/lib/db';
 // 首頁的 12 格月份燈號只反映 monthly 類（電力/汽油/柴油），因為那是唯一
 // 真的能逐月比對進度的排放源；annual 類只影響總百分比與 hover 明細，
 // 不然「一年填一次」的源會讓其他 11 個月的燈號永遠卡在「部分已填」。
+//
+// 3-3-A（T&D輸配電損失）是特例中的特例：它從不寫入 activity_records，
+// 是 /summary 用「已確認的外購電力(2-1-A) × 係數」即時算出的虛擬值
+// （見 lib/summary-data.ts 的 3-3-A 註解），資料庫裡永遠查不到它自己的紀錄。
+// 若比照一般 annual 排放源處理，會被永遠判定「缺資料」。這裡改成不查它
+// 自己的填報紀錄，而是直接鏡射「電力是否已填、是否全數已確認」。
 // =============================================================
+
+const TD_LOSS_SOURCE_CODE = '3-3-A';
+const ELECTRICITY_SOURCE_CODE = '2-1-A';
 
 export type MonthStatus = 'empty' | 'partial' | 'filled' | 'reviewed';
 
@@ -71,7 +80,10 @@ export async function getFillProgress(year: number): Promise<Map<string, Factory
       (s) => s.is_always_active || selectedIds.includes(s.id),
     );
     const monthlySources = applicable.filter((s) => s.fill_frequency === 'monthly');
-    const annualSources = applicable.filter((s) => s.fill_frequency !== 'monthly');
+    const annualSources = applicable.filter(
+      (s) => s.fill_frequency !== 'monthly' && s.source_code !== TD_LOSS_SOURCE_CODE,
+    );
+    const tdSource = applicable.find((s) => s.source_code === TD_LOSS_SOURCE_CODE);
 
     let filled = 0;
     let reviewed = 0;
@@ -107,6 +119,26 @@ export async function getFillProgress(year: number): Promise<Map<string, Factory
       }
     }
 
+    if (tdSource) {
+      const electricityMonths: number[] = [];
+      for (let month = 1; month <= 12; month++) {
+        if (filledSet.has(`${frow.factory_code}|${ELECTRICITY_SOURCE_CODE}|${month}`)) {
+          electricityMonths.push(month);
+        }
+      }
+      const electricityAllReviewed =
+        electricityMonths.length > 0 &&
+        electricityMonths.every((m) => reviewedSet.has(`${frow.factory_code}|${ELECTRICITY_SOURCE_CODE}|${m}`));
+
+      if (electricityMonths.length > 0) {
+        filled++;
+        if (electricityAllReviewed) reviewed++;
+        else missing.push({ source_code: tdSource.source_code, source_name: tdSource.name_zh, months: [] });
+      } else {
+        missing.push({ source_code: tdSource.source_code, source_name: tdSource.name_zh, months: [] });
+      }
+    }
+
     const monthlyStatus: MonthStatus[] = [];
     for (let month = 1; month <= 12; month++) {
       const filledCount = monthlySources.filter((s) =>
@@ -125,7 +157,7 @@ export async function getFillProgress(year: number): Promise<Map<string, Factory
       }
     }
 
-    const required = monthlySources.length * 12 + annualSources.length;
+    const required = monthlySources.length * 12 + annualSources.length + (tdSource ? 1 : 0);
     const percent = required === 0 ? 100 : Math.round((reviewed / required) * 100);
 
     result.set(frow.factory_code, {
