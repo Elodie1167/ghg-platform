@@ -739,6 +739,11 @@ export default function FillPageClient({
                   已選 {selectedInGroup}/{checkableSources.length}
                 </span>
               </div>
+              {group.tabId === 'downstream' && (
+                <p className="text-xs text-gray-500 mb-2">
+                  陸運（3-9-A）為必填，不需勾選；這裡只勾選需要另外揭露海運/空運的廠（通常是 DDP 交易條件的出貨）。
+                </p>
+              )}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
                 {checkableSources.map((source) => {
                   const checked = pendingIds.has(source.id);
