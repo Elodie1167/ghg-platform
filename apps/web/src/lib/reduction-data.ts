@@ -1,6 +1,7 @@
 import { query } from '@/lib/db';
 import { calcCo2e } from '@/lib/co2e-calc';
 import { getFactories } from '@/lib/factory-registry';
+import { fetchActualCapacity } from '@/lib/capacity-api';
 import type {
   ReductionSource, RecSource, FactoryReduction, GreenPower,
   BaselineIntensity, ReductionResult, YearlyPoint,
@@ -159,19 +160,27 @@ export async function getReductionFromPlatform(
   );
   const totals = sumTotals(factories);
 
-  let production = Number(prodRes.rows[0]?.production) || 0;
-  if (production <= 0) {
-    // 退回年度 annual_metrics，依月份數比例分攤
-    const am = await query(
-      `SELECT standard_units::float AS su FROM annual_metrics WHERE year = $1`,
-      [year],
-    );
-    const annual = Number(am.rows[0]?.su) || 0;
-    if (annual > 0) {
-      production = (annual * (monthTo - monthFrom + 1)) / 12;
-      warnings.push('平台路徑無月度產能，改用 annual_metrics 依月份比例分攤（待補月度產能）。');
+  // 優先即時呼叫產能 API 取實打（actual）量；查無/連線失敗才退回舊路徑
+  let production = await fetchActualCapacity(year, monthFrom, monthTo) ?? 0;
+  if (production > 0) {
+    warnings.push('產能來源：內網產能 API（實打量），非 GHG 平台填報資料。');
+  } else {
+    production = Number(prodRes.rows[0]?.production) || 0;
+    if (production <= 0) {
+      // 退回年度 annual_metrics，依月份數比例分攤
+      const am = await query(
+        `SELECT standard_units::float AS su FROM annual_metrics WHERE year = $1`,
+        [year],
+      );
+      const annual = Number(am.rows[0]?.su) || 0;
+      if (annual > 0) {
+        production = (annual * (monthTo - monthFrom + 1)) / 12;
+        warnings.push('產能 API 無回應且平台無月度產能，改用 annual_metrics 依月份比例分攤。');
+      } else {
+        warnings.push('查無標打產能，KPI 強度無法計算（請於「月度產能」填入）。');
+      }
     } else {
-      warnings.push('查無標打產能，KPI 強度無法計算（請於「月度產能」填入）。');
+      warnings.push('產能 API 無回應，改用平台 monthly_production 月度產能。');
     }
   }
 
