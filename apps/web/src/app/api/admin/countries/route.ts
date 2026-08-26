@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 // 產區（國家）標籤與顯示順序維護。
 // display_order 決定所有頁面的產區排列：首頁、集團碳排彙整表、減量頁共用同一份。
 
 export async function GET() {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const result = await query(`
     SELECT c.country_code, c.name_zh, c.name_en, c.display_order, c.is_active,
            (SELECT count(*)::int FROM factories f WHERE f.country_code = c.country_code) AS factory_count
@@ -23,6 +30,12 @@ const CountrySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const parsed = CountrySchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
@@ -51,6 +64,12 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const code = req.nextUrl.searchParams.get('country_code');
   if (!code) return NextResponse.json({ data: null, error: '缺少 country_code' }, { status: 400 });
 

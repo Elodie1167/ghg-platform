@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 // 複製單筆係數到隔年（同排放源＋同國家），供只想補一筆漏掉的年度時用，
 // 不必像 /api/admin/factors/copy-year 整年一次複製。
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const { id } = await ctx.params;
 
   const src = await query('SELECT emission_source_id, country_code, year FROM emission_factors WHERE id = $1', [id]);

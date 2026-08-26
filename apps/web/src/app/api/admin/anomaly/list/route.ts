@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 // GET /api/admin/anomaly/list?year=2026&factory_code=NVN_MK&severity=advisory&status=open
 export async function GET(req: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const sp = req.nextUrl.searchParams;
   const year = sp.get('year');
   const factoryCode = sp.get('factory_code');

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 // =============================================================
 // 排放源清單維護。
@@ -12,6 +13,12 @@ import { query } from '@/lib/db';
 // =============================================================
 
 export async function GET() {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const result = await query(`
     SELECT es.id, es.source_code, es.name_zh, es.name_en, es.scope, es.category,
            es.is_biomass, es.default_unit, es.substance, es.notes,
@@ -39,6 +46,12 @@ const CreateSourceSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const parsed = CreateSourceSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(

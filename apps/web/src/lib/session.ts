@@ -1,3 +1,4 @@
+import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 
 /**
@@ -97,4 +98,15 @@ export async function requireFactoryAccess(factoryId: string): Promise<AppUser> 
     throw new AuthError('無權存取此廠別的資料', 403);
   }
   return user;
+}
+
+/**
+ * 統一把 requireUser/requireAdmin/requireFreeze 丟出的 AuthError 轉成 API 回應。
+ * 各 route 在 catch 區塊直接 `return authErrorResponse(err)`，避免每個檔案各寫一份。
+ */
+export function authErrorResponse(err: unknown) {
+  if (err instanceof AuthError) {
+    return NextResponse.json({ data: null, error: err.message }, { status: err.status });
+  }
+  return NextResponse.json({ data: null, error: '未授權' }, { status: 401 });
 }

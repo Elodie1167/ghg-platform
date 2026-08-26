@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 // =============================================================
 // GET  /api/admin/factories            工廠清單（含相依筆數，供刪除前判斷）
@@ -11,6 +12,12 @@ import { query } from '@/lib/db';
 // =============================================================
 
 export async function GET() {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const result = await query(`
     SELECT f.id, f.factory_code, f.name_zh, f.name_en, f.country_code, f.region,
            f.display_order, f.is_active, f.closed_at, f.notes,
@@ -40,6 +47,12 @@ const CreateFactorySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const parsed = CreateFactorySchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 // =============================================================
 // CSR 檔廠名 ↔ 平台廠代碼對照維護。
@@ -11,6 +12,12 @@ import { query } from '@/lib/db';
 // =============================================================
 
 export async function GET() {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const result = await query(`
     SELECT a.id, a.csr_country, a.csr_factory, a.factory_code, a.is_ignored, a.note,
            f.name_zh AS factory_name
@@ -32,6 +39,12 @@ const AliasSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const parsed = AliasSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
@@ -66,6 +79,12 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const id = req.nextUrl.searchParams.get('id');
   if (!id) return NextResponse.json({ data: null, error: '缺少 id' }, { status: 400 });
   const result = await query('DELETE FROM factory_csr_aliases WHERE id = $1 RETURNING id', [id]);

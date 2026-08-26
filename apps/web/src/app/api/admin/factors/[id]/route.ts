@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { recalcPendingForSource } from '@/lib/recalc';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const { id } = await params;
   const result = await query(`
     SELECT
@@ -59,6 +66,11 @@ const UpdateFactorSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
 
   const { id } = await params;
   const parsed = UpdateFactorSchema.safeParse(await req.json());
@@ -94,6 +106,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
 
   const { id } = await params;
   const result = await query('DELETE FROM emission_factors WHERE id = $1 RETURNING id', [id]);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runAnomalyRules } from '@/lib/anomaly/engine';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 // POST /api/admin/anomaly/run
 //   body: { year: number, factory_codes?: string[] }
@@ -7,6 +8,12 @@ import { runAnomalyRules } from '@/lib/anomaly/engine';
 //     1. CSR 匯入完成 callback（api/reduction/import-csr）
 //     2. 每日排程（外部 cron/pm2 打這支）
 export async function POST(req: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   let body: { year?: number; factory_codes?: string[] };
   try {
     body = await req.json();

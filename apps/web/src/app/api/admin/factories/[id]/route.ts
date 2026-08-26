@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 // =============================================================
 // PATCH  /api/admin/factories/[id]   修改工廠（含啟用/停用）
@@ -26,6 +27,12 @@ const UpdateFactorySchema = z.object({
 });
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const { id } = await ctx.params;
   const parsed = UpdateFactorySchema.safeParse(await req.json());
   if (!parsed.success) {
@@ -68,6 +75,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 }
 
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const { id } = await ctx.params;
 
   const dep = await query(

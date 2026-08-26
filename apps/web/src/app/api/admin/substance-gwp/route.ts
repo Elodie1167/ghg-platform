@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 // GET /api/admin/substance-gwp — 冷媒/滅火器/SF6 的 GWP 對照表（V56 substance_gwp）
 export async function GET() {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const r = await query(
     `SELECT substance, gwp::float AS gwp, note, updated_at FROM substance_gwp ORDER BY substance`,
   );
@@ -12,6 +19,12 @@ export async function GET() {
 // PATCH /api/admin/substance-gwp  Body: { substance, gwp, note? }
 // substance 是既有物質才能改（新增物質需搭配排放源設定，暫不開放前端自建，避免打錯字對不到 es.substance）
 export async function PATCH(req: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   let body: { substance?: string; gwp?: number; note?: string | null };
   try { body = await req.json(); } catch {
     return NextResponse.json({ data: null, error: 'JSON 格式錯誤' }, { status: 400 });

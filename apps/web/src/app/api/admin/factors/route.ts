@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 export async function GET() {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
 
   const sql = `
     SELECT
@@ -53,6 +59,11 @@ const CreateFactorSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
 
   const parsed = CreateFactorSchema.safeParse(await req.json());
   if (!parsed.success) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 const patchSchema = z.object({
   status: z.enum(['open', 'confirmed_ok', 'resolved']),
@@ -9,6 +10,12 @@ const patchSchema = z.object({
 
 // PATCH /api/admin/anomaly/:id — admin 標記「已確認無誤」+ 註記，或手動解決
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const { id } = await params;
   let body: unknown;
   try {

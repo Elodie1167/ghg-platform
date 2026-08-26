@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import pool from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 // PUT /api/admin/factories/reorder — 批次更新顯示順序（單一交易，全成或全不成）
 const ReorderSchema = z.object({
@@ -11,6 +12,12 @@ const ReorderSchema = z.object({
 });
 
 export async function PUT(req: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const parsed = ReorderSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(

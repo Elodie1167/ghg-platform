@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 // =============================================================
 // PATCH /api/admin/report-years/[year]   停用/啟用盤查年度
@@ -14,6 +15,12 @@ const UpdateReportYearSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ year: string }> }) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const { year: yearParam } = await ctx.params;
   const year = parseInt(yearParam, 10);
   if (isNaN(year)) {

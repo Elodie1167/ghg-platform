@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 // PATCH  /api/admin/emission-sources/[id]  修改排放源（含啟用/停用、排序）
 // DELETE /api/admin/emission-sources/[id]  刪除（僅限無填報記錄、無係數者）
@@ -17,6 +18,12 @@ const UpdateSourceSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const { id } = await ctx.params;
   const parsed = UpdateSourceSchema.safeParse(await req.json());
   if (!parsed.success) {
@@ -49,6 +56,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 }
 
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const { id } = await ctx.params;
 
   const dep = await query(

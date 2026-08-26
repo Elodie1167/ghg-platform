@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 // =============================================================
 // GET  /api/admin/report-years   盤查年度清單（含已停用，供管理頁使用）
@@ -10,6 +11,12 @@ import { query } from '@/lib/db';
 // =============================================================
 
 export async function GET() {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const result = await query(
     `SELECT year, is_active FROM report_years ORDER BY year ASC`,
   );
@@ -21,6 +28,12 @@ const CreateReportYearSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const parsed = CreateReportYearSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(

@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { recalcPendingForSource } from '@/lib/recalc';
+import { requireAdmin, authErrorResponse } from '@/lib/session';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
+
   const { id } = await params;
   const result = await query(
     'SELECT factory_id FROM emission_factor_assignments WHERE emission_factor_id = $1',
@@ -14,6 +21,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 // PUT replaces all assignments atomically
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    await requireAdmin();
+  } catch (err) {
+    return authErrorResponse(err);
+  }
 
   const { id } = await params;
   const body = await req.json();
