@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 // =============================================================
 // GET  /api/admin/factories            工廠清單（含相依筆數，供刪除前判斷）
@@ -47,8 +48,9 @@ const CreateFactorySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -93,6 +95,11 @@ export async function POST(req: NextRequest) {
       d.region ?? null, d.notes ?? null, next.rows[0].ord,
     ],
   );
+
+  await logAdminChange({
+    user, action: 'create', entityType: 'factory',
+    entityId: result.rows[0].id, after: result.rows[0],
+  });
 
   return NextResponse.json({ data: result.rows[0], error: null }, { status: 201 });
 }

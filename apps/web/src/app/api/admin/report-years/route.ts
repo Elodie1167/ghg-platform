@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 // =============================================================
 // GET  /api/admin/report-years   盤查年度清單（含已停用，供管理頁使用）
@@ -28,8 +29,9 @@ const CreateReportYearSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -55,6 +57,11 @@ export async function POST(req: NextRequest) {
     `INSERT INTO report_years (year, is_active) VALUES ($1, TRUE) RETURNING *`,
     [year],
   );
+
+  await logAdminChange({
+    user, action: 'create', entityType: 'report_year',
+    entityId: String(year), after: result.rows[0],
+  });
 
   return NextResponse.json({ data: result.rows[0], error: null }, { status: 201 });
 }

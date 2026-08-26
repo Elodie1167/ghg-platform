@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runAnomalyRules } from '@/lib/anomaly/engine';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 // POST /api/admin/anomaly/run
 //   body: { year: number, factory_codes?: string[] }
@@ -8,8 +9,9 @@ import { requireAdmin, authErrorResponse } from '@/lib/session';
 //     1. CSR 匯入完成 callback（api/reduction/import-csr）
 //     2. 每日排程（外部 cron/pm2 打這支）
 export async function POST(req: NextRequest) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -29,6 +31,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const summary = await runAnomalyRules(year, factoryCodes);
+    await logAdminChange({
+      user, action: 'run', entityType: 'anomaly_rules', entityId: String(year),
+      after: { year, factory_codes: factoryCodes ?? null, rules: summary },
+    });
     return NextResponse.json({ data: { year, rules: summary }, error: null });
   } catch (err) {
     console.error('[anomaly/run] 執行失敗', err);

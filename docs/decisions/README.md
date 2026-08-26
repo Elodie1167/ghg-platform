@@ -27,6 +27,7 @@
 | [0002](0002-migration-tracking.md) | migrate.mjs 改版本追蹤 | 2026-07-31 | 已部署 |
 | [0003](0003-identity-verification-freeze.md) | 身分層 + 查證封存（V40/V41） | 2026-08-11 | 已套用未部署 |
 | [0004](0004-admin-api-authorization.md) | Admin API 補角色權限檢查 | 2026-08-26 | 已部署 |
+| [0005](0005-admin-audit-log.md) | 變更稽核 log | 2026-08-26 | 已部署 |
 
 另見 [`../待辦與已知缺口.md`](../待辦與已知缺口.md) — 目前累積的未完成項目、風險與缺口，
 每完成一項就從那份文件劃掉，不要讓它只活在對話記憶裡。

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 // PATCH  /api/admin/emission-sources/[id]  修改排放源（含啟用/停用、排序）
 // DELETE /api/admin/emission-sources/[id]  刪除（僅限無填報記錄、無係數者）
@@ -18,8 +19,9 @@ const UpdateSourceSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -44,6 +46,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   }
   params.push(id);
 
+  const before = await query('SELECT * FROM emission_sources WHERE id = $1', [id]);
+
   const result = await query(
     `UPDATE emission_sources SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`,
     params,
@@ -51,13 +55,20 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (!result.rowCount) {
     return NextResponse.json({ data: null, error: '查無此排放源' }, { status: 404 });
   }
+
+  await logAdminChange({
+    user, action: 'update', entityType: 'emission_source', entityId: id,
+    before: before.rows[0] ?? null, after: result.rows[0],
+  });
+
   // 停用不動任何廠的 source_config，重新啟用後各廠原有勾選原封不動
   return NextResponse.json({ data: result.rows[0], error: null });
 }
 
 export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -88,5 +99,10 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
   }
 
   await query('DELETE FROM emission_sources WHERE id = $1', [id]);
+
+  await logAdminChange({
+    user, action: 'delete', entityType: 'emission_source', entityId: id, before: dep.rows[0],
+  });
+
   return NextResponse.json({ data: { source_code, deleted: true }, error: null });
 }

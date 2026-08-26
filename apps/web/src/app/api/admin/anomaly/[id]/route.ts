@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 const patchSchema = z.object({
   status: z.enum(['open', 'confirmed_ok', 'resolved']),
@@ -10,8 +11,9 @@ const patchSchema = z.object({
 
 // PATCH /api/admin/anomaly/:id — admin 標記「已確認無誤」+ 註記，或手動解決
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -29,6 +31,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ data: null, error: parsed.error.message }, { status: 400 });
   }
 
+  const before = await query('SELECT id, status, note FROM anomaly_flags WHERE id = $1', [id]);
+
   const { status, note } = parsed.data;
   const r = await query(
     `UPDATE anomaly_flags
@@ -41,6 +45,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (r.rows.length === 0) {
     return NextResponse.json({ data: null, error: '找不到該異常記錄' }, { status: 404 });
   }
+
+  await logAdminChange({
+    user, action: 'update', entityType: 'anomaly_flag', entityId: id,
+    before: before.rows[0] ?? null, after: r.rows[0],
+  });
 
   return NextResponse.json({ data: r.rows[0], error: null });
 }

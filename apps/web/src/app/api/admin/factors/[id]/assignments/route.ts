@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { query } from '@/lib/db';
 import { recalcPendingForSource } from '@/lib/recalc';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -21,8 +22,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 // PUT replaces all assignments atomically
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -36,6 +38,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   // Verify factor exists
   const check = await query('SELECT id FROM emission_factors WHERE id = $1', [id]);
   if (check.rowCount === 0) return NextResponse.json({ data: null, error: '係數不存在' }, { status: 404 });
+
+  const before = await query(
+    'SELECT factory_id FROM emission_factor_assignments WHERE emission_factor_id = $1',
+    [id],
+  );
 
   // Delete all existing, then insert new ones
   await query('DELETE FROM emission_factor_assignments WHERE emission_factor_id = $1', [id]);
@@ -61,6 +68,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       console.error('[admin/factors assignments] 自動補算失敗:', err),
     );
   }
+
+  await logAdminChange({
+    user, action: 'update', entityType: 'emission_factor_assignments', entityId: id,
+    before: before.rows.map((r) => r.factory_id), after: factory_ids,
+  });
 
   return NextResponse.json({ data: { emission_factor_id: id, factory_ids }, error: null });
 }

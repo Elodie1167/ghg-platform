@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import pool from '@/lib/db';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 // PUT /api/admin/factories/reorder — 批次更新顯示順序（單一交易，全成或全不成）
 const ReorderSchema = z.object({
@@ -12,8 +13,9 @@ const ReorderSchema = z.object({
 });
 
 export async function PUT(req: NextRequest) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -43,6 +45,11 @@ export async function PUT(req: NextRequest) {
   } finally {
     client.release();
   }
+
+  await logAdminChange({
+    user, action: 'update', entityType: 'factory_order',
+    after: parsed.data.items,
+  });
 
   return NextResponse.json({ data: { updated: parsed.data.items.length }, error: null });
 }

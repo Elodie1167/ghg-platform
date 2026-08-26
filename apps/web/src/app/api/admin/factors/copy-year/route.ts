@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 const Schema = z.object({
   from_year: z.number().int().min(2020).max(2099),
@@ -9,8 +10,9 @@ const Schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -90,6 +92,11 @@ export async function POST(req: NextRequest) {
       [from_year, to_year],
     );
   }
+
+  await logAdminChange({
+    user, action: 'create', entityType: 'emission_factor_copy_year',
+    entityId: `${from_year}->${to_year}`, after: { copied, from_year, to_year },
+  });
 
   return NextResponse.json({
     data: { copied, skipped: srcCount - copied, from_year, to_year },

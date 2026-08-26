@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { query } from '@/lib/db';
 import { recalcPendingForSource } from '@/lib/recalc';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -66,8 +67,9 @@ const UpdateFactorSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -90,11 +92,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   values.push(id);
 
+  const before = await query('SELECT * FROM emission_factors WHERE id = $1', [id]);
+
   const result = await query(
     `UPDATE emission_factors SET ${setClauses.join(', ')} WHERE id = $${i} RETURNING *`,
     values,
   );
   if (result.rowCount === 0) return NextResponse.json({ data: null, error: '係數不存在' }, { status: 404 });
+
+  await logAdminChange({
+    user, action: 'update', entityType: 'emission_factor', entityId: id,
+    before: before.rows[0] ?? null, after: result.rows[0],
+  });
 
   // 只補算目前還是 NULL（從沒算出過）的舊紀錄，不動已經有數字的（改係數要讓已算出的舊資料
   // 跟著變，仍照 CLAUDE.md 規則走「先 NULL 再重算」手動流程，這裡不是要取代那個流程）。
@@ -106,14 +115,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
 
   const { id } = await params;
-  const result = await query('DELETE FROM emission_factors WHERE id = $1 RETURNING id', [id]);
+  const result = await query('DELETE FROM emission_factors WHERE id = $1 RETURNING *', [id]);
   if (result.rowCount === 0) return NextResponse.json({ data: null, error: '係數不存在' }, { status: 404 });
+
+  await logAdminChange({
+    user, action: 'delete', entityType: 'emission_factor', entityId: id, before: result.rows[0],
+  });
+
   return NextResponse.json({ data: { id }, error: null });
 }

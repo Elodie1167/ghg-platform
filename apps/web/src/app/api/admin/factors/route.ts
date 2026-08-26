@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 export async function GET() {
   try {
@@ -59,8 +60,9 @@ const CreateFactorSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -84,6 +86,11 @@ export async function POST(req: NextRequest) {
     d.market_residual_factor ?? null, d.scope3_factor ?? null,
     d.source_reference ?? null,
   ]);
+
+  await logAdminChange({
+    user, action: 'create', entityType: 'emission_factor',
+    entityId: result.rows[0].id, after: result.rows[0],
+  });
 
   return NextResponse.json({ data: result.rows[0], error: null }, { status: 201 });
 }

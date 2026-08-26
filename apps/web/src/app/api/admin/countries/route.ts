@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 // 產區（國家）標籤與顯示順序維護。
 // display_order 決定所有頁面的產區排列：首頁、集團碳排彙整表、減量頁共用同一份。
@@ -30,8 +31,9 @@ const CountrySchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -51,6 +53,8 @@ export async function POST(req: NextRequest) {
     ord = next.rows[0].ord;
   }
 
+  const before = await query('SELECT * FROM countries WHERE country_code = $1', [d.country_code]);
+
   const result = await query(
     `INSERT INTO countries (country_code, name_zh, name_en, display_order, is_active)
      VALUES ($1,$2,$3,$4,$5)
@@ -60,12 +64,19 @@ export async function POST(req: NextRequest) {
      RETURNING *`,
     [d.country_code, d.name_zh, d.name_en ?? null, ord, d.is_active],
   );
+
+  await logAdminChange({
+    user, action: before.rowCount ? 'update' : 'create', entityType: 'country',
+    entityId: d.country_code, before: before.rows[0] ?? null, after: result.rows[0],
+  });
+
   return NextResponse.json({ data: result.rows[0], error: null }, { status: 201 });
 }
 
 export async function DELETE(req: NextRequest) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -80,9 +91,14 @@ export async function DELETE(req: NextRequest) {
       { status: 409 },
     );
   }
-  const result = await query('DELETE FROM countries WHERE country_code = $1 RETURNING country_code', [code]);
+  const result = await query('DELETE FROM countries WHERE country_code = $1 RETURNING *', [code]);
   if (!result.rowCount) {
     return NextResponse.json({ data: null, error: '查無此產區' }, { status: 404 });
   }
+
+  await logAdminChange({
+    user, action: 'delete', entityType: 'country', entityId: code, before: result.rows[0],
+  });
+
   return NextResponse.json({ data: { deleted: true }, error: null });
 }

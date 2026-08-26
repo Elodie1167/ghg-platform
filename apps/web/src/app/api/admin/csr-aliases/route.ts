@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 // =============================================================
 // CSR 檔廠名 ↔ 平台廠代碼對照維護。
@@ -39,8 +40,9 @@ const AliasSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -64,6 +66,11 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const before = await query(
+    'SELECT * FROM factory_csr_aliases WHERE csr_country = $1 AND csr_factory = $2',
+    [d.csr_country, d.csr_factory],
+  );
+
   const result = await query(
     `INSERT INTO factory_csr_aliases (csr_country, csr_factory, factory_code, is_ignored, note)
      VALUES ($1,$2,$3,$4,$5)
@@ -75,21 +82,33 @@ export async function POST(req: NextRequest) {
     [d.csr_country, d.csr_factory, d.is_ignored ? (d.factory_code ?? null) : d.factory_code!,
       d.is_ignored, d.note ?? null],
   );
+
+  await logAdminChange({
+    user, action: before.rowCount ? 'update' : 'create', entityType: 'csr_alias',
+    entityId: result.rows[0].id, before: before.rows[0] ?? null, after: result.rows[0],
+  });
+
   return NextResponse.json({ data: result.rows[0], error: null }, { status: 201 });
 }
 
 export async function DELETE(req: NextRequest) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
 
   const id = req.nextUrl.searchParams.get('id');
   if (!id) return NextResponse.json({ data: null, error: '缺少 id' }, { status: 400 });
-  const result = await query('DELETE FROM factory_csr_aliases WHERE id = $1 RETURNING id', [id]);
+  const result = await query('DELETE FROM factory_csr_aliases WHERE id = $1 RETURNING *', [id]);
   if (!result.rowCount) {
     return NextResponse.json({ data: null, error: '查無此對照' }, { status: 404 });
   }
+
+  await logAdminChange({
+    user, action: 'delete', entityType: 'csr_alias', entityId: id, before: result.rows[0],
+  });
+
   return NextResponse.json({ data: { deleted: true }, error: null });
 }

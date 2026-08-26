@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 // 複製單筆係數到隔年（同排放源＋同國家），供只想補一筆漏掉的年度時用，
 // 不必像 /api/admin/factors/copy-year 整年一次複製。
 export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -75,6 +77,11 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
       GROUP BY ef.id, es.source_code, es.name_zh, es.scope, es.category`,
     [newId],
   );
+
+  await logAdminChange({
+    user, action: 'create', entityType: 'emission_factor',
+    entityId: newId, after: full.rows[0],
+  });
 
   return NextResponse.json({ data: full.rows[0], error: null }, { status: 201 });
 }

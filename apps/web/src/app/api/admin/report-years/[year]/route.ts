@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { requireAdmin, authErrorResponse } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 
 // =============================================================
 // PATCH /api/admin/report-years/[year]   停用/啟用盤查年度
@@ -15,8 +16,9 @@ const UpdateReportYearSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ year: string }> }) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -35,6 +37,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ year: str
     );
   }
 
+  const before = await query('SELECT * FROM report_years WHERE year = $1', [year]);
+
   const result = await query(
     `UPDATE report_years SET is_active = $1 WHERE year = $2 RETURNING *`,
     [parsed.data.is_active, year],
@@ -42,5 +46,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ year: str
   if (!result.rowCount) {
     return NextResponse.json({ data: null, error: '查無此年度' }, { status: 404 });
   }
+
+  await logAdminChange({
+    user, action: 'update', entityType: 'report_year', entityId: String(year),
+    before: before.rows[0] ?? null, after: result.rows[0],
+  });
+
   return NextResponse.json({ data: result.rows[0], error: null });
 }

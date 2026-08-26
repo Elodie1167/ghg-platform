@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { AuthError, requireAdmin, requireUser } from '@/lib/session';
+import { logAdminChange } from '@/lib/audit';
 import { DEFAULT_DISCHARGE_RATIO, DEFAULT_RATIO_BASIS } from '@/lib/waste-detail';
 
 /**
@@ -118,6 +119,11 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
+    const before = await query(
+      'SELECT * FROM factory_settings WHERE factory_id = $1 AND effective_year = $2',
+      [p.factory_id, p.effective_year],
+    );
+
     // 年度中途變更設定 → 回報該年度已有幾筆採舊方式的記錄，由前端提示重新確認。
     // 這裡不自動改動既有記錄：已填報的是快照，動它等於回溯改數字。
     const affected = await query(
@@ -149,6 +155,12 @@ export async function PUT(req: NextRequest) {
        mode === 'MEASURED' ? true : (p.has_flow_meter ?? false),
        ratio, basis, p.ratio_override_reason?.trim() || null, user.id],
     );
+
+    await logAdminChange({
+      user, action: before.rowCount ? 'update' : 'create', entityType: 'factory_settings',
+      entityId: `${p.factory_id}:${p.effective_year}`,
+      before: before.rows[0] ?? null, after: res.rows[0],
+    });
 
     return NextResponse.json({
       data: res.rows[0],
